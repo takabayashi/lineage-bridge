@@ -1,0 +1,14 @@
+{
+  "subject": "orders-value",
+  "version": 3,
+  "id": 100042,
+  "schemaType": "AVRO",
+  "schema": "{\"type\":\"record\",\"name\":\"Order\",\"namespace\":\"com.acme.ecommerce\",\"fields\":[{\"name\":\"order_id\",\"type\":\"string\"},{\"name\":\"customer_id\",\"type\":\"string\"},{\"name\":\"product_id\",\"type\":\"string\"},{\"name\":\"quantity\",\"type\":\"int\"},{\"name\":\"total_amount\",\"type\":{\"type\":\"bytes\",\"logicalType\":\"decimal\",\"precision\":10,\"scale\":2}},{\"name\":\"order_status\",\"type\":{\"type\":\"enum\",\"name\":\"OrderStatus\",\"symbols\":[\"PENDING\",\"CONFIRMED\",\"SHIPPED\",\"DELIVERED\",\"CANCELLED\"]}},{\"name\":\"created_at\",\"type\":{\"type\":\"long\",\"logicalType\":\"timestamp-millis\"}},{\"name\":\"updated_at\",\"type\":[\"null\",{\"type\":\"long\",\"logicalType\":\"timestamp-millis\"}],\"default\":null}]}",
+  "references": [
+    {
+      "name": "com.acme.ecommerce.Customer",
+      "subject": "customers-value",
+      "version": 1
+    }
+  ]
+}

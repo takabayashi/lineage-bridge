@@ -1,0 +1,42 @@
+{
+  "api_version": "tableflow/v1",
+  "kind": "CatalogIntegrationList",
+  "metadata": {
+    "self": "https://api.confluent.cloud/tableflow/v1/catalog-integrations",
+    "next": null
+  },
+  "data": [
+    {
+      "api_version": "tableflow/v1",
+      "kind": "CatalogIntegration",
+      "id": "tci-uc-001",
+      "metadata": {
+        "self": "https://api.confluent.cloud/tableflow/v1/catalog-integrations/tci-uc-001",
+        "created_at": "2026-02-10T09:00:00Z",
+        "updated_at": "2026-03-28T12:00:00Z"
+      },
+      "spec": {
+        "display_name": "unity-catalog-prod",
+        "kafka_cluster": {"id": "lkc-abc123"},
+        "environment": {"id": "env-abc123"},
+        "catalog_type": "UNITY_CATALOG",
+        "catalog_config": {
+          "unity_catalog": {
+            "workspace_url": "https://acme-prod.cloud.databricks.com",
+            "catalog_name": "confluent_tableflow",
+            "credentials": {
+              "kind": "ServicePrincipal",
+              "client_id": "sp-abc123",
+              "client_secret": "********"
+            }
+          }
+        },
+        "suspended": false
+      },
+      "status": {
+        "phase": "ACTIVE",
+        "detail": "CatalogIntegration is syncing successfully."
+      }
+    }
+  ]
+}

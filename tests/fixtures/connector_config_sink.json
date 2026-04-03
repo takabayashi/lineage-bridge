@@ -1,0 +1,26 @@
+{
+  "name": "s3-sink-orders",
+  "config": {
+    "connector.class": "io.confluent.connect.s3.S3SinkConnector",
+    "topics": "orders,enriched_orders",
+    "s3.bucket.name": "acme-data-lake",
+    "s3.region": "us-east-1",
+    "s3.part.size": "5242880",
+    "store.url": "https://s3.us-east-1.amazonaws.com",
+    "flush.size": "1000",
+    "rotate.schedule.interval.ms": "3600000",
+    "storage.class": "io.confluent.connect.s3.storage.S3Storage",
+    "format.class": "io.confluent.connect.s3.format.parquet.ParquetFormat",
+    "output.data.format": "PARQUET",
+    "partitioner.class": "io.confluent.connect.storage.partitioner.TimeBasedPartitioner",
+    "path.format": "'year'=YYYY/'month'=MM/'day'=dd/'hour'=HH",
+    "locale": "en-US",
+    "timezone": "UTC",
+    "timestamp.extractor": "Record",
+    "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "value.converter": "io.confluent.connect.avro.AvroConverter",
+    "value.converter.schema.registry.url": "https://psrc-abc123.us-east-1.aws.confluent.cloud",
+    "tasks.max": "2"
+  },
+  "type": "sink"
+}

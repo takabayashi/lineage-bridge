@@ -1,0 +1,55 @@
+{
+  "connectors": [
+    {
+      "name": "postgres-source-orders",
+      "type": "source",
+      "config": {
+        "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+        "tasks.max": "1"
+      },
+      "status": {
+        "name": "postgres-source-orders",
+        "connector": {
+          "state": "RUNNING",
+          "worker_id": "confluent-connect-worker-0"
+        },
+        "tasks": [
+          {
+            "id": 0,
+            "state": "RUNNING",
+            "worker_id": "confluent-connect-worker-0"
+          }
+        ],
+        "type": "source"
+      }
+    },
+    {
+      "name": "s3-sink-orders",
+      "type": "sink",
+      "config": {
+        "connector.class": "io.confluent.connect.s3.S3SinkConnector",
+        "tasks.max": "2"
+      },
+      "status": {
+        "name": "s3-sink-orders",
+        "connector": {
+          "state": "RUNNING",
+          "worker_id": "confluent-connect-worker-1"
+        },
+        "tasks": [
+          {
+            "id": 0,
+            "state": "RUNNING",
+            "worker_id": "confluent-connect-worker-1"
+          },
+          {
+            "id": 1,
+            "state": "RUNNING",
+            "worker_id": "confluent-connect-worker-1"
+          }
+        ],
+        "type": "sink"
+      }
+    }
+  ]
+}

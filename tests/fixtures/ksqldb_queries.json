@@ -1,0 +1,19 @@
+[
+  {
+    "@type": "queries",
+    "statementText": "SHOW QUERIES;",
+    "queries": [
+      {
+        "queryString": "CREATE STREAM enriched_orders WITH (KAFKA_TOPIC='enriched_orders', VALUE_FORMAT='AVRO') AS SELECT o.order_id, o.product_id, o.quantity, o.total_amount, c.name AS customer_name, c.email AS customer_email FROM orders o INNER JOIN customers c ON o.customer_id = c.id EMIT CHANGES;",
+        "sinks": ["ENRICHED_ORDERS"],
+        "sinkKafkaTopics": ["enriched_orders"],
+        "id": "CSAS_ENRICHED_ORDERS_0",
+        "state": "RUNNING",
+        "queryType": "PERSISTENT",
+        "statusCount": {
+          "RUNNING": 1
+        }
+      }
+    ]
+  }
+]

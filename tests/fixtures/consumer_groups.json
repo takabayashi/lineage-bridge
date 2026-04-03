@@ -1,0 +1,51 @@
+{
+  "kind": "KafkaConsumerGroupList",
+  "metadata": {
+    "self": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/consumer-groups",
+    "next": null
+  },
+  "data": [
+    {
+      "kind": "KafkaConsumerGroup",
+      "metadata": {
+        "self": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/consumer-groups/order-processing-group",
+        "resource_name": "crn:///kafka=lkc-abc123/consumer-group=order-processing-group"
+      },
+      "cluster_id": "lkc-abc123",
+      "consumer_group_id": "order-processing-group",
+      "is_simple": false,
+      "partition_assignor": "range",
+      "state": "STABLE",
+      "coordinator": {
+        "related": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/brokers/1"
+      },
+      "consumers": {
+        "related": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/consumer-groups/order-processing-group/consumers"
+      },
+      "lag_summary": {
+        "related": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/consumer-groups/order-processing-group/lag-summary"
+      }
+    },
+    {
+      "kind": "KafkaConsumerGroup",
+      "metadata": {
+        "self": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/consumer-groups/enrichment-service",
+        "resource_name": "crn:///kafka=lkc-abc123/consumer-group=enrichment-service"
+      },
+      "cluster_id": "lkc-abc123",
+      "consumer_group_id": "enrichment-service",
+      "is_simple": false,
+      "partition_assignor": "cooperative-sticky",
+      "state": "STABLE",
+      "coordinator": {
+        "related": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/brokers/2"
+      },
+      "consumers": {
+        "related": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/consumer-groups/enrichment-service/consumers"
+      },
+      "lag_summary": {
+        "related": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/consumer-groups/enrichment-service/lag-summary"
+      }
+    }
+  ]
+}

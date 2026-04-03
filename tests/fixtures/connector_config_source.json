@@ -1,0 +1,27 @@
+{
+  "name": "postgres-source-orders",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname": "pg-prod.example.com",
+    "database.port": "5432",
+    "database.user": "debezium_user",
+    "database.password": "********",
+    "database.dbname": "ecommerce",
+    "database.server.name": "pg-prod",
+    "topic.prefix": "pg-ecommerce",
+    "table.include.list": "public.orders,public.customers",
+    "slot.name": "debezium_orders",
+    "plugin.name": "pgoutput",
+    "publication.name": "dbz_publication",
+    "key.converter": "io.confluent.connect.avro.AvroConverter",
+    "value.converter": "io.confluent.connect.avro.AvroConverter",
+    "key.converter.schema.registry.url": "https://psrc-abc123.us-east-1.aws.confluent.cloud",
+    "value.converter.schema.registry.url": "https://psrc-abc123.us-east-1.aws.confluent.cloud",
+    "transforms": "route",
+    "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+    "transforms.route.regex": "(.*)\\.(.*)",
+    "transforms.route.replacement": "$1_$2",
+    "tasks.max": "1"
+  },
+  "type": "source"
+}

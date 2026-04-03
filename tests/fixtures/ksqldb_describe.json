@@ -1,0 +1,35 @@
+[
+  {
+    "@type": "sourceDescription",
+    "statementText": "DESCRIBE ENRICHED_ORDERS EXTENDED;",
+    "sourceDescription": {
+      "name": "ENRICHED_ORDERS",
+      "type": "STREAM",
+      "topic": "enriched_orders",
+      "keyFormat": "KAFKA",
+      "valueFormat": "AVRO",
+      "timestampColumn": null,
+      "windowType": null,
+      "readQueries": [
+        {
+          "id": "CSAS_ENRICHED_ORDERS_0",
+          "sinks": ["ENRICHED_ORDERS"],
+          "sinkTopic": "enriched_orders"
+        }
+      ],
+      "writeQueries": [],
+      "fields": [
+        {"name": "ORDER_ID", "schema": {"type": "STRING", "fields": null, "memberSchema": null}},
+        {"name": "PRODUCT_ID", "schema": {"type": "STRING", "fields": null, "memberSchema": null}},
+        {"name": "QUANTITY", "schema": {"type": "INTEGER", "fields": null, "memberSchema": null}},
+        {"name": "TOTAL_AMOUNT", "schema": {"type": "DECIMAL", "fields": null, "memberSchema": null}},
+        {"name": "CUSTOMER_NAME", "schema": {"type": "STRING", "fields": null, "memberSchema": null}},
+        {"name": "CUSTOMER_EMAIL", "schema": {"type": "STRING", "fields": null, "memberSchema": null}}
+      ],
+      "sourceConstraints": [],
+      "statement": "CREATE STREAM ENRICHED_ORDERS WITH (KAFKA_TOPIC='enriched_orders', VALUE_FORMAT='AVRO') AS SELECT o.order_id, o.product_id, o.quantity, o.total_amount, c.name AS customer_name, c.email AS customer_email FROM orders o INNER JOIN customers c ON o.customer_id = c.id EMIT CHANGES;",
+      "clusterStatistics": [],
+      "queryOffsetSummaries": []
+    }
+  }
+]

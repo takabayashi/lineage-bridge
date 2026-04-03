@@ -1,0 +1,23 @@
+services:
+  extract:
+    build: .
+    command: ["lineage-bridge-extract"]
+    env_file: .env
+    environment:
+      - LINEAGE_BRIDGE_EXTRACT_OUTPUT_PATH=/app/data/lineage_graph.json
+    volumes:
+      - ./data:/app/data
+    profiles:
+      - extract
+
+  ui:
+    build: .
+    ports:
+      - "8501:8501"
+    env_file: .env
+    environment:
+      - LINEAGE_BRIDGE_EXTRACT_OUTPUT_PATH=/app/data/lineage_graph.json
+    volumes:
+      - ./data:/app/data
+    profiles:
+      - ui

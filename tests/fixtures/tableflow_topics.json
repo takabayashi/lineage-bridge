@@ -1,0 +1,66 @@
+{
+  "api_version": "tableflow/v1",
+  "kind": "TableflowTopicList",
+  "metadata": {
+    "self": "https://api.confluent.cloud/tableflow/v1/tableflow-topics",
+    "next": null
+  },
+  "data": [
+    {
+      "api_version": "tableflow/v1",
+      "kind": "TableflowTopic",
+      "id": "tft-orders-001",
+      "metadata": {
+        "self": "https://api.confluent.cloud/tableflow/v1/tableflow-topics/tft-orders-001",
+        "created_at": "2026-02-01T08:00:00Z",
+        "updated_at": "2026-03-28T14:22:00Z"
+      },
+      "spec": {
+        "display_name": "orders-tableflow",
+        "kafka_cluster": {"id": "lkc-abc123"},
+        "topic_name": "orders",
+        "environment": {"id": "env-abc123"},
+        "table_formats": ["DELTA", "ICEBERG"],
+        "storage": {
+          "kind": "ByobStorage",
+          "bucket_name": "acme-tableflow-prod",
+          "provider": "AWS"
+        },
+        "record_failure_strategy": "SUSPEND"
+      },
+      "status": {
+        "phase": "ACTIVE",
+        "storage_location": "s3://acme-tableflow-prod/lkc-abc123/orders/",
+        "detail": "TableflowTopic is active and materialization is running."
+      }
+    },
+    {
+      "api_version": "tableflow/v1",
+      "kind": "TableflowTopic",
+      "id": "tft-customers-002",
+      "metadata": {
+        "self": "https://api.confluent.cloud/tableflow/v1/tableflow-topics/tft-customers-002",
+        "created_at": "2026-02-01T08:05:00Z",
+        "updated_at": "2026-03-28T14:22:00Z"
+      },
+      "spec": {
+        "display_name": "customers-tableflow",
+        "kafka_cluster": {"id": "lkc-abc123"},
+        "topic_name": "customers",
+        "environment": {"id": "env-abc123"},
+        "table_formats": ["ICEBERG"],
+        "storage": {
+          "kind": "ByobStorage",
+          "bucket_name": "acme-tableflow-prod",
+          "provider": "AWS"
+        },
+        "record_failure_strategy": "SKIP"
+      },
+      "status": {
+        "phase": "ACTIVE",
+        "storage_location": "s3://acme-tableflow-prod/lkc-abc123/customers/",
+        "detail": "TableflowTopic is active and materialization is running."
+      }
+    }
+  ]
+}

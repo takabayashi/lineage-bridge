@@ -1,0 +1,97 @@
+{
+  "kind": "KafkaTopicList",
+  "metadata": {
+    "self": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/topics",
+    "next": null
+  },
+  "data": [
+    {
+      "kind": "KafkaTopic",
+      "metadata": {
+        "self": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/topics/orders",
+        "resource_name": "crn:///kafka=lkc-abc123/topic=orders"
+      },
+      "cluster_id": "lkc-abc123",
+      "topic_name": "orders",
+      "is_internal": false,
+      "replication_factor": 3,
+      "partitions_count": 6,
+      "partitions": {
+        "related": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/topics/orders/partitions"
+      },
+      "configs": {
+        "related": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/topics/orders/configs"
+      },
+      "partition_reassignments": {
+        "related": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/topics/orders/partitions/-/reassignment"
+      },
+      "authorized_operations": []
+    },
+    {
+      "kind": "KafkaTopic",
+      "metadata": {
+        "self": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/topics/customers",
+        "resource_name": "crn:///kafka=lkc-abc123/topic=customers"
+      },
+      "cluster_id": "lkc-abc123",
+      "topic_name": "customers",
+      "is_internal": false,
+      "replication_factor": 3,
+      "partitions_count": 3,
+      "partitions": {
+        "related": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/topics/customers/partitions"
+      },
+      "configs": {
+        "related": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/topics/customers/configs"
+      },
+      "partition_reassignments": {
+        "related": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/topics/customers/partitions/-/reassignment"
+      },
+      "authorized_operations": []
+    },
+    {
+      "kind": "KafkaTopic",
+      "metadata": {
+        "self": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/topics/enriched_orders",
+        "resource_name": "crn:///kafka=lkc-abc123/topic=enriched_orders"
+      },
+      "cluster_id": "lkc-abc123",
+      "topic_name": "enriched_orders",
+      "is_internal": false,
+      "replication_factor": 3,
+      "partitions_count": 6,
+      "partitions": {
+        "related": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/topics/enriched_orders/partitions"
+      },
+      "configs": {
+        "related": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/topics/enriched_orders/configs"
+      },
+      "partition_reassignments": {
+        "related": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/topics/enriched_orders/partitions/-/reassignment"
+      },
+      "authorized_operations": []
+    },
+    {
+      "kind": "KafkaTopic",
+      "metadata": {
+        "self": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/topics/_confluent-metrics",
+        "resource_name": "crn:///kafka=lkc-abc123/topic=_confluent-metrics"
+      },
+      "cluster_id": "lkc-abc123",
+      "topic_name": "_confluent-metrics",
+      "is_internal": true,
+      "replication_factor": 3,
+      "partitions_count": 12,
+      "partitions": {
+        "related": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/topics/_confluent-metrics/partitions"
+      },
+      "configs": {
+        "related": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/topics/_confluent-metrics/configs"
+      },
+      "partition_reassignments": {
+        "related": "https://lkc-abc123.us-east-1.aws.confluent.cloud:443/kafka/v3/clusters/lkc-abc123/topics/_confluent-metrics/partitions/-/reassignment"
+      },
+      "authorized_operations": []
+    }
+  ]
+}

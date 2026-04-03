@@ -1,0 +1,58 @@
+{
+  "api_version": "sql/v1",
+  "kind": "StatementList",
+  "metadata": {
+    "self": "https://flink.us-east-1.aws.confluent.cloud/sql/v1/organizations/org-abc123/environments/env-abc123/statements",
+    "next": null
+  },
+  "data": [
+    {
+      "api_version": "sql/v1",
+      "kind": "Statement",
+      "name": "create-orders-table",
+      "metadata": {
+        "self": "https://flink.us-east-1.aws.confluent.cloud/sql/v1/organizations/org-abc123/environments/env-abc123/statements/create-orders-table",
+        "created_at": "2026-03-15T10:30:00Z",
+        "updated_at": "2026-03-15T10:30:05Z"
+      },
+      "spec": {
+        "statement": "CREATE TABLE orders (order_id STRING, customer_id STRING, product_id STRING, quantity INT, total_amount DECIMAL(10,2), order_status STRING, created_at TIMESTAMP(3), WATERMARK FOR created_at AS created_at - INTERVAL '5' SECOND) WITH ('connector' = 'confluent', 'kafka.topic' = 'orders')",
+        "compute_pool": {"id": "lfcp-abc123"},
+        "principal": "sa-lineage-bridge",
+        "properties": {
+          "sql.current-catalog": "my-environment",
+          "sql.current-database": "my-kafka-cluster"
+        },
+        "stopped": false
+      },
+      "status": {
+        "phase": "COMPLETED",
+        "detail": "Statement successfully submitted."
+      }
+    },
+    {
+      "api_version": "sql/v1",
+      "kind": "Statement",
+      "name": "insert-enriched-orders",
+      "metadata": {
+        "self": "https://flink.us-east-1.aws.confluent.cloud/sql/v1/organizations/org-abc123/environments/env-abc123/statements/insert-enriched-orders",
+        "created_at": "2026-03-15T11:00:00Z",
+        "updated_at": "2026-03-15T11:00:08Z"
+      },
+      "spec": {
+        "statement": "INSERT INTO enriched_orders SELECT o.order_id, o.product_id, o.quantity, o.total_amount, c.name AS customer_name, c.email AS customer_email FROM orders o JOIN customers c ON o.customer_id = c.id",
+        "compute_pool": {"id": "lfcp-abc123"},
+        "principal": "sa-lineage-bridge",
+        "properties": {
+          "sql.current-catalog": "my-environment",
+          "sql.current-database": "my-kafka-cluster"
+        },
+        "stopped": false
+      },
+      "status": {
+        "phase": "RUNNING",
+        "detail": "Statement is running."
+      }
+    }
+  ]
+}
