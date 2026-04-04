@@ -19,14 +19,28 @@ logger = logging.getLogger(__name__)
 
 # ── Flink SQL regex parsers ─────────────────────────────────────────────
 
+# Match a possibly catalog-qualified identifier:
+#   `cat`.`db`.`table`  or  "cat"."db"."table"  or  cat.db.table
+_IDENT = r"(?:`[^`]+`(?:\.`[^`]+`)*|\"[^\"]+\"(?:\.\"[^\"]+\")*|\S+)"
+
 # INSERT INTO <table>
-_INSERT_INTO_RE = re.compile(r"\bINSERT\s+INTO\s+(?:`([^`]+)`|\"([^\"]+)\"|(\S+))", re.IGNORECASE)
+_INSERT_INTO_RE = re.compile(rf"\bINSERT\s+INTO\s+({_IDENT})", re.IGNORECASE)
+
+# CREATE TABLE <name> AS SELECT ... (CTAS — the table is the sink)
+_CTAS_RE = re.compile(
+    rf"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?({_IDENT})\s+AS\b",
+    re.IGNORECASE | re.DOTALL,
+)
 
 # FROM <table>  /  JOIN <table>
-_FROM_RE = re.compile(r"\bFROM\s+(?:`([^`]+)`|\"([^\"]+)\"|(\S+))", re.IGNORECASE)
-_JOIN_RE = re.compile(r"\bJOIN\s+(?:`([^`]+)`|\"([^\"]+)\"|(\S+))", re.IGNORECASE)
+_FROM_RE = re.compile(rf"\bFROM\s+({_IDENT})", re.IGNORECASE)
+_JOIN_RE = re.compile(rf"\bJOIN\s+({_IDENT})", re.IGNORECASE)
 
-# CREATE TABLE ... WITH ( 'kafka.topic' = '<topic>' )
+# CREATE TABLE <name> ... WITH ( 'kafka.topic' = '<topic>' ) — pure DDL (no AS)
+_CREATE_TABLE_RE = re.compile(
+    rf"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?({_IDENT})",
+    re.IGNORECASE,
+)
 _KAFKA_TOPIC_PROP_RE = re.compile(r"'kafka\.topic'\s*=\s*'([^']+)'", re.IGNORECASE)
 
 
@@ -39,8 +53,23 @@ def _extract_name(match: re.Match[str]) -> str:
 
 
 def _last_segment(name: str) -> str:
-    """Return the last dot-separated segment (i.e. the table/topic name)."""
-    return name.rsplit(".", 1)[-1]
+    """Return the last segment of a possibly catalog-qualified name.
+
+    Handles:  `cat`.`db`.`table` → table
+              "cat"."db"."table" → table
+              cat.db.table       → table
+              table              → table
+    """
+    # Split on `.` that separates quoted identifiers
+    # e.g. `cat`.`db`.`tbl` → ['`cat`', '`db`', '`tbl`']
+    parts = re.split(r"(?<=`)\s*\.\s*(?=`)|(?<=\")\s*\.\s*(?=\")|\.", name)
+    last = parts[-1].strip()
+    # Strip surrounding backticks or double quotes
+    if last.startswith("`") and last.endswith("`"):
+        last = last[1:-1]
+    elif last.startswith('"') and last.endswith('"'):
+        last = last[1:-1]
+    return last
 
 
 class FlinkClient:
@@ -124,8 +153,42 @@ class FlinkClient:
         try:
             async with dp:
                 statements = await self._list_statements(dp, region, cloud)
+
+                # First pass: build table-name → kafka-topic map from CREATE TABLE DDLs
+                table_topic_map: dict[str, str] = {}
                 for stmt in statements:
-                    s_nodes, s_edges = self._process_statement(stmt)
+                    sql = stmt.get("spec", {}).get("statement", "")
+                    ct_match = _CREATE_TABLE_RE.search(sql)
+                    if ct_match:
+                        tbl_name = _last_segment(_extract_name(ct_match))
+                        topic_match = _KAFKA_TOPIC_PROP_RE.search(sql)
+                        if topic_match:
+                            table_topic_map[tbl_name] = topic_match.group(1)
+                        else:
+                            # Confluent Cloud Flink defaults topic name = table name
+                            table_topic_map[tbl_name] = tbl_name
+
+                logger.debug("Flink table→topic map: %s", table_topic_map)
+
+                # Second pass: process DML and CTAS statements
+                for stmt in statements:
+                    phase = stmt.get("status", {}).get("phase", "")
+                    if phase.upper() not in ("RUNNING", "COMPLETED"):
+                        continue
+                    sql = stmt.get("spec", {}).get("statement", "").strip()
+                    # Skip pure DDL (CREATE TABLE without AS SELECT)
+                    is_create = _CREATE_TABLE_RE.match(sql)
+                    is_ctas = _CTAS_RE.search(sql)
+                    if is_create and not is_ctas:
+                        continue
+                    # Skip non-lineage statements (SELECT, SHOW, DESC, etc.)
+                    sql_upper = sql.upper().lstrip()
+                    if not (
+                        sql_upper.startswith("INSERT")
+                        or sql_upper.startswith("CREATE TABLE")
+                    ):
+                        continue
+                    s_nodes, s_edges = self._process_statement(stmt, table_topic_map)
                     nodes.extend(s_nodes)
                     edges.extend(s_edges)
         except Exception:
@@ -140,7 +203,9 @@ class FlinkClient:
         return nodes, edges
 
     def _process_statement(
-        self, stmt: dict[str, Any]
+        self,
+        stmt: dict[str, Any],
+        table_topic_map: dict[str, str] | None = None,
     ) -> tuple[list[LineageNode], list[LineageEdge]]:
         nodes: list[LineageNode] = []
         edges: list[LineageEdge] = []
@@ -173,7 +238,19 @@ class FlinkClient:
             )
         )
 
-        source_topics, sink_topics = self._parse_flink_sql(sql)
+        source_tables, sink_tables = self._parse_flink_sql(sql)
+        topic_map = table_topic_map or {}
+
+        # Resolve table names to Kafka topic names
+        source_topics = {topic_map.get(t, t) for t in source_tables}
+        sink_topics = {topic_map.get(t, t) for t in sink_tables}
+
+        logger.debug(
+            "Flink statement %s: sources=%s sinks=%s (table→topic resolved)",
+            name,
+            source_topics,
+            sink_topics,
+        )
 
         for topic in source_topics:
             tid = self._topic_node_id(topic)
@@ -222,21 +299,25 @@ class FlinkClient:
 
     @staticmethod
     def _parse_flink_sql(sql: str) -> tuple[set[str], set[str]]:
-        """Parse a Flink SQL statement and return ``(source_topics, sink_topics)``.
+        """Parse a Flink SQL statement and return ``(source_tables, sink_tables)``.
 
-        Uses regex — intentionally simple for the POC.
+        Handles:
+        - ``INSERT INTO <sink> SELECT ... FROM <source>``
+        - ``CREATE TABLE <sink> AS SELECT ... FROM <source>`` (CTAS)
+
+        Returns Flink table names (not Kafka topic names). The caller is
+        responsible for resolving table names to topic names via the
+        table→topic map built from CREATE TABLE DDLs.
         """
         sources: set[str] = set()
         sinks: set[str] = set()
 
-        # Explicit kafka.topic property in CREATE TABLE DDL.
-        for _m in _KAFKA_TOPIC_PROP_RE.finditer(sql):
-            # These could be either source or sink depending on usage;
-            # handled below by INSERT INTO / FROM context.
-            pass
-
         # INSERT INTO → sink.
         for m in _INSERT_INTO_RE.finditer(sql):
+            sinks.add(_last_segment(_extract_name(m)))
+
+        # CREATE TABLE ... AS SELECT → sink (CTAS).
+        for m in _CTAS_RE.finditer(sql):
             sinks.add(_last_segment(_extract_name(m)))
 
         # FROM / JOIN → source.

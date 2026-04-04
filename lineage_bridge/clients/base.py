@@ -139,6 +139,10 @@ class ConfluentClient:
         response = await self._request("POST", path, params=params, json_body=json_body)
         return response.json()  # type: ignore[no-any-return]
 
+    async def delete(self, path: str, *, params: dict[str, Any] | None = None) -> None:
+        """DELETE request."""
+        await self._request("DELETE", path, params=params)
+
     async def paginate(
         self,
         path: str,
@@ -171,7 +175,7 @@ class ConfluentClient:
 
         while True:
             response = await self.get(path, params=request_params)
-            items = response.get(data_key, [])
+            items = response.get(data_key) or []
             all_items.extend(items)
 
             # Check for next page

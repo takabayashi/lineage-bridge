@@ -112,6 +112,9 @@ async def run_extraction(
     enable_tableflow: bool = True,
     enable_metrics: bool = False,
     metrics_lookback_hours: int = 1,
+    sr_endpoints: dict[str, str] | None = None,
+    sr_credentials: dict[str, dict[str, str]] | None = None,
+    flink_credentials: dict[str, dict[str, str]] | None = None,
     on_progress: ProgressCallback = None,
 ) -> LineageGraph:
     """Run the extraction pipeline and return the merged graph.
@@ -152,6 +155,9 @@ async def run_extraction(
                 enable_tableflow=enable_tableflow,
                 enable_metrics=enable_metrics,
                 metrics_lookback_hours=metrics_lookback_hours,
+                sr_endpoints=sr_endpoints,
+                sr_credentials=sr_credentials,
+                flink_credentials=flink_credentials,
                 on_progress=_progress,
             )
     finally:
@@ -176,6 +182,9 @@ async def _extract_environment(
     enable_tableflow: bool,
     enable_metrics: bool,
     metrics_lookback_hours: int,
+    sr_endpoints: dict[str, str] | None,
+    sr_credentials: dict[str, dict[str, str]] | None,
+    flink_credentials: dict[str, dict[str, str]] | None,
     on_progress: Any,
 ) -> None:
     """Run all extractors for a single Confluent Cloud environment."""
@@ -190,8 +199,11 @@ async def _extract_environment(
         return
 
     # ── discover Schema Registry ───────────────────────────────────────
-    sr_endpoint: str | None = None
-    if enable_schema_registry or enable_stream_catalog:
+    sr_endpoint: str | None = sr_endpoints.get(env_id) if sr_endpoints else None
+    # Fall back to global setting
+    if not sr_endpoint and settings.schema_registry_endpoint:
+        sr_endpoint = settings.schema_registry_endpoint
+    if not sr_endpoint and (enable_schema_registry or enable_stream_catalog):
         try:
             sr_items = await cloud.paginate("/srcm/v2/clusters", params={"environment": env_id})
             if sr_items:
@@ -200,13 +212,27 @@ async def _extract_environment(
                     "status", {}
                 ).get("http_endpoint")
         except Exception:
-            logger.debug("SR discovery failed for %s", env_id, exc_info=True)
+            logger.debug("SR management API failed for %s", env_id, exc_info=True)
 
-    # Credential resolution
-    kafka_key = settings.kafka_api_key or settings.confluent_cloud_api_key
-    kafka_secret = settings.kafka_api_secret or settings.confluent_cloud_api_secret
-    sr_key = settings.schema_registry_api_key or settings.confluent_cloud_api_key
-    sr_secret = settings.schema_registry_api_secret or settings.confluent_cloud_api_secret
+        if sr_endpoint:
+            on_progress("Discovery", f"Schema Registry found: {sr_endpoint}")
+        else:
+            on_progress(
+                "Warning",
+                f"No Schema Registry endpoint found for {env_id}. "
+                "Set LINEAGE_BRIDGE_SCHEMA_REGISTRY_API_KEY in .env "
+                "or check Stream Governance is enabled.",
+            )
+    elif sr_endpoint:
+        on_progress("Discovery", f"Schema Registry (cached): {sr_endpoint}")
+
+    # Credential resolution — per-env SR keys take priority
+    if sr_credentials and env_id in sr_credentials:
+        sr_key = sr_credentials[env_id]["api_key"]
+        sr_secret = sr_credentials[env_id]["api_secret"]
+    else:
+        sr_key = settings.schema_registry_api_key or settings.confluent_cloud_api_key
+        sr_secret = settings.schema_registry_api_secret or settings.confluent_cloud_api_secret
 
     # ── Phase 1: Kafka Admin (per cluster) ─────────────────────────────
     on_progress("Phase 1/4", "Extracting Kafka topics & consumer groups")
@@ -225,6 +251,7 @@ async def _extract_environment(
             on_progress("Warning", f"No REST endpoint for cluster {cluster_id}")
             continue
 
+        kafka_key, kafka_secret = settings.get_cluster_credentials(cluster_id)
         kafka_client = KafkaAdminClient(
             base_url=rest_endpoint,
             api_key=kafka_key,
@@ -277,20 +304,52 @@ async def _extract_environment(
         phase2_tasks.append(_run_ksqldb())
 
     if enable_flink:
+        # Try multiple locations for organization ID
         org_id = ""
         for cluster in all_clusters:
+            # Try spec.organization.id (some API versions)
             org_id = cluster.get("spec", {}).get("organization", {}).get("id", "")
             if org_id:
                 break
+            # Try top-level organization.id
+            org_id = cluster.get("organization", {}).get("id", "")
+            if org_id:
+                break
+            # Try metadata.resource_name (contains org ID)
+            resource_name = cluster.get("metadata", {}).get("resource_name", "")
+            if "/organization=" in resource_name:
+                org_id = resource_name.split("/organization=")[1].split("/")[0]
+                if org_id:
+                    break
+
+        if not org_id:
+            # Last resort: fetch from /org/v2/environments
+            try:
+                env_data = await cloud.get(f"/org/v2/environments/{env_id}")
+                org_id = env_data.get("metadata", {}).get("resource_name", "")
+                if "/organization=" in org_id:
+                    org_id = org_id.split("/organization=")[1].split("/")[0]
+                else:
+                    org_id = ""
+            except Exception:
+                logger.debug("Failed to fetch org ID from environment %s", env_id, exc_info=True)
 
         if org_id:
+            # Resolve per-env Flink credentials
+            if flink_credentials and env_id in flink_credentials:
+                flink_key = flink_credentials[env_id]["api_key"]
+                flink_secret = flink_credentials[env_id]["api_secret"]
+            else:
+                flink_key = settings.flink_api_key
+                flink_secret = settings.flink_api_secret
+
             flink_client = FlinkClient(
                 cloud_api_key=settings.confluent_cloud_api_key,
                 cloud_api_secret=settings.confluent_cloud_api_secret,
                 environment_id=env_id,
                 organization_id=org_id,
-                flink_api_key=settings.flink_api_key,
-                flink_api_secret=settings.flink_api_secret,
+                flink_api_key=flink_key,
+                flink_api_secret=flink_secret,
             )
 
             async def _run_flink() -> tuple[list[LineageNode], list[LineageEdge]]:
@@ -298,6 +357,11 @@ async def _extract_environment(
                     return await _safe_extract("Flink", flink_client.extract(), on_progress)
 
             phase2_tasks.append(_run_flink())
+        else:
+            on_progress(
+                "Warning",
+                f"Could not determine organization ID for Flink in {env_id} — Flink extraction skipped",
+            )
 
     if phase2_tasks:
         phase2_results = await asyncio.gather(*phase2_tasks)
@@ -308,21 +372,26 @@ async def _extract_environment(
     on_progress("Phase 3/4", "Enriching with schemas & catalog metadata")
     phase3_tasks: list[Any] = []
 
-    if sr_endpoint and enable_schema_registry:
-        sr_client = SchemaRegistryClient(
-            base_url=sr_endpoint,
-            api_key=sr_key,
-            api_secret=sr_secret,
-            environment_id=env_id,
-        )
+    if enable_schema_registry:
+        if sr_endpoint:
+            sr_client = SchemaRegistryClient(
+                base_url=sr_endpoint,
+                api_key=sr_key,
+                api_secret=sr_secret,
+                environment_id=env_id,
+            )
 
-        async def _run_sr() -> tuple[list[LineageNode], list[LineageEdge]]:
-            async with sr_client:
-                return await _safe_extract("SchemaRegistry", sr_client.extract(), on_progress)
+            async def _run_sr() -> tuple[list[LineageNode], list[LineageEdge]]:
+                async with sr_client:
+                    return await _safe_extract("SchemaRegistry", sr_client.extract(), on_progress)
 
-        phase3_tasks.append(_run_sr())
+            phase3_tasks.append(_run_sr())
+        else:
+            on_progress("Skipped", "Schema Registry — no endpoint discovered")
 
-    if sr_endpoint and enable_stream_catalog:
+    if enable_stream_catalog and not sr_endpoint:
+        on_progress("Skipped", "Stream Catalog — no SR endpoint discovered")
+    elif enable_stream_catalog and sr_endpoint:
         catalog_client = StreamCatalogClient(
             base_url=sr_endpoint,
             api_key=sr_key,

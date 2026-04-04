@@ -47,19 +47,23 @@ class StreamCatalogClient(ConfluentClient):
     async def enrich(self, graph: LineageGraph) -> None:
         """Update existing nodes in *graph* with catalog metadata.
 
-        Queries the catalog for ``kafka_topic`` and ``kafka_connector``
-        entities and merges tags, owner, and description into matching nodes.
+        Queries the catalog for available entity types and merges tags,
+        owner, and description into matching graph nodes.
         """
         enriched = 0
 
+        # Entity types to try — not all types are available on every SR cluster.
         for entity_type, node_type in [
             ("kafka_topic", NodeType.KAFKA_TOPIC),
-            ("kafka_connector", NodeType.CONNECTOR),
         ]:
             try:
                 entities = await self._search_entities(entity_type)
-            except Exception:
-                logger.warning("Failed to search catalog for %s", entity_type, exc_info=True)
+            except Exception as exc:
+                msg = str(exc)
+                if "400" in msg or "Unknown/invalid typename" in msg:
+                    logger.debug("Catalog type %s not available — skipping", entity_type)
+                else:
+                    logger.warning("Failed to search catalog for %s: %s", entity_type, exc)
                 continue
 
             for entity in entities:

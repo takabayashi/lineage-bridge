@@ -12,6 +12,7 @@ dependencies = [
     "streamlit>=1.30",
     "streamlit-agraph>=0.0.45",
     "python-dotenv>=1.0",
+    "cryptography>=42.0",
 ]
 
 [project.optional-dependencies]

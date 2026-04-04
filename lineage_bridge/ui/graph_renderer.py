@@ -73,9 +73,15 @@ def _collect_hop_neighborhood(
 
 
 def _get_connected_node_ids(graph: LineageGraph) -> set[str]:
-    """Return IDs of nodes that have at least one edge."""
+    """Return IDs of nodes that have at least one visible edge.
+
+    HAS_SCHEMA edges are rendered as info on topic nodes, not as
+    visible graph edges, so they don't count for connectivity.
+    """
     connected: set[str] = set()
     for edge in graph.edges:
+        if edge.edge_type == EdgeType.HAS_SCHEMA:
+            continue
         connected.add(edge.src_id)
         connected.add(edge.dst_id)
     return connected
@@ -158,12 +164,16 @@ def render_graph(
         # Environment filter
         if (
             environment_filter
+            and node.environment_id
             and node.environment_id != environment_filter
         ):
             continue
 
         # Cluster filter
-        if cluster_filter and node.cluster_id != cluster_filter:
+        # Cluster filter: keep nodes in the selected cluster, plus
+        # nodes with no cluster_id (e.g. Flink jobs, environment-scoped
+        # resources) so cross-cluster edges remain visible.
+        if cluster_filter and node.cluster_id and node.cluster_id != cluster_filter:
             continue
 
         # Search filter
@@ -242,9 +252,28 @@ def render_graph_raw(
     # Pre-compute topics that have schemas
     topics_with_schemas = _get_topics_with_schemas(graph)
 
+    # When searching, find matching nodes then expand to their neighborhood
+    search_lower = search_query.strip().lower()
+    search_neighborhood: set[str] | None = None
+    if search_lower:
+        matched_ids: list[str] = []
+        for node in graph.nodes:
+            if node.node_type == NodeType.SCHEMA:
+                continue
+            if (
+                search_lower in node.display_name.lower()
+                or search_lower in node.qualified_name.lower()
+            ):
+                matched_ids.append(node.node_id)
+        # Expand each match to its N-hop neighborhood
+        search_neighborhood = set()
+        for mid in matched_ids:
+            search_neighborhood |= _collect_hop_neighborhood(
+                graph, mid, hops
+            )
+
     included_ids: set[str] = set()
     raw_nodes: list[dict[str, Any]] = []
-    search_lower = search_query.strip().lower()
 
     for node in graph.nodes:
         # Skip schema nodes — they are shown as info on topics
@@ -265,15 +294,17 @@ def render_graph_raw(
             continue
         if (
             environment_filter
+            and node.environment_id
             and node.environment_id != environment_filter
         ):
             continue
-        if cluster_filter and node.cluster_id != cluster_filter:
+        # Cluster filter: keep nodes in the selected cluster, plus
+        # nodes with no cluster_id (e.g. Flink jobs, environment-scoped
+        # resources) so cross-cluster edges remain visible.
+        if cluster_filter and node.cluster_id and node.cluster_id != cluster_filter:
             continue
-        if search_lower and (
-            search_lower not in node.display_name.lower()
-            and search_lower not in node.qualified_name.lower()
-        ):
+        # Search: show matched nodes + their neighborhood
+        if search_neighborhood is not None and node.node_id not in search_neighborhood:
             continue
 
         included_ids.add(node.node_id)
