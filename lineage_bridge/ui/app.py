@@ -23,6 +23,7 @@ from lineage_bridge.ui.styles import (
     NODE_COLORS,
     NODE_ICONS,
     NODE_TYPE_LABELS,
+    build_confluent_cloud_url,
 )
 
 # Suppress "coroutine was never awaited" warnings from Streamlit re-runs.
@@ -1508,9 +1509,17 @@ def _render_node_details(graph: LineageGraph):
         )
     if sel_node.cluster_id:
         st.markdown(f"**Cluster:** {sel_node.cluster_id}")
-    if sel_node.url:
+    # Generate Confluent Cloud deep link if not already set
+    cloud_url = sel_node.url or build_confluent_cloud_url(sel_node)
+    if cloud_url:
         st.markdown(
-            f"[Open in Confluent Cloud]({sel_node.url})"
+            f"<a href='{cloud_url}' target='_blank' "
+            f"style='display:inline-block;margin:6px 0 4px 0;"
+            f"padding:5px 12px;background:{ncolor};color:#fff;"
+            f"border-radius:6px;font-size:13px;"
+            f"text-decoration:none;font-weight:500;'>"
+            f"Open in Confluent Cloud &#x2197;</a>",
+            unsafe_allow_html=True,
         )
     if sel_node.tags:
         tag_html = " ".join(

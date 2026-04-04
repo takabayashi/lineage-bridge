@@ -26,11 +26,13 @@ class TableflowClient(ConfluentClient):
         api_secret: str,
         environment_id: str,
         *,
+        cluster_ids: list[str] | None = None,
         base_url: str = "https://api.confluent.cloud",
         timeout: float = 30.0,
     ) -> None:
         super().__init__(base_url, api_key, api_secret, timeout=timeout)
         self.environment_id = environment_id
+        self._cluster_ids = cluster_ids or []
 
     # ── helpers ─────────────────────────────────────────────────────────
 
@@ -49,33 +51,40 @@ class TableflowClient(ConfluentClient):
         nodes: list[LineageNode] = []
         edges: list[LineageEdge] = []
 
-        # 1. Tableflow topics -------------------------------------------
-        tf_topics = await self._list_tableflow_topics()
+        # 1. Tableflow topics (must query per cluster) --------------------
+        tf_topics: list[dict[str, Any]] = []
+        for cluster_id in self._cluster_ids:
+            cluster_topics = await self._list_tableflow_topics(cluster_id)
+            tf_topics.extend(cluster_topics)
+
         if not tf_topics:
             logger.info("No Tableflow topics in environment %s", self.environment_id)
             return nodes, edges
 
-        # 2. Catalog integrations (UC / Glue) ----------------------------
-        catalog_integrations = await self._list_catalog_integrations()
-        # Index by cluster ID for lookup.
+        # 2. Catalog integrations (UC / Glue) per cluster -----------------
         ci_by_cluster: dict[str, dict[str, Any]] = {}
-        for ci in catalog_integrations:
-            ci_spec = ci.get("spec", {})
-            ci_cluster = ci_spec.get("kafka_cluster", {}).get("id", "")
-            if ci_cluster:
-                ci_by_cluster[ci_cluster] = ci
+        for cluster_id in self._cluster_ids:
+            integrations = await self._list_catalog_integrations(cluster_id)
+            for ci in integrations:
+                ci_spec = ci.get("spec", {})
+                ci_cluster = ci_spec.get("kafka_cluster", {}).get("id", "")
+                if ci_cluster:
+                    ci_by_cluster[ci_cluster] = ci
 
         for tf in tf_topics:
             spec = tf.get("spec", {})
             status = tf.get("status", {})
-            topic_name = spec.get("topic_name", "")
+            # API uses "display_name" for the topic name
+            topic_name = spec.get("display_name") or spec.get("topic_name", "")
             cluster_id = spec.get("kafka_cluster", {}).get("id", "")
             if not topic_name or not cluster_id:
                 continue
 
             table_formats = spec.get("table_formats", [])
             storage = spec.get("storage", {})
-            storage_location = status.get("storage_location", "")
+            storage_kind = storage.get("kind", "")
+            table_path = storage.get("table_path", "")
+            phase = status.get("phase", "")
 
             tf_id = self._tf_node_id(topic_name, cluster_id)
 
@@ -91,10 +100,10 @@ class TableflowClient(ConfluentClient):
                     cluster_id=cluster_id,
                     attributes={
                         "table_formats": table_formats,
-                        "storage_provider": storage.get("provider"),
-                        "bucket_name": storage.get("bucket_name"),
-                        "storage_location": storage_location,
-                        "phase": status.get("phase"),
+                        "storage_kind": storage_kind,
+                        "table_path": table_path,
+                        "phase": phase,
+                        "suspended": spec.get("suspended", False),
                     },
                 )
             )
@@ -205,31 +214,38 @@ class TableflowClient(ConfluentClient):
 
     # ── raw API calls ───────────────────────────────────────────────────
 
-    async def _list_tableflow_topics(self) -> list[dict[str, Any]]:
+    async def _list_tableflow_topics(self, cluster_id: str) -> list[dict[str, Any]]:
         try:
             return await self.paginate(
                 "/tableflow/v1/tableflow-topics",
-                params={"environment": self.environment_id},
+                params={
+                    "environment": self.environment_id,
+                    "spec.kafka_cluster": cluster_id,
+                },
                 page_size=10,
             )
         except Exception:
-            # 400 typically means Tableflow is not enabled in this environment
             logger.debug(
-                "Tableflow topics unavailable for %s (not enabled?)",
+                "Tableflow topics unavailable for %s/%s",
                 self.environment_id,
+                cluster_id,
             )
             return []
 
-    async def _list_catalog_integrations(self) -> list[dict[str, Any]]:
+    async def _list_catalog_integrations(self, cluster_id: str) -> list[dict[str, Any]]:
         try:
             return await self.paginate(
                 "/tableflow/v1/catalog-integrations",
-                params={"environment": self.environment_id},
+                params={
+                    "environment": self.environment_id,
+                    "spec.kafka_cluster": cluster_id,
+                },
                 page_size=10,
             )
         except Exception:
             logger.debug(
-                "Catalog integrations unavailable for %s",
+                "Catalog integrations unavailable for %s/%s",
                 self.environment_id,
+                cluster_id,
             )
             return []

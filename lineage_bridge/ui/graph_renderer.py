@@ -14,50 +14,122 @@ from lineage_bridge.models.graph import (
 )
 from lineage_bridge.ui.styles import (
     EDGE_TYPE_LABELS,
+    NODE_COLORS,
     NODE_TYPE_LABELS,
     TOPIC_WITH_SCHEMA_ICON,
+    build_confluent_cloud_url,
     build_edge_vis_props,
     build_node_vis_props,
 )
 
 
 def _build_tooltip(node: LineageNode) -> str:
-    """Build a plain-text tooltip for a node (vis.js native tooltip)."""
-    label = NODE_TYPE_LABELS.get(
-        node.node_type, node.node_type.value
-    )
-    parts = [
-        node.display_name,
-        f"Type: {label}",
-        f"Name: {node.qualified_name}",
-    ]
+    """Build an HTML tooltip card for a node.
+
+    The vis.js component converts HTML strings (starting with ``<``)
+    to DOM elements so they render as rich tooltips.
+    """
+    label = NODE_TYPE_LABELS.get(node.node_type, node.node_type.value)
+    color = NODE_COLORS.get(node.node_type, "#757575")
+
+    # Location
+    loc_parts: list[str] = []
     if node.environment_id:
-        parts.append(f"Env: {node.environment_id}")
+        loc_parts.append(node.environment_id)
     if node.cluster_id:
-        parts.append(f"Cluster: {node.cluster_id}")
+        loc_parts.append(node.cluster_id)
+    loc_html = ""
+    if loc_parts:
+        loc_html = (
+            f"<div style='font-size:11px;color:#888;margin-top:4px'>"
+            f"{' / '.join(loc_parts)}</div>"
+        )
+
+    # Tags
+    tags_html = ""
     if node.tags:
-        parts.append(f"Tags: {', '.join(node.tags)}")
-    # Show key metrics if present
+        pills = " ".join(
+            f"<span style='display:inline-block;background:{color}20;"
+            f"color:{color};padding:1px 6px;border-radius:3px;"
+            f"font-size:10px;margin-right:2px'>{t}</span>"
+            for t in node.tags
+        )
+        tags_html = f"<div style='margin-top:5px'>{pills}</div>"
+
+    # Metrics
+    metrics_html = ""
+    metric_parts: list[str] = []
     if node.attributes.get("metrics_active") is not None:
         active = node.attributes["metrics_active"]
-        parts.append(f"Active: {'Yes' if active else 'No'}")
-    if node.attributes.get("metrics_received_records"):
-        val = node.attributes["metrics_received_records"]
-        parts.append(f"Records in: {val:,.0f}")
-    if node.attributes.get("metrics_sent_records"):
-        val = node.attributes["metrics_sent_records"]
-        parts.append(f"Records out: {val:,.0f}")
-    # Other attributes
-    other_attrs = {
-        k: v
-        for k, v in node.attributes.items()
-        if not k.startswith("metrics_")
-    }
-    if other_attrs:
-        parts.append("---")
-        for k, v in other_attrs.items():
-            parts.append(f"  {k}: {v}")
-    return "\n".join(parts)
+        dot = "#4CAF50" if active else "#F44336"
+        metric_parts.append(
+            f"<span style='display:inline-block;width:7px;height:7px;"
+            f"border-radius:50%;background:{dot};margin-right:3px;"
+            f"vertical-align:middle'></span>"
+            f"{'Active' if active else 'Inactive'}"
+        )
+    for mkey, mlabel in [
+        ("metrics_received_records", "In"),
+        ("metrics_sent_records", "Out"),
+    ]:
+        val = node.attributes.get(mkey)
+        if val:
+            metric_parts.append(f"{mlabel}: {val:,.0f}")
+    if metric_parts:
+        metrics_html = (
+            f"<div style='margin-top:5px;padding:3px 7px;"
+            f"background:#f5f5f5;border-radius:4px;"
+            f"font-size:11px;color:#555'>"
+            f"{' &middot; '.join(metric_parts)}</div>"
+        )
+
+    # Key attributes
+    attrs_html = ""
+    attr_lines: list[str] = []
+    for key in ("phase", "connector_class", "storage_kind", "table_formats"):
+        val = node.attributes.get(key)
+        if val:
+            s = str(val)
+            if len(s) > 60:
+                s = s[:57] + "..."
+            attr_lines.append(
+                f"<span style='color:#999'>{key}:</span> {s}"
+            )
+    # SQL snippet (truncated)
+    sql = node.attributes.get("sql")
+    if sql:
+        s = str(sql).replace("\n", " ").strip()
+        if len(s) > 80:
+            s = s[:77] + "..."
+        attr_lines.append(
+            f"<span style='color:#999'>sql:</span> "
+            f"<code style='font-size:10px'>{s}</code>"
+        )
+    if attr_lines:
+        attrs_html = (
+            "<div style='margin-top:5px;font-size:11px;"
+            "color:#444;line-height:1.5'>"
+            + "<br>".join(attr_lines)
+            + "</div>"
+        )
+
+    return (
+        f"<div style='font-family:Inter,system-ui,sans-serif;"
+        f"max-width:320px;padding:10px 12px;"
+        f"border-left:4px solid {color};"
+        f"background:#fff;border-radius:0 6px 6px 0;"
+        f"box-shadow:0 2px 8px rgba(0,0,0,0.18)'>"
+        f"<div style='font-size:10px;font-weight:700;"
+        f"text-transform:uppercase;letter-spacing:0.5px;"
+        f"color:{color}'>{label}</div>"
+        f"<div style='font-size:14px;font-weight:700;"
+        f"color:#1a1a2e;margin-top:2px'>{node.display_name}</div>"
+        f"<div style='font-size:11px;color:#777;"
+        f"font-family:monospace;margin-top:2px;"
+        f"word-break:break-all'>{node.qualified_name}</div>"
+        f"{loc_html}{tags_html}{metrics_html}{attrs_html}"
+        f"</div>"
+    )
 
 
 def _collect_hop_neighborhood(
@@ -185,6 +257,10 @@ def render_graph(
 
         included_ids.add(node.node_id)
 
+        # Populate Confluent Cloud URL if not already set
+        if not node.url:
+            node.url = build_confluent_cloud_url(node)
+
         vis_props = build_node_vis_props(node.node_type)
         agraph_nodes.append(
             Node(
@@ -308,6 +384,10 @@ def render_graph_raw(
             continue
 
         included_ids.add(node.node_id)
+
+        # Populate Confluent Cloud URL if not already set
+        if not node.url:
+            node.url = build_confluent_cloud_url(node)
 
         vis_props = build_node_vis_props(node.node_type)
 

@@ -419,10 +419,12 @@ async def _extract_environment(
         on_progress("Phase 4/4", "Extracting Tableflow & catalog integrations")
         tf_key = settings.tableflow_api_key or settings.confluent_cloud_api_key
         tf_secret = settings.tableflow_api_secret or settings.confluent_cloud_api_secret
+        tf_cluster_ids = [c.get("id", "") for c in all_clusters if c.get("id")]
         tf_client = TableflowClient(
             api_key=tf_key,
             api_secret=tf_secret,
             environment_id=env_id,
+            cluster_ids=tf_cluster_ids,
         )
         async with tf_client:
             nodes, edges = await _safe_extract("Tableflow", tf_client.extract(), on_progress)

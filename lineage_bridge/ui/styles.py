@@ -286,6 +286,58 @@ def build_node_vis_props(ntype: NodeType) -> dict[str, Any]:
     }
 
 
+def build_confluent_cloud_url(node: "LineageNode") -> str | None:
+    """Build a Confluent Cloud console URL for the given node.
+
+    Returns None if the node type is not supported or required IDs are missing.
+    """
+    from lineage_bridge.models.graph import LineageNode, NodeType
+
+    base = "https://confluent.cloud/environments"
+    env = node.environment_id
+    cluster = node.cluster_id
+    name = node.qualified_name
+
+    if not env:
+        return None
+
+    ntype = node.node_type
+
+    if ntype == NodeType.KAFKA_TOPIC:
+        if not cluster:
+            return None
+        return f"{base}/{env}/clusters/{cluster}/topics/{name}/overview"
+
+    if ntype == NodeType.CONNECTOR:
+        if not cluster:
+            return None
+        return f"{base}/{env}/clusters/{cluster}/connectors/{name}/overview"
+
+    if ntype == NodeType.FLINK_JOB:
+        return f"{base}/{env}/flink/compute-pools"
+
+    if ntype == NodeType.KSQLDB_QUERY:
+        if not cluster:
+            return None
+        return f"{base}/{env}/clusters/{cluster}/ksqldb"
+
+    if ntype == NodeType.SCHEMA:
+        return f"{base}/{env}/schema-registry/schemas"
+
+    if ntype == NodeType.TABLEFLOW_TABLE:
+        # Tableflow surfaces under the topic's cloud tab
+        if not cluster:
+            return None
+        # qualified_name is "cluster_id.topic_name", extract the topic part
+        topic_name = name.split(".", 1)[-1] if "." in name else name
+        return (
+            f"{base}/{env}/clusters/{cluster}"
+            f"/topics/{topic_name}/overview?tab=cloud"
+        )
+
+    return None
+
+
 def build_edge_vis_props(etype: EdgeType) -> dict[str, Any]:
     """Return vis.js edge properties for a given edge type."""
     dashes = EDGE_DASHES.get(etype, False)

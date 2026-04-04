@@ -126,6 +126,15 @@ function initGraph(args) {
 
   Streamlit.setFrameHeight(graphHeight + 42);
 
+  // Convert HTML title strings to DOM elements for rich tooltips
+  graphData.nodes.forEach(function(n) {
+    if (n.title && n.title.charAt(0) === '<') {
+      var el = document.createElement("div");
+      el.innerHTML = n.title;
+      n.title = el;
+    }
+  });
+
   var nodes = new vis.DataSet(graphData.nodes);
   var edges = new vis.DataSet(graphData.edges);
 
