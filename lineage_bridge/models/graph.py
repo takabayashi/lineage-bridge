@@ -57,7 +57,9 @@ class LineageNode(BaseModel):
     qualified_name: str
     display_name: str
     environment_id: str | None = None
+    environment_name: str | None = None
     cluster_id: str | None = None
+    cluster_name: str | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
     tags: list[str] = Field(default_factory=list)
     url: str | None = None
@@ -232,6 +234,27 @@ class LineageGraph:
     @property
     def edge_count(self) -> int:
         return len(self._edges)
+
+    @property
+    def pipeline_count(self) -> int:
+        """Number of data-flow pipelines (connected components with ≥1 edge).
+
+        Builds a subgraph excluding HAS_SCHEMA edges so that schemas
+        don't inflate the count, then counts only components that have
+        at least one edge (i.e. actual data flow, not isolated nodes).
+        """
+        if not self._graph:
+            return 0
+        # Build subgraph without HAS_SCHEMA edges
+        flow_edges = [
+            (u, v) for u, v, d in self._graph.edges(data=True)
+            if d.get("edge_type") != EdgeType.HAS_SCHEMA.value
+        ]
+        if not flow_edges:
+            return 0
+        subgraph = nx.DiGraph()
+        subgraph.add_edges_from(flow_edges)
+        return nx.number_weakly_connected_components(subgraph)
 
     # ── Serialization ───────────────────────────────────────────────────
 

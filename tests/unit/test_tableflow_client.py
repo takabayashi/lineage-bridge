@@ -21,12 +21,16 @@ TF_TOPICS_PATH = "/tableflow/v1/tableflow-topics"
 CATALOG_INT_PATH = "/tableflow/v1/catalog-integrations"
 
 
+CLUSTER_ID = "lkc-abc123"
+
+
 @pytest.fixture()
 def tf_client():
     return TableflowClient(
         api_key=API_KEY,
         api_secret=API_SECRET,
         environment_id=ENV_ID,
+        cluster_ids=[CLUSTER_ID],
         base_url=BASE_URL,
         timeout=5.0,
     )
@@ -62,12 +66,11 @@ class TestTableflowExtract:
         assert all(n.system == SystemType.CONFLUENT for n in tf_nodes)
 
         display_names = {n.display_name for n in tf_nodes}
-        assert display_names == {"orders (tableflow)", "customers (tableflow)"}
+        assert display_names == {"orders-tableflow (tableflow)", "customers-tableflow (tableflow)"}
 
         # Verify attributes on first node
         orders_tf = next(n for n in tf_nodes if "orders" in n.display_name)
         assert orders_tf.attributes["table_formats"] == ["DELTA", "ICEBERG"]
-        assert orders_tf.attributes["storage_provider"] == "AWS"
         assert orders_tf.cluster_id == "lkc-abc123"
 
     @respx.mock

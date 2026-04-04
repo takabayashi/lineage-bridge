@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -20,6 +21,41 @@ logger = logging.getLogger(__name__)
 _INTERNAL_PREFIXES = ("_", "confluent")
 
 
+def _list_offsets_via_protocol(
+    bootstrap_servers: str,
+    api_key: str,
+    api_secret: str,
+    group_id: str,
+) -> set[str]:
+    """Use the Kafka protocol to discover which topics a consumer group has offsets for.
+
+    Returns a set of topic names. Runs synchronously (Kafka protocol is blocking).
+    """
+    try:
+        from confluent_kafka import ConsumerGroupTopicPartitions
+        from confluent_kafka.admin import AdminClient
+
+        admin = AdminClient({
+            "bootstrap.servers": bootstrap_servers,
+            "security.protocol": "SASL_SSL",
+            "sasl.mechanisms": "PLAIN",
+            "sasl.username": api_key,
+            "sasl.password": api_secret,
+        })
+        futures = admin.list_consumer_group_offsets(
+            [ConsumerGroupTopicPartitions(group_id)]
+        )
+        for gid, fut in futures.items():
+            result = fut.result(timeout=10)
+            return {tp.topic for tp in result.topic_partitions if tp.topic}
+    except Exception:
+        logger.debug(
+            "Kafka protocol offset lookup failed for group %s",
+            group_id, exc_info=True,
+        )
+    return set()
+
+
 class KafkaAdminClient(ConfluentClient):
     """Extracts topic and consumer-group lineage from the Kafka REST v3 API."""
 
@@ -31,11 +67,15 @@ class KafkaAdminClient(ConfluentClient):
         cluster_id: str,
         environment_id: str,
         *,
+        bootstrap_servers: str | None = None,
         timeout: float = 30.0,
     ) -> None:
         super().__init__(base_url, api_key, api_secret, timeout=timeout)
         self.cluster_id = cluster_id
         self.environment_id = environment_id
+        self._bootstrap_servers = bootstrap_servers
+        self._api_key = api_key
+        self._api_secret = api_secret
 
     # ── helpers ─────────────────────────────────────────────────────────
 
@@ -112,9 +152,14 @@ class KafkaAdminClient(ConfluentClient):
             # Fetch lag to discover group→topic edges
             try:
                 lag_items = await self._get_consumer_lag(gid)
-            except Exception:
-                # 404 is expected for inactive consumer groups (no lags)
-                logger.debug("No lag data for group %s (may be inactive)", gid)
+                logger.info(
+                    "Lag endpoint returned %d items for group %s",
+                    len(lag_items), gid,
+                )
+            except Exception as exc:
+                logger.info(
+                    "Lag endpoint failed for group %s: %s", gid, exc,
+                )
                 lag_items = []
 
             seen_topics: set[str] = set()
@@ -139,6 +184,47 @@ class KafkaAdminClient(ConfluentClient):
                             ),
                         },
                     )
+                )
+
+            # Fallback: if lag returned nothing, use Kafka protocol to
+            # discover committed offsets (works when lag endpoint returns 404).
+            if not seen_topics and self._bootstrap_servers:
+                logger.info(
+                    "Falling back to Kafka protocol for group %s "
+                    "(bootstrap=%s)", gid, self._bootstrap_servers,
+                )
+                offset_topics = await asyncio.to_thread(
+                    _list_offsets_via_protocol,
+                    self._bootstrap_servers,
+                    self._api_key,
+                    self._api_secret,
+                    gid,
+                )
+                logger.info(
+                    "Protocol fallback for group %s returned: %s",
+                    gid, offset_topics,
+                )
+                for tname in offset_topics:
+                    if tname not in topic_names:
+                        logger.info(
+                            "Skipping offset topic %s (not in topic_names)",
+                            tname,
+                        )
+                        continue
+                    edges.append(
+                        LineageEdge(
+                            src_id=self._group_node_id(gid),
+                            dst_id=self._topic_node_id(tname),
+                            edge_type=EdgeType.MEMBER_OF,
+                        )
+                    )
+                    logger.info(
+                        "Added MEMBER_OF edge: %s -> %s", gid, tname,
+                    )
+            elif not seen_topics:
+                logger.info(
+                    "No lag data and no bootstrap_servers for group %s "
+                    "— cannot discover topic membership", gid,
                 )
 
         logger.info(

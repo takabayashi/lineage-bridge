@@ -26,15 +26,28 @@ _IDENT = r"(?:`[^`]+`(?:\.`[^`]+`)*|\"[^\"]+\"(?:\.\"[^\"]+\")*|\S+)"
 # INSERT INTO <table>
 _INSERT_INTO_RE = re.compile(rf"\bINSERT\s+INTO\s+({_IDENT})", re.IGNORECASE)
 
-# CREATE TABLE <name> AS SELECT ... (CTAS — the table is the sink)
+# CREATE TABLE <name> [WITH (...)] AS SELECT ... (CTAS — the table is the sink)
 _CTAS_RE = re.compile(
-    rf"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?({_IDENT})\s+AS\b",
+    rf"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?({_IDENT})"
+    r"(?:\s+WITH\s*\([^)]*\))?"     # optional WITH (…) block
+    r"\s+AS\b",
     re.IGNORECASE | re.DOTALL,
 )
 
 # FROM <table>  /  JOIN <table>
-_FROM_RE = re.compile(rf"\bFROM\s+({_IDENT})", re.IGNORECASE)
+# Negative lookahead excludes windowing functions (handled separately).
+_FROM_RE = re.compile(
+    rf"\bFROM\s+(?!(?:TUMBLE|HOP|CUMULATE|SESSION)\b)({_IDENT})", re.IGNORECASE
+)
 _JOIN_RE = re.compile(rf"\bJOIN\s+({_IDENT})", re.IGNORECASE)
+
+# Flink windowing: TUMBLE(TABLE <name>, …), HOP(TABLE <name>, …), etc.
+# Use a tighter ident pattern that stops at comma/paren.
+_WINDOW_IDENT = r"(?:`[^`]+`(?:\.`[^`]+`)*|\"[^\"]+\"(?:\.\"[^\"]+\")*|[^\s,()]+)"
+_WINDOW_TABLE_RE = re.compile(
+    rf"\b(?:TUMBLE|HOP|CUMULATE|SESSION)\s*\(\s*TABLE\s+({_WINDOW_IDENT})",
+    re.IGNORECASE,
+)
 
 # CREATE TABLE <name> ... WITH ( 'kafka.topic' = '<topic>' ) — pure DDL (no AS)
 _CREATE_TABLE_RE = re.compile(
@@ -158,6 +171,11 @@ class FlinkClient:
                 table_topic_map: dict[str, str] = {}
                 for stmt in statements:
                     sql = stmt.get("spec", {}).get("statement", "")
+                    # Strip leading SET commands
+                    sql = re.sub(
+                        r"^(\s*SET\s+'[^']*'\s+'[^']*'\s*;\s*)+",
+                        "", sql, flags=re.IGNORECASE,
+                    ).strip()
                     ct_match = _CREATE_TABLE_RE.search(sql)
                     if ct_match:
                         tbl_name = _last_segment(_extract_name(ct_match))
@@ -170,16 +188,35 @@ class FlinkClient:
 
                 logger.debug("Flink table→topic map: %s", table_topic_map)
 
+                logger.info(
+                    "Flink listed %d statements in environment %s",
+                    len(statements),
+                    self.environment_id,
+                )
+
                 # Second pass: process DML and CTAS statements
                 for stmt in statements:
+                    stmt_name = stmt.get("name", "")
                     phase = stmt.get("status", {}).get("phase", "")
-                    if phase.upper() not in ("RUNNING", "COMPLETED"):
+                    if phase.upper() not in (
+                        "RUNNING", "COMPLETED", "STOPPED", "SUSPENDED",
+                    ):
+                        logger.debug(
+                            "Flink skip %s: phase=%s",
+                            stmt_name, phase,
+                        )
                         continue
                     sql = stmt.get("spec", {}).get("statement", "").strip()
+                    # Strip leading SET commands (workspace UI prepends them)
+                    sql = re.sub(
+                        r"^(\s*SET\s+'[^']*'\s+'[^']*'\s*;\s*)+",
+                        "", sql, flags=re.IGNORECASE,
+                    ).strip()
                     # Skip pure DDL (CREATE TABLE without AS SELECT)
                     is_create = _CREATE_TABLE_RE.match(sql)
                     is_ctas = _CTAS_RE.search(sql)
                     if is_create and not is_ctas:
+                        logger.debug("Flink skip %s: pure DDL", stmt_name)
                         continue
                     # Skip non-lineage statements (SELECT, SHOW, DESC, etc.)
                     sql_upper = sql.upper().lstrip()
@@ -187,6 +224,10 @@ class FlinkClient:
                         sql_upper.startswith("INSERT")
                         or sql_upper.startswith("CREATE TABLE")
                     ):
+                        logger.debug(
+                            "Flink skip %s: not INSERT/CREATE (%s…)",
+                            stmt_name, sql_upper[:30],
+                        )
                         continue
                     s_nodes, s_edges = self._process_statement(stmt, table_topic_map)
                     nodes.extend(s_nodes)
@@ -326,11 +367,18 @@ class FlinkClient:
         for m in _JOIN_RE.finditer(sql):
             sources.add(_last_segment(_extract_name(m)))
 
+        # Flink windowing: TUMBLE(TABLE <name>, ...) etc.
+        for m in _WINDOW_TABLE_RE.finditer(sql):
+            sources.add(_last_segment(_extract_name(m)))
+
         # Remove sinks from sources (a table appearing in both is primarily a sink).
         sources -= sinks
 
-        # Filter out SQL noise keywords that might be captured.
-        noise = {"select", "where", "group", "having", "order", "limit", "values", "set"}
+        # Filter out SQL noise keywords and windowing function names.
+        noise = {
+            "select", "where", "group", "having", "order", "limit",
+            "values", "set", "tumble", "hop", "cumulate", "session",
+        }
         sources = {s for s in sources if s.lower() not in noise}
         sinks = {s for s in sinks if s.lower() not in noise}
 

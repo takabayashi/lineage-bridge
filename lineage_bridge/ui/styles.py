@@ -214,7 +214,10 @@ NODE_ICONS: dict[NodeType, str] = _build_node_icons()
 
 
 def _make_icon_with_badge(
-    color: str, symbol_path: str, badge_color: str
+    color: str,
+    symbol_path: str,
+    badge_color: str,
+    badge_text: str = "S",
 ) -> str:
     """Build a 64x64 SVG with a small badge in the bottom-right corner."""
     return (
@@ -227,11 +230,10 @@ def _make_icon_with_badge(
         # Badge circle in bottom-right
         f'<circle cx="52" cy="52" r="11" fill="{badge_color}" '
         'stroke="#fff" stroke-width="2"/>'
-        # "S" letter in badge
-        '<text x="52" y="56" text-anchor="middle" '
-        'font-size="13" font-weight="bold" '
-        'font-family="Inter,system-ui,sans-serif" '
-        'fill="#fff">S</text>'
+        f'<text x="52" y="56" text-anchor="middle" '
+        f'font-size="13" font-weight="bold" '
+        f'font-family="Inter,system-ui,sans-serif" '
+        f'fill="#fff">{badge_text}</text>'
         "</svg>"
     )
 
@@ -246,6 +248,58 @@ def build_topic_with_schema_icon() -> str:
 
 
 TOPIC_WITH_SCHEMA_ICON: str = build_topic_with_schema_icon()
+
+
+# ── Status badge colors & labels ─────────────────────────────────────
+# Maps status/phase/state values to (badge_color, badge_letter).
+STATUS_BADGE_MAP: dict[str, tuple[str, str]] = {
+    # Running / Active states — green
+    "RUNNING": ("#4CAF50", "\u25B6"),       # ▶
+    "ACTIVE": ("#4CAF50", "\u25B6"),        # ▶
+    "STABLE": ("#4CAF50", "\u25B6"),        # ▶
+    "Stable": ("#4CAF50", "\u25B6"),        # ▶
+    # Completed — blue
+    "COMPLETED": ("#1976D2", "\u2713"),     # ✓
+    # Paused / Degraded — amber
+    "PAUSED": ("#FF9800", "\u23F8"),        # ⏸ (approx)
+    "DEGRADED": ("#FF9800", "!"),
+    "REBALANCING": ("#FF9800", "~"),
+    # Failed / Error — red
+    "FAILED": ("#F44336", "\u2717"),        # ✗
+    "ERROR": ("#F44336", "\u2717"),         # ✗
+    "STOPPED": ("#F44336", "\u25A0"),       # ■
+    # Suspended (tableflow) — red
+    "SUSPENDED": ("#F44336", "\u25A0"),     # ■
+    # Unknown / other — gray
+    "UNKNOWN": ("#9E9E9E", "?"),
+}
+
+
+# Cache for status-badged icons: (node_type, status) -> data URI
+_status_icon_cache: dict[tuple[NodeType, str], str] = {}
+
+
+def build_status_badge_icon(ntype: NodeType, status: str) -> str | None:
+    """Return a data URI for a node icon with a status badge.
+
+    Returns None if the status is not in STATUS_BADGE_MAP.
+    """
+    status_upper = status.upper() if status else ""
+    badge_info = STATUS_BADGE_MAP.get(status, STATUS_BADGE_MAP.get(status_upper))
+    if not badge_info:
+        return None
+
+    cache_key = (ntype, status_upper)
+    if cache_key in _status_icon_cache:
+        return _status_icon_cache[cache_key]
+
+    color = NODE_COLORS.get(ntype, "#757575")
+    symbol = _SYMBOLS.get(ntype, "")
+    badge_color, badge_text = badge_info
+    svg = _make_icon_with_badge(color, symbol, badge_color, badge_text)
+    uri = _svg_to_data_uri(svg)
+    _status_icon_cache[cache_key] = uri
+    return uri
 
 
 # ── Legend emoji/unicode markers ──────────────────────────────────────

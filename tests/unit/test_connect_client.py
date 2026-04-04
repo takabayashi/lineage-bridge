@@ -282,3 +282,40 @@ async def test_extract_handles_failed_connector_fetch(no_sleep):
     connector_nodes = [n for n in nodes if n.node_type == NodeType.CONNECTOR]
     assert len(connector_nodes) == 1
     assert connector_nodes[0].qualified_name == "good-connector"
+
+
+@respx.mock
+async def test_extract_expanded_response_format(no_sleep):
+    """The expand=info,status format wraps each connector in {info, status}."""
+    expanded = {
+        "postgres-source": {
+            "info": {
+                "name": "postgres-source",
+                "config": {
+                    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+                    "database.hostname": "db.example.com",
+                    "database.dbname": "mydb",
+                    "topic.prefix": "cdc",
+                },
+                "type": "source",
+            },
+            "status": {
+                "name": "postgres-source",
+                "connector": {"state": "RUNNING", "worker_id": "w1"},
+                "tasks": [],
+            },
+        }
+    }
+    respx.get(f"{BASE_URL}{CONNECTORS_PATH}").mock(
+        return_value=httpx.Response(200, json=expanded),
+    )
+
+    async with _make_client() as client:
+        nodes, edges = await client.extract()
+
+    connector_nodes = [n for n in nodes if n.node_type == NodeType.CONNECTOR]
+    assert len(connector_nodes) == 1
+    conn = connector_nodes[0]
+    assert conn.qualified_name == "postgres-source"
+    assert conn.attributes["direction"] == "source"
+    assert conn.attributes["state"] == "RUNNING"

@@ -126,6 +126,15 @@ function initGraph(args) {
 
   Streamlit.setFrameHeight(graphHeight + 42);
 
+  // ── Restore saved positions from sessionStorage ────────────────
+  var storageKey = "lb_node_positions";
+  if (configJson._clearPositions) {
+    sessionStorage.removeItem(storageKey);
+  }
+  var savedRaw = sessionStorage.getItem(storageKey);
+  var savedPositions = null;
+  try { savedPositions = savedRaw ? JSON.parse(savedRaw) : null; } catch(e) {}
+
   // Convert HTML title strings to DOM elements for rich tooltips
   graphData.nodes.forEach(function(n) {
     if (n.title && n.title.charAt(0) === '<') {
@@ -133,10 +142,18 @@ function initGraph(args) {
       el.innerHTML = n.title;
       n.title = el;
     }
+    // Apply saved positions (override Python-computed layout)
+    if (savedPositions && savedPositions[n.id]) {
+      n.x = savedPositions[n.id].x;
+      n.y = savedPositions[n.id].y;
+    }
   });
 
   var nodes = new vis.DataSet(graphData.nodes);
   var edges = new vis.DataSet(graphData.edges);
+
+  var edgeConfig = configJson.edges || {};
+  edgeConfig.font = edgeConfig.font || { size: 9, color: "#888", strokeWidth: 2, strokeColor: "#fff", align: "top" };
 
   var options = {
     layout: configJson.layout || {},
@@ -146,12 +163,11 @@ function initGraph(args) {
       tooltipDelay: 150,
       zoomView: true,
       dragView: true,
+      dragNodes: true,
       navigationButtons: false,
       keyboard: { enabled: true }
     },
-    edges: {
-      font: { size: 9, color: "#888", strokeWidth: 2, strokeColor: "#fff", align: "top" }
-    }
+    edges: edgeConfig
   };
 
   if (network) {
@@ -165,7 +181,15 @@ function initGraph(args) {
     overlay.height = graphHeight;
   }, 200);
 
-  // ── Node click → send to Streamlit ─────────────────────────────
+  // ── Persist positions on drag end (browser-side only) ──────────
+  network.on("dragEnd", function(params) {
+    if (params.nodes.length > 0) {
+      var positions = network.getPositions();
+      sessionStorage.setItem(storageKey, JSON.stringify(positions));
+    }
+  });
+
+  // ── Node click → send to Streamlit ────────────────────────────
   network.on("click", function(params) {
     if (params.nodes.length > 0) {
       Streamlit.setComponentValue(params.nodes[0]);

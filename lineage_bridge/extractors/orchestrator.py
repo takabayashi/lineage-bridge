@@ -252,12 +252,20 @@ async def _extract_environment(
             continue
 
         kafka_key, kafka_secret = settings.get_cluster_credentials(cluster_id)
+        bootstrap = spec.get("kafka_bootstrap_endpoint", "")
+        if bootstrap and bootstrap.startswith("SASL_SSL://"):
+            bootstrap = bootstrap[len("SASL_SSL://"):]
+        logger.info(
+            "KafkaAdminClient bootstrap_servers=%s for cluster %s",
+            bootstrap or None, cluster_id,
+        )
         kafka_client = KafkaAdminClient(
             base_url=rest_endpoint,
             api_key=kafka_key,
             api_secret=kafka_secret,
             cluster_id=cluster_id,
             environment_id=env_id,
+            bootstrap_servers=bootstrap or None,
         )
         async with kafka_client:
             nodes, edges = await _safe_extract(
@@ -452,6 +460,27 @@ async def _extract_environment(
                         exc,
                     )
             on_progress("Metrics", f"Enriched {total_enriched} nodes with metrics")
+
+    # ── Stamp environment / cluster display names on all nodes ──────────
+    env_name: str | None = None
+    try:
+        env_data = await cloud.get(f"/org/v2/environments/{env_id}")
+        env_name = env_data.get("display_name")
+    except Exception:
+        logger.debug("Could not fetch environment name for %s", env_id)
+
+    cluster_names: dict[str, str] = {}
+    for c in all_clusters:
+        cid = c.get("id", "")
+        cname = c.get("spec", {}).get("display_name", "")
+        if cid and cname:
+            cluster_names[cid] = cname
+
+    for node in graph.nodes:
+        if node.environment_id == env_id and not node.environment_name:
+            node.environment_name = env_name
+        if node.cluster_id and not node.cluster_name:
+            node.cluster_name = cluster_names.get(node.cluster_id)
 
     on_progress(
         "Environment done",

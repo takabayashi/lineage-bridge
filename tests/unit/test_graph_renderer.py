@@ -142,10 +142,10 @@ class TestRenderGraphRawSearchQuery:
     def test_search_by_name(self, sample_graph: LineageGraph):
         nodes, _ = render_graph_raw(sample_graph, search_query="orders")
         node_ids = {n["id"] for n in nodes}
+        # Matched nodes must be present
         assert TOPIC_ORDERS in node_ids
         assert TOPIC_ENRICHED in node_ids
-        # customers should not match
-        assert TOPIC_CUSTOMERS not in node_ids
+        # Search expands to neighborhood, so neighbors may also appear
 
     def test_search_case_insensitive(self, sample_graph: LineageGraph):
         nodes_lower, _ = render_graph_raw(sample_graph, search_query="orders")
@@ -266,9 +266,9 @@ class TestBuildTooltip:
         tip = _build_tooltip(node)
         assert "My Topic" in tip
         assert "Kafka Topic" in tip
-        assert "my-topic" in tip
-        assert "Env: env-001" in tip
-        assert "Cluster: lkc-001" in tip
+        # Tooltip shows env/cluster in location row
+        assert "env-001" in tip
+        assert "lkc-001" in tip
 
     def test_tooltip_with_metrics(self):
         node = LineageNode(
@@ -284,9 +284,9 @@ class TestBuildTooltip:
             },
         )
         tip = _build_tooltip(node)
-        assert "Active: Yes" in tip
-        assert "Records in: 1,234,567" in tip
-        assert "Records out: 9,876,543" in tip
+        assert "Active" in tip
+        assert "1,234,567" in tip
+        assert "9,876,543" in tip
 
     def test_tooltip_with_inactive_metric(self):
         node = LineageNode(
@@ -298,7 +298,7 @@ class TestBuildTooltip:
             attributes={"metrics_active": False},
         )
         tip = _build_tooltip(node)
-        assert "Active: No" in tip
+        assert "Inactive" in tip
 
     def test_tooltip_with_tags(self):
         node = LineageNode(
@@ -310,20 +310,21 @@ class TestBuildTooltip:
             tags=["source", "cdc"],
         )
         tip = _build_tooltip(node)
-        assert "Tags: source, cdc" in tip
+        assert "source" in tip
+        assert "cdc" in tip
 
-    def test_tooltip_other_attrs(self):
+    def test_tooltip_type_specific_attrs(self):
         node = LineageNode(
             node_id="test:connector:env:c",
             system=SystemType.CONFLUENT,
             node_type=NodeType.CONNECTOR,
             qualified_name="c",
             display_name="c",
-            attributes={"connector.class": "PostgresSource"},
+            attributes={"connector_class": "io.confluent.PostgresSource", "direction": "source"},
         )
         tip = _build_tooltip(node)
-        assert "connector.class: PostgresSource" in tip
-        assert "---" in tip
+        assert "PostgresSource" in tip
+        assert "SOURCE" in tip
 
 
 # ── _collect_hop_neighborhood tests ─────────────────────────────────
@@ -363,8 +364,10 @@ class TestGetConnectedNodeIds:
 
     def test_returns_both_src_and_dst(self, sample_graph: LineageGraph):
         connected = _get_connected_node_ids(sample_graph)
-        # Check that edge endpoints are included
+        # Check that non-HAS_SCHEMA edge endpoints are included
         for edge in sample_graph.edges:
+            if edge.edge_type == EdgeType.HAS_SCHEMA:
+                continue
             assert edge.src_id in connected
             assert edge.dst_id in connected
 

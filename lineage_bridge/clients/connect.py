@@ -141,18 +141,20 @@ class ConnectClient(ConfluentClient):
         nodes: list[LineageNode] = []
         edges: list[LineageEdge] = []
 
-        connector_names = await self._list_connectors()
-        for cname in connector_names:
-            try:
-                detail = await self._get_connector(cname)
-            except Exception:
-                logger.warning("Failed to fetch connector %s", cname, exc_info=True)
+        connectors = await self._list_connectors()
+        for detail in connectors:
+            cname = detail.get("name", "")
+            if not cname:
                 continue
 
             config: dict[str, str] = detail.get("config", {})
             connector_class = config.get("connector.class", "")
             explicit_type = detail.get("type")
             direction = _classify_connector(connector_class, explicit_type)
+            # Extract connector state from status block
+            conn_state = (
+                detail.get("status", {}).get("connector", {}).get("state", "")
+            )
 
             # Connector node
             nodes.append(
@@ -167,6 +169,7 @@ class ConnectClient(ConfluentClient):
                     attributes={
                         "connector_class": connector_class,
                         "direction": direction,
+                        "state": conn_state,
                         "tasks_max": config.get("tasks.max"),
                         "output_data_format": config.get("output.data.format"),
                     },
@@ -270,22 +273,43 @@ class ConnectClient(ConfluentClient):
 
     # ── raw API calls ───────────────────────────────────────────────────
 
-    async def _list_connectors(self) -> list[str]:
+    async def _list_connectors(self) -> list[dict[str, Any]]:
+        """Return list of connector objects with config and status.
+
+        The ``expand=info,status`` query returns a dict keyed by connector
+        name where each value has ``info`` and ``status`` sub-keys::
+
+            {"my-conn": {"info": {"name": ..., "config": ..., "type": ...},
+                         "status": {"connector": {"state": "RUNNING"}, ...}}}
+
+        We flatten each entry so the caller sees top-level ``name``,
+        ``config``, ``type``, and ``status`` keys.
+        """
         path = (
             f"/connect/v1/environments/{self.environment_id}"
             f"/clusters/{self.kafka_cluster_id}/connectors"
         )
-        # Returns a JSON object mapping connector name -> info when using expand,
-        # or a plain list of names.
         data = await self.get(path, params={"expand": "info,status"})
         if isinstance(data, list):
-            return data
-        # When expand is used, keys are connector names.
-        return list(data.keys())
-
-    async def _get_connector(self, name: str) -> dict[str, Any]:
-        path = (
-            f"/connect/v1/environments/{self.environment_id}"
-            f"/clusters/{self.kafka_cluster_id}/connectors/{name}"
-        )
-        return await self.get(path)
+            # Plain list of names — fetch each individually
+            result = []
+            for name in data:
+                try:
+                    detail = await self.get(f"{path}/{name}")
+                    result.append(detail)
+                except Exception:
+                    logger.warning("Failed to fetch connector %s", name, exc_info=True)
+            return result
+        # Expanded response: dict of name -> {info: {...}, status: {...}}
+        result = []
+        for name, wrapper in data.items():
+            if not isinstance(wrapper, dict):
+                continue
+            info = wrapper.get("info", {})
+            status = wrapper.get("status", {})
+            # Flatten: merge info fields at top level, keep status nested
+            entry = {**info, "status": status}
+            # Ensure name is set even if info didn't have it
+            entry.setdefault("name", name)
+            result.append(entry)
+        return result

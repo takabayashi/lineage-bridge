@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict, deque
 from typing import Any
 
 from streamlit_agraph import Edge, Node
@@ -20,24 +21,33 @@ from lineage_bridge.ui.styles import (
     build_confluent_cloud_url,
     build_edge_vis_props,
     build_node_vis_props,
+    build_status_badge_icon,
 )
+
+
+def _trunc(text: str, max_len: int = 40) -> str:
+    """Truncate text with ellipsis if it exceeds max_len."""
+    return text if len(text) <= max_len else text[: max_len - 1] + "\u2026"
 
 
 def _build_tooltip(node: LineageNode) -> str:
     """Build an HTML tooltip card for a node.
 
     The vis.js component converts HTML strings (starting with ``<``)
-    to DOM elements so they render as rich tooltips.
+    to DOM elements so they render as rich tooltips.  Each node type
+    surfaces the most relevant quick-view info; SQL is intentionally
+    omitted (too noisy for hover).
     """
     label = NODE_TYPE_LABELS.get(node.node_type, node.node_type.value)
     color = NODE_COLORS.get(node.node_type, "#757575")
+    a = node.attributes
 
-    # Location
+    # ── Location row (prefer names over IDs) ───────────────────────
     loc_parts: list[str] = []
-    if node.environment_id:
-        loc_parts.append(node.environment_id)
-    if node.cluster_id:
-        loc_parts.append(node.cluster_id)
+    if node.environment_name or node.environment_id:
+        loc_parts.append(node.environment_name or node.environment_id)
+    if node.cluster_name or node.cluster_id:
+        loc_parts.append(node.cluster_name or node.cluster_id)
     loc_html = ""
     if loc_parts:
         loc_html = (
@@ -45,7 +55,7 @@ def _build_tooltip(node: LineageNode) -> str:
             f"{' / '.join(loc_parts)}</div>"
         )
 
-    # Tags
+    # ── Tags row ────────────────────────────────────────────────────
     tags_html = ""
     if node.tags:
         pills = " ".join(
@@ -56,11 +66,11 @@ def _build_tooltip(node: LineageNode) -> str:
         )
         tags_html = f"<div style='margin-top:5px'>{pills}</div>"
 
-    # Metrics
+    # ── Metrics bar (topics & connectors) ───────────────────────────
     metrics_html = ""
     metric_parts: list[str] = []
-    if node.attributes.get("metrics_active") is not None:
-        active = node.attributes["metrics_active"]
+    if a.get("metrics_active") is not None:
+        active = a["metrics_active"]
         dot = "#4CAF50" if active else "#F44336"
         metric_parts.append(
             f"<span style='display:inline-block;width:7px;height:7px;"
@@ -72,9 +82,16 @@ def _build_tooltip(node: LineageNode) -> str:
         ("metrics_received_records", "In"),
         ("metrics_sent_records", "Out"),
     ]:
-        val = node.attributes.get(mkey)
+        val = a.get(mkey)
         if val:
             metric_parts.append(f"{mlabel}: {val:,.0f}")
+    for mkey, mlabel in [
+        ("metrics_received_bytes", "Bytes In"),
+        ("metrics_sent_bytes", "Bytes Out"),
+    ]:
+        val = a.get(mkey)
+        if val:
+            metric_parts.append(f"{mlabel}: {_fmt_bytes(val)}")
     if metric_parts:
         metrics_html = (
             f"<div style='margin-top:5px;padding:3px 7px;"
@@ -83,33 +100,93 @@ def _build_tooltip(node: LineageNode) -> str:
             f"{' &middot; '.join(metric_parts)}</div>"
         )
 
-    # Key attributes
-    attrs_html = ""
-    attr_lines: list[str] = []
-    for key in ("phase", "connector_class", "storage_kind", "table_formats"):
-        val = node.attributes.get(key)
-        if val:
-            s = str(val)
-            if len(s) > 60:
-                s = s[:57] + "..."
-            attr_lines.append(
-                f"<span style='color:#999'>{key}:</span> {s}"
+    # ── Type-specific detail lines ──────────────────────────────────
+    detail_lines: list[str] = []
+    ntype = node.node_type
+
+    if ntype == NodeType.KAFKA_TOPIC:
+        if a.get("partitions_count"):
+            detail_lines.append(f"Partitions: {a['partitions_count']}")
+        if a.get("replication_factor"):
+            detail_lines.append(f"RF: {a['replication_factor']}")
+        if a.get("is_internal"):
+            detail_lines.append("Internal topic")
+        if a.get("description"):
+            desc = str(a["description"])
+            if len(desc) > 60:
+                desc = desc[:57] + "..."
+            detail_lines.append(desc)
+
+    elif ntype == NodeType.CONNECTOR:
+        if a.get("connector_class"):
+            cls = str(a["connector_class"]).rsplit(".", 1)[-1]
+            detail_lines.append(cls)
+        if a.get("direction"):
+            detail_lines.append(a["direction"].upper())
+        if a.get("tasks_max"):
+            detail_lines.append(f"Tasks: {a['tasks_max']}")
+        if a.get("output_data_format"):
+            detail_lines.append(f"Format: {a['output_data_format']}")
+
+    elif ntype == NodeType.FLINK_JOB:
+        if a.get("phase"):
+            detail_lines.append(f"Phase: {a['phase']}")
+        if a.get("compute_pool_id"):
+            detail_lines.append(f"Pool: {a['compute_pool_id']}")
+        if a.get("principal"):
+            detail_lines.append(f"Principal: {a['principal']}")
+
+    elif ntype == NodeType.KSQLDB_QUERY:
+        if a.get("state"):
+            detail_lines.append(f"State: {a['state']}")
+        if a.get("ksqldb_cluster_id"):
+            detail_lines.append(f"Cluster: {a['ksqldb_cluster_id']}")
+
+    elif ntype == NodeType.TABLEFLOW_TABLE:
+        if a.get("phase"):
+            detail_lines.append(f"Phase: {a['phase']}")
+        if a.get("table_formats"):
+            fmts = a["table_formats"]
+            detail_lines.append(
+                f"Formats: {', '.join(fmts) if isinstance(fmts, list) else fmts}"
             )
-    # SQL snippet (truncated)
-    sql = node.attributes.get("sql")
-    if sql:
-        s = str(sql).replace("\n", " ").strip()
-        if len(s) > 80:
-            s = s[:77] + "..."
-        attr_lines.append(
-            f"<span style='color:#999'>sql:</span> "
-            f"<code style='font-size:10px'>{s}</code>"
-        )
-    if attr_lines:
-        attrs_html = (
+        if a.get("storage_kind"):
+            detail_lines.append(f"Storage: {a['storage_kind']}")
+        if a.get("suspended"):
+            detail_lines.append("SUSPENDED")
+
+    elif ntype == NodeType.UC_TABLE:
+        if a.get("catalog_name"):
+            detail_lines.append(f"Catalog: {a['catalog_name']}")
+        if a.get("workspace_url"):
+            detail_lines.append("Databricks UC")
+        elif a.get("catalog_type"):
+            detail_lines.append(a["catalog_type"])
+
+    elif ntype == NodeType.SCHEMA:
+        if a.get("schema_type"):
+            detail_lines.append(a["schema_type"])
+        if a.get("version"):
+            detail_lines.append(f"v{a['version']}")
+        if a.get("field_count"):
+            detail_lines.append(f"{a['field_count']} fields")
+
+    elif ntype == NodeType.CONSUMER_GROUP:
+        if a.get("state"):
+            detail_lines.append(f"State: {a['state']}")
+        if a.get("is_simple"):
+            detail_lines.append("Simple consumer")
+
+    elif ntype == NodeType.EXTERNAL_DATASET:
+        if a.get("inferred_from"):
+            detail_lines.append(f"From: {a['inferred_from']}")
+
+    details_html = ""
+    if detail_lines:
+        details_html = (
             "<div style='margin-top:5px;font-size:11px;"
             "color:#444;line-height:1.5'>"
-            + "<br>".join(attr_lines)
+            + " &middot; ".join(detail_lines)
             + "</div>"
         )
 
@@ -123,13 +200,22 @@ def _build_tooltip(node: LineageNode) -> str:
         f"text-transform:uppercase;letter-spacing:0.5px;"
         f"color:{color}'>{label}</div>"
         f"<div style='font-size:14px;font-weight:700;"
-        f"color:#1a1a2e;margin-top:2px'>{node.display_name}</div>"
-        f"<div style='font-size:11px;color:#777;"
-        f"font-family:monospace;margin-top:2px;"
-        f"word-break:break-all'>{node.qualified_name}</div>"
-        f"{loc_html}{tags_html}{metrics_html}{attrs_html}"
+        f"color:#1a1a2e;margin-top:2px;"
+        f"overflow:hidden;text-overflow:ellipsis;"
+        f"white-space:nowrap;max-width:300px' "
+        f"title='{node.display_name}'>{_trunc(node.display_name, 40)}</div>"
+        f"{loc_html}{tags_html}{details_html}{metrics_html}"
         f"</div>"
     )
+
+
+def _fmt_bytes(val: float) -> str:
+    """Format byte count to human-readable string."""
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if abs(val) < 1024:
+            return f"{val:,.1f} {unit}"
+        val /= 1024
+    return f"{val:,.1f} PB"
 
 
 def _collect_hop_neighborhood(
@@ -294,6 +380,125 @@ def render_graph(
     return agraph_nodes, agraph_edges
 
 
+# ── Sugiyama-style DAG layout (topological layers + barycenter) ────────
+
+
+def _compute_dag_layout(
+    node_ids: list[str],
+    edges: list[tuple[str, str]],
+    *,
+    level_sep: int = 280,
+    node_sep: int = 100,
+) -> dict[str, dict[str, float]]:
+    """Compute x/y positions for a DAG using layered layout.
+
+    1. Assign each node to a layer (longest-path from roots).
+    2. Order nodes within each layer using the barycenter heuristic
+       (multiple sweeps) to minimise edge crossings.
+    3. Return ``{node_id: {"x": …, "y": …}}``.
+    """
+    if not node_ids:
+        return {}
+
+    id_set = set(node_ids)
+
+    # Build adjacency for included nodes only
+    children: dict[str, list[str]] = defaultdict(list)
+    parents: dict[str, list[str]] = defaultdict(list)
+    for src, dst in edges:
+        if src in id_set and dst in id_set:
+            children[src].append(dst)
+            parents[dst].append(src)
+
+    # ── Layer assignment (longest path from roots) ────────────────
+    in_degree: dict[str, int] = {nid: 0 for nid in node_ids}
+    for src, dst in edges:
+        if src in id_set and dst in id_set:
+            in_degree[dst] = in_degree.get(dst, 0) + 1
+
+    layer_of: dict[str, int] = {}
+    queue = deque(nid for nid, deg in in_degree.items() if deg == 0)
+    # If no roots (cycle), start from all nodes
+    if not queue:
+        queue = deque(node_ids)
+        for nid in node_ids:
+            layer_of[nid] = 0
+
+    for nid in queue:
+        layer_of.setdefault(nid, 0)
+
+    while queue:
+        nid = queue.popleft()
+        for child in children.get(nid, []):
+            new_layer = layer_of[nid] + 1
+            if new_layer > layer_of.get(child, -1):
+                layer_of[child] = new_layer
+            in_degree[child] -= 1
+            if in_degree[child] == 0:
+                queue.append(child)
+
+    # Assign any remaining nodes (disconnected)
+    for nid in node_ids:
+        layer_of.setdefault(nid, 0)
+
+    # Group by layer
+    layers: dict[int, list[str]] = defaultdict(list)
+    for nid, lyr in layer_of.items():
+        layers[lyr].append(nid)
+
+    max_layer = max(layers.keys()) if layers else 0
+
+    # ── Barycenter ordering (reduce crossings) ────────────────────
+    # Initial order: sort alphabetically within each layer for determinism
+    for lyr in layers:
+        layers[lyr].sort()
+
+    def _order_index(layer_list: list[str]) -> dict[str, int]:
+        return {nid: i for i, nid in enumerate(layer_list)}
+
+    # Forward + backward sweeps
+    for _ in range(4):
+        # Forward sweep: order layer i by barycenter of parents in layer i-1
+        for lyr in range(1, max_layer + 1):
+            if lyr - 1 not in layers:
+                continue
+            prev_idx = _order_index(layers[lyr - 1])
+            bary: list[tuple[float, str]] = []
+            for nid in layers[lyr]:
+                p = [prev_idx[pid] for pid in parents.get(nid, []) if pid in prev_idx]
+                bc = sum(p) / len(p) if p else float("inf")
+                bary.append((bc, nid))
+            bary.sort()
+            layers[lyr] = [nid for _, nid in bary]
+
+        # Backward sweep: order layer i by barycenter of children in layer i+1
+        for lyr in range(max_layer - 1, -1, -1):
+            if lyr + 1 not in layers:
+                continue
+            next_idx = _order_index(layers[lyr + 1])
+            bary = []
+            for nid in layers[lyr]:
+                c = [next_idx[cid] for cid in children.get(nid, []) if cid in next_idx]
+                bc = sum(c) / len(c) if c else float("inf")
+                bary.append((bc, nid))
+            bary.sort()
+            layers[lyr] = [nid for _, nid in bary]
+
+    # ── Assign coordinates ────────────────────────────────────────
+    positions: dict[str, dict[str, float]] = {}
+    for lyr in range(max_layer + 1):
+        nodes_in_layer = layers.get(lyr, [])
+        n = len(nodes_in_layer)
+        # Center the layer vertically
+        total_height = (n - 1) * node_sep
+        start_y = -total_height / 2
+        x = lyr * level_sep
+        for i, nid in enumerate(nodes_in_layer):
+            positions[nid] = {"x": x, "y": start_y + i * node_sep}
+
+    return positions
+
+
 def render_graph_raw(
     graph: LineageGraph,
     filters: dict[NodeType, bool] | None = None,
@@ -398,10 +603,17 @@ def render_graph_raw(
         ):
             vis_props["image"] = TOPIC_WITH_SCHEMA_ICON
 
+        # Status badge for nodes with phase/state
+        status = node.attributes.get("phase") or node.attributes.get("state")
+        if status and node.node_type != NodeType.KAFKA_TOPIC:
+            badge_icon = build_status_badge_icon(node.node_type, status)
+            if badge_icon:
+                vis_props["image"] = badge_icon
+
         raw_nodes.append(
             {
                 "id": node.node_id,
-                "label": node.display_name,
+                "label": _trunc(node.display_name, 30),
                 "title": _build_tooltip(node),
                 **vis_props,
             }
