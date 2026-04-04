@@ -206,13 +206,30 @@ class TableflowClient(ConfluentClient):
     # ── raw API calls ───────────────────────────────────────────────────
 
     async def _list_tableflow_topics(self) -> list[dict[str, Any]]:
-        return await self.paginate(
-            "/tableflow/v1/tableflow-topics",
-            params={"environment": self.environment_id},
-        )
+        try:
+            return await self.paginate(
+                "/tableflow/v1/tableflow-topics",
+                params={"environment": self.environment_id},
+                page_size=10,
+            )
+        except Exception:
+            # 400 typically means Tableflow is not enabled in this environment
+            logger.debug(
+                "Tableflow topics unavailable for %s (not enabled?)",
+                self.environment_id,
+            )
+            return []
 
     async def _list_catalog_integrations(self) -> list[dict[str, Any]]:
-        return await self.paginate(
-            "/tableflow/v1/catalog-integrations",
-            params={"environment": self.environment_id},
-        )
+        try:
+            return await self.paginate(
+                "/tableflow/v1/catalog-integrations",
+                params={"environment": self.environment_id},
+                page_size=10,
+            )
+        except Exception:
+            logger.debug(
+                "Catalog integrations unavailable for %s",
+                self.environment_id,
+            )
+            return []

@@ -113,7 +113,8 @@ class KafkaAdminClient(ConfluentClient):
             try:
                 lag_items = await self._get_consumer_lag(gid)
             except Exception:
-                logger.warning("Failed to fetch lag for group %s", gid, exc_info=True)
+                # 404 is expected for inactive consumer groups (no lags)
+                logger.debug("No lag data for group %s (may be inactive)", gid)
                 lag_items = []
 
             seen_topics: set[str] = set()

@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Inter, system-ui, sans-serif; overflow: hidden; }
+
+  #toolbar {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px; background: #f8f9fa;
+    border-bottom: 1px solid #e0e0e0;
+    font-size: 13px; user-select: none;
+  }
+  .tb-btn {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 10px; border: 1px solid #ccc; border-radius: 6px;
+    background: #fff; cursor: pointer; font-size: 12px; color: #333;
+    transition: all 0.15s;
+  }
+  .tb-btn:hover { background: #e8eaed; border-color: #aaa; }
+  .tb-btn.active { background: #1976D2; color: #fff; border-color: #1565C0; }
+  .tb-sep { width: 1px; height: 20px; background: #ddd; margin: 0 4px; }
+  .tb-hint { margin-left: auto; color: #999; font-size: 11px; }
+
+  #graph-wrapper { position: relative; width: 100%; }
+  #graph-container { width: 100%; }
+  #select-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    cursor: crosshair; display: none; z-index: 10;
+  }
+  #select-rect {
+    position: absolute; border: 2px dashed #1976D2;
+    background: rgba(25, 118, 210, 0.08); border-radius: 3px;
+    display: none; pointer-events: none; z-index: 11;
+  }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <button class="tb-btn" id="btn-select" title="Shift+Drag to select region">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="4 2"/>
+    </svg>
+    Region Zoom
+  </button>
+  <div class="tb-sep"></div>
+  <button class="tb-btn" id="btn-fit" title="Fit all nodes">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+    </svg>
+    Fit All
+  </button>
+  <button class="tb-btn" id="btn-zin" title="Zoom in">+</button>
+  <button class="tb-btn" id="btn-zout" title="Zoom out">&minus;</button>
+  <span class="tb-hint" id="hint-text">Click a node for details &middot; Shift+drag to region zoom</span>
+</div>
+
+<div id="graph-wrapper">
+  <div id="graph-container"></div>
+  <canvas id="select-overlay"></canvas>
+  <div id="select-rect"></div>
+</div>
+
+<script>
+// ── Streamlit Component API ──────────────────────────────────────────
+// Minimal implementation of the Streamlit bi-directional component
+// protocol without requiring streamlit-component-lib.js.
+
+var Streamlit = {
+  setComponentValue: function(value) {
+    window.parent.postMessage({
+      isStreamlitMessage: true,
+      type: "streamlit:setComponentValue",
+      dataType: "json",
+      value: value
+    }, "*");
+  },
+  setFrameHeight: function(height) {
+    window.parent.postMessage({
+      isStreamlitMessage: true,
+      type: "streamlit:setFrameHeight",
+      height: height
+    }, "*");
+  }
+};
+
+var network = null;
+
+// Listen for render events from Streamlit BEFORE signaling ready
+window.addEventListener("message", function(event) {
+  var data = event.data;
+  if (!data || data.type !== "streamlit:render") return;
+  var args = data.args;
+  if (args) initGraph(args);
+});
+
+// Signal ready — Streamlit will then send a render event
+window.parent.postMessage({
+  isStreamlitMessage: true,
+  type: "streamlit:componentReady",
+  apiVersion: 1
+}, "*");
+
+function initGraph(args) {
+  var graphData, configJson, graphHeight;
+
+  try {
+    graphData = JSON.parse(args.data || '{"nodes":[],"edges":[]}');
+    configJson = JSON.parse(args.config || '{}');
+    graphHeight = args.graph_height || 650;
+  } catch(e) {
+    console.error("Failed to parse graph data:", e);
+    return;
+  }
+
+  var container = document.getElementById("graph-container");
+  var wrapper = document.getElementById("graph-wrapper");
+  container.style.height = graphHeight + "px";
+  wrapper.style.height = graphHeight + "px";
+
+  var overlay = document.getElementById("select-overlay");
+  overlay.style.height = graphHeight + "px";
+
+  Streamlit.setFrameHeight(graphHeight + 42);
+
+  var nodes = new vis.DataSet(graphData.nodes);
+  var edges = new vis.DataSet(graphData.edges);
+
+  var options = {
+    layout: configJson.layout || {},
+    physics: configJson.physics || { enabled: false },
+    interaction: {
+      hover: true,
+      tooltipDelay: 150,
+      zoomView: true,
+      dragView: true,
+      navigationButtons: false,
+      keyboard: { enabled: true }
+    },
+    edges: {
+      font: { size: 9, color: "#888", strokeWidth: 2, strokeColor: "#fff", align: "top" }
+    }
+  };
+
+  if (network) {
+    network.destroy();
+  }
+  network = new vis.Network(container, { nodes: nodes, edges: edges }, options);
+
+  // Resize overlay after layout
+  setTimeout(function() {
+    overlay.width = wrapper.offsetWidth;
+    overlay.height = graphHeight;
+  }, 200);
+
+  // ── Node click → send to Streamlit ─────────────────────────────
+  network.on("click", function(params) {
+    if (params.nodes.length > 0) {
+      Streamlit.setComponentValue(params.nodes[0]);
+    }
+  });
+
+  // ── Toolbar buttons ────────────────────────────────────────────
+  document.getElementById("btn-fit").onclick = function() {
+    network.fit({ animation: { duration: 400, easingFunction: "easeInOutQuad" } });
+  };
+  document.getElementById("btn-zin").onclick = function() {
+    network.moveTo({ scale: network.getScale() * 1.4, animation: { duration: 300 } });
+  };
+  document.getElementById("btn-zout").onclick = function() {
+    network.moveTo({ scale: network.getScale() / 1.4, animation: { duration: 300 } });
+  };
+
+  // ── Region select mode ─────────────────────────────────────────
+  var selectMode = false;
+  var selectStart = null;
+  var btnSelect = document.getElementById("btn-select");
+  var rectEl = document.getElementById("select-rect");
+  var hintText = document.getElementById("hint-text");
+
+  function setSelectMode(on) {
+    selectMode = on;
+    overlay.style.display = on ? "block" : "none";
+    btnSelect.classList.toggle("active", on);
+    hintText.textContent = on
+      ? "Drag to select a region, then release to zoom"
+      : "Click a node for details \u00b7 Shift+drag to region zoom";
+    if (!on) rectEl.style.display = "none";
+  }
+
+  btnSelect.onclick = function() { setSelectMode(!selectMode); };
+
+  document.addEventListener("keydown", function(e) {
+    if (e.key === "Shift" && !selectMode) {
+      setSelectMode(true);
+      overlay.dataset.shiftHeld = "1";
+    }
+    if (e.key === "Escape" && selectMode) {
+      selectStart = null;
+      setSelectMode(false);
+    }
+  });
+  document.addEventListener("keyup", function(e) {
+    if (e.key === "Shift" && overlay.dataset.shiftHeld === "1") {
+      setSelectMode(false);
+      overlay.dataset.shiftHeld = "0";
+    }
+  });
+
+  overlay.addEventListener("mousedown", function(e) {
+    if (!selectMode) return;
+    var rect = overlay.getBoundingClientRect();
+    selectStart = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    rectEl.style.left = selectStart.x + "px";
+    rectEl.style.top = (selectStart.y + 42) + "px";
+    rectEl.style.width = "0px";
+    rectEl.style.height = "0px";
+    rectEl.style.display = "block";
+  });
+
+  overlay.addEventListener("mousemove", function(e) {
+    if (!selectStart) return;
+    var rect = overlay.getBoundingClientRect();
+    var cx = e.clientX - rect.left;
+    var cy = e.clientY - rect.top;
+    rectEl.style.left = Math.min(selectStart.x, cx) + "px";
+    rectEl.style.top = (Math.min(selectStart.y, cy) + 42) + "px";
+    rectEl.style.width = Math.abs(cx - selectStart.x) + "px";
+    rectEl.style.height = Math.abs(cy - selectStart.y) + "px";
+  });
+
+  overlay.addEventListener("mouseup", function(e) {
+    if (!selectStart) return;
+    var rect = overlay.getBoundingClientRect();
+    var cx = e.clientX - rect.left;
+    var cy = e.clientY - rect.top;
+    var x1 = Math.min(selectStart.x, cx), y1 = Math.min(selectStart.y, cy);
+    var x2 = Math.max(selectStart.x, cx), y2 = Math.max(selectStart.y, cy);
+    selectStart = null;
+    rectEl.style.display = "none";
+
+    if ((x2 - x1) < 20 && (y2 - y1) < 20) {
+      if (overlay.dataset.shiftHeld !== "1") setSelectMode(false);
+      return;
+    }
+
+    var topLeft = network.DOMtoCanvas({ x: x1, y: y1 });
+    var bottomRight = network.DOMtoCanvas({ x: x2, y: y2 });
+    var positions = network.getPositions();
+    var insideNodes = [];
+    for (var nodeId in positions) {
+      var pos = positions[nodeId];
+      if (pos.x >= topLeft.x && pos.x <= bottomRight.x &&
+          pos.y >= topLeft.y && pos.y <= bottomRight.y) {
+        insideNodes.push(nodeId);
+      }
+    }
+    if (insideNodes.length > 0) {
+      network.fit({
+        nodes: insideNodes,
+        animation: { duration: 400, easingFunction: "easeInOutQuad" },
+        minZoomLevel: 0.1, maxZoomLevel: 3.0
+      });
+    }
+    if (overlay.dataset.shiftHeld !== "1") setSelectMode(false);
+  });
+
+  // Initial fit
+  network.once("afterDrawing", function() {
+    network.fit({ animation: false });
+  });
+}
+</script>
+</body>
+</html>

@@ -1,12 +1,11 @@
 """Orchestrator that runs all extractors and builds the unified lineage graph.
 
 Execution order:
-  1. Discover clusters via the Cloud API.
-  2. KafkaAdmin — establish the topic inventory.
-  3. Connect, ksqlDB, Flink — transformation / processing edges (parallel).
-  4. SchemaRegistry, StreamCatalog — enrichment (parallel).
-  5. Tableflow — bridge to UC/Glue (last, depends on topic nodes).
-  6. Merge everything into a single LineageGraph and persist.
+  1. KafkaAdmin — establish the topic inventory.
+  2. Connect, ksqlDB, Flink — transformation / processing edges (parallel).
+  3. SchemaRegistry, StreamCatalog — enrichment (parallel).
+  4. Tableflow — bridge to UC/Glue (last, depends on topic nodes).
+  5. Merge everything into a single LineageGraph.
 """
 
 from __future__ import annotations
@@ -21,6 +20,7 @@ from lineage_bridge.clients.connect import ConnectClient
 from lineage_bridge.clients.flink import FlinkClient
 from lineage_bridge.clients.kafka_admin import KafkaAdminClient
 from lineage_bridge.clients.ksqldb import KsqlDBClient
+from lineage_bridge.clients.metrics import MetricsClient
 from lineage_bridge.clients.schema_registry import SchemaRegistryClient
 from lineage_bridge.clients.stream_catalog import StreamCatalogClient
 from lineage_bridge.clients.tableflow import TableflowClient
@@ -28,31 +28,6 @@ from lineage_bridge.config.settings import Settings
 from lineage_bridge.models.graph import LineageEdge, LineageGraph, LineageNode
 
 logger = logging.getLogger(__name__)
-
-
-# ── cluster / endpoint discovery ────────────────────────────────────────
-
-
-async def _discover_kafka_clusters(
-    cloud: ConfluentClient, environment_id: str, filter_ids: list[str]
-) -> list[dict[str, Any]]:
-    """Return Kafka cluster metadata for *environment_id*."""
-    clusters = await cloud.paginate("/cmk/v2/clusters", params={"environment": environment_id})
-    if filter_ids:
-        clusters = [c for c in clusters if c.get("id") in filter_ids]
-    return clusters
-
-
-async def _discover_sr_cluster(
-    cloud: ConfluentClient, environment_id: str
-) -> dict[str, Any] | None:
-    """Return the Schema Registry cluster for *environment_id*, or None."""
-    try:
-        items = await cloud.paginate("/srcm/v2/clusters", params={"environment": environment_id})
-        return items[0] if items else None
-    except Exception:
-        logger.warning("Could not discover SR cluster for %s", environment_id, exc_info=True)
-        return None
 
 
 # ── graph merging ───────────────────────────────────────────────────────
@@ -81,20 +56,73 @@ def _merge_into(
 # ── safe extractor runner ───────────────────────────────────────────────
 
 
-async def _safe_extract(label: str, coro: Any) -> tuple[list[LineageNode], list[LineageEdge]]:
+async def _safe_extract(
+    label: str, coro: Any, on_progress: Any = None
+) -> tuple[list[LineageNode], list[LineageEdge]]:
     """Run an extractor coroutine, returning empty on failure."""
     try:
         return await coro
-    except Exception:
-        logger.warning("Extractor '%s' failed — continuing", label, exc_info=True)
+    except Exception as exc:
+        # Surface auth errors clearly
+        msg = str(exc)
+        if "401" in msg or "Unauthorized" in msg:
+            detail = (
+                f"Extractor '{label}' got 401 Unauthorized. "
+                "This likely means a cluster-scoped API key is needed. "
+                "Set LINEAGE_BRIDGE_KAFKA_API_KEY in .env."
+            )
+        elif "403" in msg or "Forbidden" in msg:
+            detail = (
+                f"Extractor '{label}' got 403 Forbidden. The API key lacks required permissions."
+            )
+        elif "400" in msg or "Bad Request" in msg:
+            detail = (
+                f"Extractor '{label}' got 400 Bad Request. "
+                "The API key may not have access to this environment, "
+                "or the API parameters are invalid."
+            )
+        else:
+            detail = f"Extractor '{label}' failed: {exc}"
+
+        logger.warning(detail, exc_info=True)
+        if on_progress:
+            on_progress("Warning", detail)
         return [], []
+
+
+# ── progress callback type ──────────────────────────────────────────────
+
+# Callable that receives (phase_label, detail_message)
+ProgressCallback = Any  # typing: Callable[[str, str], None] | None
 
 
 # ── main orchestration ──────────────────────────────────────────────────
 
 
-async def run_extraction(settings: Settings) -> LineageGraph:
-    """Run the full extraction pipeline and return the merged graph."""
+async def run_extraction(
+    settings: Settings,
+    *,
+    environment_ids: list[str],
+    cluster_ids: list[str] | None = None,
+    enable_connect: bool = True,
+    enable_ksqldb: bool = True,
+    enable_flink: bool = True,
+    enable_schema_registry: bool = True,
+    enable_stream_catalog: bool = True,
+    enable_tableflow: bool = True,
+    enable_metrics: bool = False,
+    metrics_lookback_hours: int = 1,
+    on_progress: ProgressCallback = None,
+) -> LineageGraph:
+    """Run the extraction pipeline and return the merged graph.
+
+    Args:
+        settings: Credentials (from .env).
+        environment_ids: Which environments to scan.
+        cluster_ids: Optional filter — specific cluster IDs. If None, scan all.
+        enable_*: Toggle individual extractors on/off.
+        on_progress: Optional callback for UI progress updates.
+    """
     graph = LineageGraph()
 
     cloud = ConfluentClient(
@@ -103,20 +131,33 @@ async def run_extraction(settings: Settings) -> LineageGraph:
         settings.confluent_cloud_api_secret,
     )
 
+    def _progress(phase: str, detail: str = "") -> None:
+        logger.info("%s %s", phase, detail)
+        if on_progress:
+            on_progress(phase, detail)
+
     try:
-        for env_id in settings.environment_ids:
-            await _extract_environment(settings, cloud, env_id, graph)
+        for env_id in environment_ids:
+            await _extract_environment(
+                settings,
+                cloud,
+                env_id,
+                graph,
+                cluster_ids=cluster_ids,
+                enable_connect=enable_connect,
+                enable_ksqldb=enable_ksqldb,
+                enable_flink=enable_flink,
+                enable_schema_registry=enable_schema_registry,
+                enable_stream_catalog=enable_stream_catalog,
+                enable_tableflow=enable_tableflow,
+                enable_metrics=enable_metrics,
+                metrics_lookback_hours=metrics_lookback_hours,
+                on_progress=_progress,
+            )
     finally:
         await cloud.close()
 
-    # Persist.
-    graph.to_json_file(settings.extract_output_path)
-    logger.info(
-        "Lineage graph saved to %s  (%d nodes, %d edges)",
-        settings.extract_output_path,
-        graph.node_count,
-        graph.edge_count,
-    )
+    _progress("Done", f"{graph.node_count} nodes, {graph.edge_count} edges")
     return graph
 
 
@@ -125,46 +166,63 @@ async def _extract_environment(
     cloud: ConfluentClient,
     env_id: str,
     graph: LineageGraph,
+    *,
+    cluster_ids: list[str] | None,
+    enable_connect: bool,
+    enable_ksqldb: bool,
+    enable_flink: bool,
+    enable_schema_registry: bool,
+    enable_stream_catalog: bool,
+    enable_tableflow: bool,
+    enable_metrics: bool,
+    metrics_lookback_hours: int,
+    on_progress: Any,
 ) -> None:
     """Run all extractors for a single Confluent Cloud environment."""
-    logger.info("Starting extraction for environment %s", env_id)
+    on_progress("Discovering", f"clusters in {env_id}")
 
     # ── discover Kafka clusters ────────────────────────────────────────
-    kafka_clusters = await _discover_kafka_clusters(cloud, env_id, settings.kafka_cluster_ids)
-    if not kafka_clusters:
-        logger.warning("No Kafka clusters found in environment %s", env_id)
+    all_clusters = await cloud.paginate("/cmk/v2/clusters", params={"environment": env_id})
+    if cluster_ids:
+        all_clusters = [c for c in all_clusters if c.get("id") in cluster_ids]
+    if not all_clusters:
+        on_progress("Warning", f"No Kafka clusters found in {env_id}")
         return
 
     # ── discover Schema Registry ───────────────────────────────────────
-    sr_cluster = await _discover_sr_cluster(cloud, env_id)
     sr_endpoint: str | None = None
-    if sr_cluster:
-        sr_endpoint = sr_cluster.get("spec", {}).get("http_endpoint") or sr_cluster.get(
-            "status", {}
-        ).get("http_endpoint")
+    if enable_schema_registry or enable_stream_catalog:
+        try:
+            sr_items = await cloud.paginate("/srcm/v2/clusters", params={"environment": env_id})
+            if sr_items:
+                sr_cluster = sr_items[0]
+                sr_endpoint = sr_cluster.get("spec", {}).get("http_endpoint") or sr_cluster.get(
+                    "status", {}
+                ).get("http_endpoint")
+        except Exception:
+            logger.debug("SR discovery failed for %s", env_id, exc_info=True)
 
-    # Credential resolution helpers.
+    # Credential resolution
     kafka_key = settings.kafka_api_key or settings.confluent_cloud_api_key
     kafka_secret = settings.kafka_api_secret or settings.confluent_cloud_api_secret
     sr_key = settings.schema_registry_api_key or settings.confluent_cloud_api_key
     sr_secret = settings.schema_registry_api_secret or settings.confluent_cloud_api_secret
 
     # ── Phase 1: Kafka Admin (per cluster) ─────────────────────────────
-    for cluster in kafka_clusters:
+    on_progress("Phase 1/4", "Extracting Kafka topics & consumer groups")
+    for cluster in all_clusters:
         cluster_id = cluster.get("id", "")
         spec = cluster.get("spec", {})
         rest_endpoint = spec.get("http_endpoint", "")
         if not rest_endpoint:
-            # Build from cluster metadata.
             region = spec.get("region", "")
             cloud_provider = spec.get("cloud", "").lower()
             if region and cloud_provider:
                 rest_endpoint = (
                     f"https://{cluster_id}.{region}.{cloud_provider}.confluent.cloud:443"
                 )
-
         if not rest_endpoint:
-            logger.warning("No REST endpoint for cluster %s — skipping", cluster_id)
+            on_progress("Warning", f"No REST endpoint for cluster {cluster_id}")
             continue
 
         kafka_client = KafkaAdminClient(
@@ -175,83 +233,82 @@ async def _extract_environment(
             environment_id=env_id,
         )
         async with kafka_client:
-            nodes, edges = await _safe_extract(f"KafkaAdmin:{cluster_id}", kafka_client.extract())
+            nodes, edges = await _safe_extract(
+                f"KafkaAdmin:{cluster_id}", kafka_client.extract(), on_progress
+            )
             _merge_into(graph, nodes, edges)
 
     # ── Phase 2: Connect, ksqlDB, Flink (parallel) ────────────────────
-    phase2_tasks = []
+    on_progress("Phase 2/4", "Extracting connectors, ksqlDB, Flink")
+    phase2_tasks: list[Any] = []
 
-    # Connect — one per cluster.
-    for cluster in kafka_clusters:
-        cluster_id = cluster.get("id", "")
-        connect_client = ConnectClient(
-            api_key=settings.confluent_cloud_api_key,
-            api_secret=settings.confluent_cloud_api_secret,
+    if enable_connect:
+        for cluster in all_clusters:
+            cluster_id = cluster.get("id", "")
+            connect_client = ConnectClient(
+                api_key=settings.confluent_cloud_api_key,
+                api_secret=settings.confluent_cloud_api_secret,
+                environment_id=env_id,
+                kafka_cluster_id=cluster_id,
+            )
+
+            async def _run_connect(
+                c: ConnectClient = connect_client,
+                cid: str = cluster_id,
+            ) -> tuple[list[LineageNode], list[LineageEdge]]:
+                async with c:
+                    return await _safe_extract(f"Connect:{cid}", c.extract(), on_progress)
+
+            phase2_tasks.append(_run_connect())
+
+    if enable_ksqldb:
+        ksql_client = KsqlDBClient(
+            cloud_api_key=settings.confluent_cloud_api_key,
+            cloud_api_secret=settings.confluent_cloud_api_secret,
             environment_id=env_id,
-            kafka_cluster_id=cluster_id,
+            ksqldb_api_key=settings.ksqldb_api_key,
+            ksqldb_api_secret=settings.ksqldb_api_secret,
         )
 
-        async def _run_connect(
-            c: ConnectClient = connect_client,
-            cid: str = cluster_id,
-        ) -> tuple[list[LineageNode], list[LineageEdge]]:
-            async with c:
-                return await _safe_extract(f"Connect:{cid}", c.extract())
+        async def _run_ksqldb() -> tuple[list[LineageNode], list[LineageEdge]]:
+            async with ksql_client:
+                return await _safe_extract("ksqlDB", ksql_client.extract(), on_progress)
 
-        phase2_tasks.append(_run_connect())
+        phase2_tasks.append(_run_ksqldb())
 
-    # ksqlDB
-    ksql_client = KsqlDBClient(
-        cloud_api_key=settings.confluent_cloud_api_key,
-        cloud_api_secret=settings.confluent_cloud_api_secret,
-        environment_id=env_id,
-        ksqldb_api_key=settings.ksqldb_api_key,
-        ksqldb_api_secret=settings.ksqldb_api_secret,
-    )
+    if enable_flink:
+        org_id = ""
+        for cluster in all_clusters:
+            org_id = cluster.get("spec", {}).get("organization", {}).get("id", "")
+            if org_id:
+                break
 
-    async def _run_ksqldb() -> tuple[list[LineageNode], list[LineageEdge]]:
-        async with ksql_client:
-            return await _safe_extract("ksqlDB", ksql_client.extract())
-
-    phase2_tasks.append(_run_ksqldb())
-
-    # Flink — needs organization_id.  Derive from cloud API if possible.
-    flink_client = FlinkClient(
-        cloud_api_key=settings.confluent_cloud_api_key,
-        cloud_api_secret=settings.confluent_cloud_api_secret,
-        environment_id=env_id,
-        organization_id="",  # Will be populated below if available.
-        flink_api_key=settings.flink_api_key,
-        flink_api_secret=settings.flink_api_secret,
-        flink_region=settings.flink_region,
-        flink_cloud=settings.flink_cloud,
-    )
-
-    # Try to discover org ID from first Kafka cluster metadata.
-    org_id = ""
-    for cluster in kafka_clusters:
-        org_id = cluster.get("spec", {}).get("organization", {}).get("id", "")
         if org_id:
-            break
-    flink_client.organization_id = org_id
+            flink_client = FlinkClient(
+                cloud_api_key=settings.confluent_cloud_api_key,
+                cloud_api_secret=settings.confluent_cloud_api_secret,
+                environment_id=env_id,
+                organization_id=org_id,
+                flink_api_key=settings.flink_api_key,
+                flink_api_secret=settings.flink_api_secret,
+            )
 
-    async def _run_flink() -> tuple[list[LineageNode], list[LineageEdge]]:
-        async with flink_client:
-            return await _safe_extract("Flink", flink_client.extract())
+            async def _run_flink() -> tuple[list[LineageNode], list[LineageEdge]]:
+                async with flink_client:
+                    return await _safe_extract("Flink", flink_client.extract(), on_progress)
 
-    if org_id:
-        phase2_tasks.append(_run_flink())
-    else:
-        logger.debug("Organization ID not found — skipping Flink extraction")
+            phase2_tasks.append(_run_flink())
 
-    phase2_results = await asyncio.gather(*phase2_tasks)
-    for nodes, edges in phase2_results:
-        _merge_into(graph, nodes, edges)
+    if phase2_tasks:
+        phase2_results = await asyncio.gather(*phase2_tasks)
+        for nodes, edges in phase2_results:
+            _merge_into(graph, nodes, edges)
 
     # ── Phase 3: SchemaRegistry, StreamCatalog (parallel enrichment) ──
-    phase3_tasks = []
+    on_progress("Phase 3/4", "Enriching with schemas & catalog metadata")
+    phase3_tasks: list[Any] = []
 
-    if sr_endpoint:
+    if sr_endpoint and enable_schema_registry:
         sr_client = SchemaRegistryClient(
             base_url=sr_endpoint,
             api_key=sr_key,
@@ -261,10 +318,11 @@ async def _extract_environment(
 
         async def _run_sr() -> tuple[list[LineageNode], list[LineageEdge]]:
             async with sr_client:
-                return await _safe_extract("SchemaRegistry", sr_client.extract())
+                return await _safe_extract("SchemaRegistry", sr_client.extract(), on_progress)
 
         phase3_tasks.append(_run_sr())
 
+    if sr_endpoint and enable_stream_catalog:
         catalog_client = StreamCatalogClient(
             base_url=sr_endpoint,
             api_key=sr_key,
@@ -274,7 +332,6 @@ async def _extract_environment(
 
         async def _run_catalog() -> tuple[list[LineageNode], list[LineageEdge]]:
             async with catalog_client:
-                # Enrichment modifies the graph in-place.
                 try:
                     await catalog_client.enrich(graph)
                 except Exception:
@@ -282,8 +339,6 @@ async def _extract_environment(
                 return [], []
 
         phase3_tasks.append(_run_catalog())
-    else:
-        logger.debug("No SR endpoint found — skipping SchemaRegistry and StreamCatalog")
 
     if phase3_tasks:
         phase3_results = await asyncio.gather(*phase3_tasks)
@@ -291,20 +346,45 @@ async def _extract_environment(
             _merge_into(graph, nodes, edges)
 
     # ── Phase 4: Tableflow (last) ─────────────────────────────────────
-    tf_client = TableflowClient(
-        api_key=settings.confluent_cloud_api_key,
-        api_secret=settings.confluent_cloud_api_secret,
-        environment_id=env_id,
-    )
-    async with tf_client:
-        nodes, edges = await _safe_extract("Tableflow", tf_client.extract())
-        _merge_into(graph, nodes, edges)
+    if enable_tableflow:
+        on_progress("Phase 4/4", "Extracting Tableflow & catalog integrations")
+        tf_key = settings.tableflow_api_key or settings.confluent_cloud_api_key
+        tf_secret = settings.tableflow_api_secret or settings.confluent_cloud_api_secret
+        tf_client = TableflowClient(
+            api_key=tf_key,
+            api_secret=tf_secret,
+            environment_id=env_id,
+        )
+        async with tf_client:
+            nodes, edges = await _safe_extract("Tableflow", tf_client.extract(), on_progress)
+            _merge_into(graph, nodes, edges)
 
-    logger.info(
-        "Environment %s done: graph has %d nodes, %d edges",
-        env_id,
-        graph.node_count,
-        graph.edge_count,
+    # ── Phase 5 (optional): Metrics enrichment ──────────────────────────
+    if enable_metrics:
+        on_progress("Metrics", "Enriching nodes with real-time metrics")
+        metrics_client = MetricsClient(
+            api_key=settings.confluent_cloud_api_key,
+            api_secret=settings.confluent_cloud_api_secret,
+            lookback_hours=metrics_lookback_hours,
+        )
+        async with metrics_client:
+            total_enriched = 0
+            for cluster in all_clusters:
+                cluster_id = cluster.get("id", "")
+                try:
+                    enriched = await metrics_client.enrich(graph, cluster_id)
+                    total_enriched += enriched
+                except Exception as exc:
+                    logger.warning(
+                        "Metrics enrichment failed for %s: %s",
+                        cluster_id,
+                        exc,
+                    )
+            on_progress("Metrics", f"Enriched {total_enriched} nodes with metrics")
+
+    on_progress(
+        "Environment done",
+        f"{env_id}: {graph.node_count} nodes, {graph.edge_count} edges",
     )
 
 
@@ -312,7 +392,35 @@ async def _extract_environment(
 
 
 def main() -> None:
-    """CLI entry point for lineage extraction."""
+    """CLI entry point for lineage extraction.
+
+    Usage: lineage-bridge-extract --env env-abc123 [--env env-def456]
+           [--cluster lkc-xxx] [--output graph.json]
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Extract Confluent Cloud lineage")
+    parser.add_argument(
+        "--env",
+        dest="envs",
+        action="append",
+        required=True,
+        help="Environment ID to scan (repeatable)",
+    )
+    parser.add_argument(
+        "--cluster",
+        dest="clusters",
+        action="append",
+        default=None,
+        help="Cluster ID filter (repeatable, optional)",
+    )
+    parser.add_argument(
+        "--output",
+        default="./lineage_graph.json",
+        help="Output JSON path (default: ./lineage_graph.json)",
+    )
+    args = parser.parse_args()
+
     settings = Settings()  # type: ignore[call-arg]
 
     logging.basicConfig(
@@ -321,7 +429,13 @@ def main() -> None:
     )
 
     try:
-        graph = asyncio.run(run_extraction(settings))
+        graph = asyncio.run(
+            run_extraction(
+                settings,
+                environment_ids=args.envs,
+                cluster_ids=args.clusters,
+            )
+        )
     except KeyboardInterrupt:
         logger.info("Extraction interrupted")
         sys.exit(1)
@@ -329,5 +443,6 @@ def main() -> None:
         logger.exception("Extraction failed")
         sys.exit(2)
 
+    graph.to_json_file(args.output)
     print(f"Extraction complete: {graph.node_count} nodes, {graph.edge_count} edges")
-    print(f"Output: {settings.extract_output_path}")
+    print(f"Output: {args.output}")
