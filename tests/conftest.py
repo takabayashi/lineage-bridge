@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -19,10 +21,22 @@ from lineage_bridge.models.graph import (
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
+def load_fixture(name: str) -> Any:
+    """Load and parse a JSON fixture file by name."""
+    path = FIXTURES_DIR / name
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 @pytest.fixture()
 def fixtures_dir() -> Path:
     """Return the path to the tests/fixtures/ directory."""
     return FIXTURES_DIR
+
+
+@pytest.fixture()
+def no_sleep(monkeypatch):
+    """Patch asyncio.sleep to return immediately."""
+    monkeypatch.setattr("asyncio.sleep", AsyncMock())
 
 
 @pytest.fixture()
