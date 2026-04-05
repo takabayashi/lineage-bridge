@@ -86,6 +86,12 @@ Data catalog integrations implement `CatalogProvider` protocol in `catalogs/prot
 
 Adding a new catalog = one file in `catalogs/`, register in `catalogs/__init__.py`.
 
+## Planning & Execution
+
+- **Agent crew model:** Read `docs/crew.md` for the 8 personas, their specialties, and the peer review protocol. Always use these when planning work.
+- **Master plan:** Read `docs/plan.md` for the phased roadmap, current status, and workstream assignments. Update it as phases are completed.
+- **Rule:** No commit without Sentinel review (lint, format, tests, scope check).
+
 ## Conventions
 
 - Python 3.11+, async/await with httpx
