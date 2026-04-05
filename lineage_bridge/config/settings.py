@@ -60,6 +60,16 @@ class Settings(BaseSettings):
     tableflow_api_key: str | None = Field(default=None, description="Tableflow API key")
     tableflow_api_secret: str | None = Field(default=None, description="Tableflow API secret")
 
+    # ── Databricks Unity Catalog ─────────────────────────────────────
+    databricks_workspace_url: str | None = Field(
+        default=None,
+        description="Databricks workspace URL (e.g. https://myworkspace.cloud.databricks.com)",
+    )
+    databricks_token: str | None = Field(
+        default=None,
+        description="Databricks personal access token or service principal token",
+    )
+
     # ── Per-cluster credentials ─────────────────────────────────────────
     # JSON map: {"lkc-abc123": {"api_key": "...", "api_secret": "..."}, ...}
     # Set via env: LINEAGE_BRIDGE_CLUSTER_CREDENTIALS='{"lkc-abc":{"api_key":"...","api_secret":"..."}}'

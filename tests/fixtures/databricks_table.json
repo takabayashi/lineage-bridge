@@ -1,0 +1,43 @@
+{
+  "name": "orders-tableflow",
+  "catalog_name": "confluent_tableflow",
+  "schema_name": "lkc-abc123",
+  "table_type": "EXTERNAL",
+  "data_source_format": "DELTA",
+  "columns": [
+    {
+      "name": "order_id",
+      "type_name": "LONG",
+      "type_text": "bigint",
+      "position": 0,
+      "nullable": false
+    },
+    {
+      "name": "customer_id",
+      "type_name": "LONG",
+      "type_text": "bigint",
+      "position": 1,
+      "nullable": false
+    },
+    {
+      "name": "amount",
+      "type_name": "DOUBLE",
+      "type_text": "double",
+      "position": 2,
+      "nullable": true
+    },
+    {
+      "name": "created_at",
+      "type_name": "TIMESTAMP",
+      "type_text": "timestamp",
+      "position": 3,
+      "nullable": true
+    }
+  ],
+  "storage_location": "s3://acme-tableflow-bucket/confluent_tableflow/lkc-abc123/orders-tableflow",
+  "owner": "confluent-tableflow-sp",
+  "created_at": 1709280000000,
+  "updated_at": 1711958400000,
+  "full_name": "confluent_tableflow.lkc-abc123.orders-tableflow",
+  "comment": "Materialized from Confluent Cloud Tableflow"
+}

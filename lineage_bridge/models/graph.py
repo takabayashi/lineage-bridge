@@ -23,6 +23,7 @@ class NodeType(StrEnum):
     FLINK_JOB = "flink_job"
     TABLEFLOW_TABLE = "tableflow_table"
     UC_TABLE = "uc_table"
+    GLUE_TABLE = "glue_table"
     SCHEMA = "schema"
     EXTERNAL_DATASET = "external_dataset"
     CONSUMER_GROUP = "consumer_group"
@@ -44,6 +45,7 @@ class SystemType(StrEnum):
 
     CONFLUENT = "confluent"
     DATABRICKS = "databricks"
+    AWS = "aws"
     EXTERNAL = "external"
 
 

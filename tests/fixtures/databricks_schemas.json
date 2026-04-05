@@ -1,0 +1,13 @@
+{
+  "schemas": [
+    {
+      "name": "lkc-abc123",
+      "catalog_name": "confluent_tableflow",
+      "full_name": "confluent_tableflow.lkc-abc123",
+      "owner": "confluent-tableflow-sp",
+      "comment": "Schema for Confluent Cloud cluster lkc-abc123",
+      "created_at": 1709280000000,
+      "updated_at": 1711958400000
+    }
+  ]
+}
