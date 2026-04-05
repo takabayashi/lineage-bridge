@@ -1,3 +1,5 @@
+# Copyright 2026 Daniel Takabayashi
+# Licensed under the Apache License, Version 2.0
 """Confluent Cloud Metrics API client for enriching lineage nodes with throughput data.
 
 Queries the Telemetry API to add real-time metrics (bytes in/out, records,

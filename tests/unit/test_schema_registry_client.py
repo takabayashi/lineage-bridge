@@ -1,3 +1,5 @@
+# Copyright 2026 Daniel Takabayashi
+# Licensed under the Apache License, Version 2.0
 """Unit tests for the Schema Registry client."""
 
 from __future__ import annotations

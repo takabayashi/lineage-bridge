@@ -1,3 +1,5 @@
+# Copyright 2026 Daniel Takabayashi
+# Licensed under the Apache License, Version 2.0
 """Unit tests for lineage_bridge.extractors.orchestrator helpers.
 
 Tests for _merge_into and _safe_extract, which are module-level functions.

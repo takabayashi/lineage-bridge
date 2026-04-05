@@ -1,3 +1,5 @@
+# Copyright 2026 Daniel Takabayashi
+# Licensed under the Apache License, Version 2.0
 """Kafka Admin REST v3 client — extracts topics and consumer groups."""
 
 from __future__ import annotations
@@ -152,12 +154,12 @@ class KafkaAdminClient(ConfluentClient):
             # Fetch lag to discover group→topic edges
             try:
                 lag_items = await self._get_consumer_lag(gid)
-                logger.info(
+                logger.debug(
                     "Lag endpoint returned %d items for group %s",
                     len(lag_items), gid,
                 )
             except Exception as exc:
-                logger.info(
+                logger.debug(
                     "Lag endpoint failed for group %s: %s", gid, exc,
                 )
                 lag_items = []
@@ -189,7 +191,7 @@ class KafkaAdminClient(ConfluentClient):
             # Fallback: if lag returned nothing, use Kafka protocol to
             # discover committed offsets (works when lag endpoint returns 404).
             if not seen_topics and self._bootstrap_servers:
-                logger.info(
+                logger.debug(
                     "Falling back to Kafka protocol for group %s "
                     "(bootstrap=%s)", gid, self._bootstrap_servers,
                 )
@@ -200,13 +202,13 @@ class KafkaAdminClient(ConfluentClient):
                     self._api_secret,
                     gid,
                 )
-                logger.info(
+                logger.debug(
                     "Protocol fallback for group %s returned: %s",
                     gid, offset_topics,
                 )
                 for tname in offset_topics:
                     if tname not in topic_names:
-                        logger.info(
+                        logger.debug(
                             "Skipping offset topic %s (not in topic_names)",
                             tname,
                         )
@@ -218,11 +220,11 @@ class KafkaAdminClient(ConfluentClient):
                             edge_type=EdgeType.MEMBER_OF,
                         )
                     )
-                    logger.info(
+                    logger.debug(
                         "Added MEMBER_OF edge: %s -> %s", gid, tname,
                     )
             elif not seen_topics:
-                logger.info(
+                logger.debug(
                     "No lag data and no bootstrap_servers for group %s "
                     "— cannot discover topic membership", gid,
                 )

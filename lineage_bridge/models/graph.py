@@ -1,3 +1,5 @@
+# Copyright 2026 Daniel Takabayashi
+# Licensed under the Apache License, Version 2.0
 """Core data models for stream lineage representation."""
 
 from __future__ import annotations

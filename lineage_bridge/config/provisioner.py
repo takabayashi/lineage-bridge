@@ -1,3 +1,5 @@
+# Copyright 2026 Daniel Takabayashi
+# Licensed under the Apache License, Version 2.0
 """Auto-provision Confluent Cloud API keys for LineageBridge.
 
 Creates scoped API keys (and optionally a dedicated service account)

@@ -1,3 +1,5 @@
+# Copyright 2026 Daniel Takabayashi
+# Licensed under the Apache License, Version 2.0
 """Discover Confluent Cloud environments, clusters, and services.
 
 Used by the UI to let users interactively select what to extract.

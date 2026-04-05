@@ -1,3 +1,5 @@
+# Copyright 2026 Daniel Takabayashi
+# Licensed under the Apache License, Version 2.0
 """ksqlDB client — extracts persistent query lineage."""
 
 from __future__ import annotations

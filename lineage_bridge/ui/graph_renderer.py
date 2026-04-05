@@ -1,3 +1,5 @@
+# Copyright 2026 Daniel Takabayashi
+# Licensed under the Apache License, Version 2.0
 """Convert a LineageGraph to streamlit-agraph or raw vis.js dicts."""
 
 from __future__ import annotations

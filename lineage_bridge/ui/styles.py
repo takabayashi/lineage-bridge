@@ -1,3 +1,5 @@
+# Copyright 2026 Daniel Takabayashi
+# Licensed under the Apache License, Version 2.0
 """Visual styling constants for the lineage graph UI."""
 
 from __future__ import annotations

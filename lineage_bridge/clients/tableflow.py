@@ -1,3 +1,5 @@
+# Copyright 2026 Daniel Takabayashi
+# Licensed under the Apache License, Version 2.0
 """Tableflow API client — extracts topic-to-table materialisation lineage."""
 
 from __future__ import annotations

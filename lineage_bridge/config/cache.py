@@ -1,3 +1,5 @@
+# Copyright 2026 Daniel Takabayashi
+# Licensed under the Apache License, Version 2.0
 """Local file cache for persisting UI state across sessions.
 
 Stores user selections (environments, clusters) in plain JSON and

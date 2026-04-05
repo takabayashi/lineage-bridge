@@ -1,3 +1,5 @@
+# Copyright 2026 Daniel Takabayashi
+# Licensed under the Apache License, Version 2.0
 """Orchestrator that runs all extractors and builds the unified lineage graph.
 
 Execution order:
@@ -255,7 +257,7 @@ async def _extract_environment(
         bootstrap = spec.get("kafka_bootstrap_endpoint", "")
         if bootstrap and bootstrap.startswith("SASL_SSL://"):
             bootstrap = bootstrap[len("SASL_SSL://"):]
-        logger.info(
+        logger.debug(
             "KafkaAdminClient bootstrap_servers=%s for cluster %s",
             bootstrap or None, cluster_id,
         )

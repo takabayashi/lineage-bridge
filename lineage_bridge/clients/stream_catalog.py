@@ -1,3 +1,5 @@
+# Copyright 2026 Daniel Takabayashi
+# Licensed under the Apache License, Version 2.0
 """Stream Catalog (Stream Governance) client — enriches existing nodes."""
 
 from __future__ import annotations

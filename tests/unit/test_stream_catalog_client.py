@@ -1,3 +1,5 @@
+# Copyright 2026 Daniel Takabayashi
+# Licensed under the Apache License, Version 2.0
 """Unit tests for lineage_bridge.clients.stream_catalog.StreamCatalogClient."""
 
 from __future__ import annotations

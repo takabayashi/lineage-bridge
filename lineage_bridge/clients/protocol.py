@@ -1,3 +1,5 @@
+# Copyright 2026 Daniel Takabayashi
+# Licensed under the Apache License, Version 2.0
 """Protocol defining the interface all lineage extractors must implement."""
 
 from __future__ import annotations
