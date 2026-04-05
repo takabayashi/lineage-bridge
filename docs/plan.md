@@ -30,7 +30,7 @@ Committed in 3 commits. 304 tests, all passing.
 
 ---
 
-## Phase 2: Integration, UX Review & CI/CD (NEXT)
+## Phase 2: Integration, UX Review & CI/CD (COMPLETED 2026-04-04)
 
 **Goal:** Unified URL dispatch, UX audit, node_details coverage, harden CI.
 
@@ -47,9 +47,13 @@ Committed in 3 commits. 304 tests, all passing.
 
 **Review:** Sentinel reviews all before PR.
 
+**Commits:**
+1. `50d184e` — Unified URL dispatch, GLUE_TABLE details, node_details tests (Forge + Lens)
+2. `102af37` — CI coverage gate, integration workflow, Docker pipeline, UX audit (Anvil + Prism)
+
 ---
 
-## Phase 3: UI Decomposition + UX Improvements
+## Phase 3: UI Decomposition + UX Improvements (NEXT)
 
 **Goal:** Break up app.py monolith (1517 lines), apply UX findings from Phase 2.
 
