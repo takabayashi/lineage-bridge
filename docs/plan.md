@@ -85,7 +85,7 @@ Committed in 3 commits. 304 tests, all passing.
 - 408 tests, 70% overall coverage (target was 65%)
 
 **Commits:**
-1. `TBD` — Per-extractor timeouts, graph validation, Kafka fallback tests (Weaver + Lens)
+1. `ad417c5` — Per-extractor timeouts, graph validation, Kafka fallback tests (Weaver + Lens)
 
 ---
 
