@@ -260,6 +260,26 @@ class LineageGraph:
         subgraph.add_edges_from(flow_edges)
         return nx.number_weakly_connected_components(subgraph)
 
+    # ── Validation ──────────────────────────────────────────────────────
+
+    def validate(self) -> list[str]:
+        """Return a list of validation warnings (empty = clean graph)."""
+        warnings: list[str] = []
+        for node_id, node in self._nodes.items():
+            if node.node_type == NodeType.SCHEMA:
+                continue
+            if (
+                self._graph.in_degree(node_id) == 0
+                and self._graph.out_degree(node_id) == 0
+            ):
+                warnings.append(f"Orphan node: {node_id}")
+        for edge in self._edges.values():
+            if edge.src_id not in self._nodes:
+                warnings.append(f"Dangling edge src: {edge.src_id}")
+            if edge.dst_id not in self._nodes:
+                warnings.append(f"Dangling edge dst: {edge.dst_id}")
+        return warnings
+
     # ── Serialization ───────────────────────────────────────────────────
 
     def to_dict(self) -> dict[str, Any]:

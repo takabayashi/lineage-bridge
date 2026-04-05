@@ -225,6 +225,45 @@ async def test_safe_extract_no_progress_callback():
     assert edges == []
 
 
+async def test_safe_extract_timeout():
+    """_safe_extract returns ([], []) when the coroutine exceeds the timeout."""
+    import asyncio
+
+    from lineage_bridge.extractors import orchestrator
+
+    messages: list[tuple[str, str]] = []
+
+    def _progress(phase: str, detail: str) -> None:
+        messages.append((phase, detail))
+
+    async def _hang_forever():
+        await asyncio.sleep(9999)
+        return [_node("never")], []  # pragma: no cover
+
+    original_timeout = orchestrator._EXTRACTOR_TIMEOUT
+    try:
+        orchestrator._EXTRACTOR_TIMEOUT = 0.05  # 50ms
+        nodes, edges = await _safe_extract("slow", _hang_forever(), on_progress=_progress)
+    finally:
+        orchestrator._EXTRACTOR_TIMEOUT = original_timeout
+
+    assert nodes == []
+    assert edges == []
+    assert len(messages) == 1
+    assert "timed out" in messages[0][1]
+
+
+async def test_safe_extract_completes_within_timeout():
+    """_safe_extract returns normal result when coroutine finishes in time."""
+
+    async def _fast():
+        return [_node("quick")], []
+
+    nodes, _edges = await _safe_extract("fast", _fast())
+    assert len(nodes) == 1
+    assert nodes[0].display_name == "quick"
+
+
 # ── helpers for orchestrator integration tests ──────────────────────────
 
 

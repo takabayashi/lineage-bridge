@@ -104,3 +104,25 @@ Living document. Every significant design or implementation decision made by the
 - **Alternatives:** Make `enrich()` optional in the protocol; raise `NotImplementedError`.
 - **Tradeoff:** No-op keeps the interface uniform — orchestrator calls all providers the same way without type checking. `NotImplementedError` would force try/except in the orchestrator. Revisit when Glue enrichment is implemented (boto3 `get_table` calls).
 - **Files:** `catalogs/aws_glue.py`
+
+## ADR-010: Fixed per-extractor timeout (120s)
+
+- **Status:** Accepted
+- **Date:** 2026-04-04
+- **Decided by:** Weaver
+- **Context:** `_safe_extract()` catches exceptions but has no timeout — a hung extractor blocks the entire pipeline.
+- **Decision:** Wrap coroutine in `asyncio.wait_for(coro, timeout=120)`. Module-level `_EXTRACTOR_TIMEOUT = 120` constant.
+- **Alternatives:** Configurable timeout per extractor via Settings; no timeout (rely on httpx timeout).
+- **Tradeoff:** Fixed 120s is generous enough for any REST API call chain while preventing indefinite hangs. httpx client timeout only covers individual HTTP requests, not the full extraction pipeline. Configurable timeout adds complexity for no current need. Revisit if extractors with legitimately long operations are added.
+- **Files:** `extractors/orchestrator.py`
+
+## ADR-011: Graph validation as warnings, not errors
+
+- **Status:** Accepted
+- **Date:** 2026-04-04
+- **Decided by:** Weaver, Blueprint
+- **Context:** Orphan nodes (no edges) and dangling edges indicate extraction issues, but should not block the graph from being displayed.
+- **Decision:** `LineageGraph.validate()` returns `list[str]` of warnings. Orchestrator logs them and emits a progress callback. No exception raised.
+- **Alternatives:** Raise `ValidationError` to fail the extraction; silently ignore.
+- **Tradeoff:** Warnings surface issues for debugging without blocking the user. Orphan nodes are common in partial extractions (e.g., when some extractors are disabled). Raising would force users to fix upstream data before seeing any graph. Silent ignore would hide real bugs.
+- **Files:** `models/graph.py`, `extractors/orchestrator.py`

@@ -60,13 +60,21 @@ def _merge_into(
 
 # ── safe extractor runner ───────────────────────────────────────────────
 
+_EXTRACTOR_TIMEOUT = 120  # seconds — per-extractor ceiling
+
 
 async def _safe_extract(
     label: str, coro: Any, on_progress: Any = None
 ) -> tuple[list[LineageNode], list[LineageEdge]]:
-    """Run an extractor coroutine, returning empty on failure."""
+    """Run an extractor coroutine, returning empty on failure or timeout."""
     try:
-        return await coro
+        return await asyncio.wait_for(coro, timeout=_EXTRACTOR_TIMEOUT)
+    except TimeoutError:
+        detail = f"Extractor '{label}' timed out after {_EXTRACTOR_TIMEOUT}s"
+        logger.warning(detail)
+        if on_progress:
+            on_progress("Warning", detail)
+        return [], []
     except Exception as exc:
         # Surface auth errors clearly
         msg = str(exc)
@@ -167,6 +175,13 @@ async def run_extraction(
             )
     finally:
         await cloud.close()
+
+    # ── Validation ─────────────────────────────────────────────────────
+    warnings = graph.validate()
+    for w in warnings:
+        logger.warning("Graph validation: %s", w)
+    if warnings:
+        _progress("Validation", f"{len(warnings)} warning(s) — check logs")
 
     _progress("Done", f"{graph.node_count} nodes, {graph.edge_count} edges")
     return graph
