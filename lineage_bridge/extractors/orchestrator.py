@@ -6,7 +6,8 @@ Execution order:
   1. KafkaAdmin — establish the topic inventory.
   2. Connect, ksqlDB, Flink — transformation / processing edges (parallel).
   3. SchemaRegistry, StreamCatalog — enrichment (parallel).
-  4. Tableflow — bridge to UC/Glue (last, depends on topic nodes).
+  4. Tableflow — bridge to UC/Glue (depends on topic nodes).
+  4b. Catalog enrichment — providers enrich their own nodes (parallel).
   5. Merge everything into a single LineageGraph.
 """
 
@@ -17,6 +18,8 @@ import logging
 import sys
 from typing import Any
 
+from lineage_bridge.catalogs import get_active_providers
+from lineage_bridge.catalogs.databricks_uc import DatabricksUCProvider
 from lineage_bridge.clients.base import ConfluentClient
 from lineage_bridge.clients.connect import ConnectClient
 from lineage_bridge.clients.flink import FlinkClient
@@ -256,10 +259,11 @@ async def _extract_environment(
         kafka_key, kafka_secret = settings.get_cluster_credentials(cluster_id)
         bootstrap = spec.get("kafka_bootstrap_endpoint", "")
         if bootstrap and bootstrap.startswith("SASL_SSL://"):
-            bootstrap = bootstrap[len("SASL_SSL://"):]
+            bootstrap = bootstrap[len("SASL_SSL://") :]
         logger.debug(
             "KafkaAdminClient bootstrap_servers=%s for cluster %s",
-            bootstrap or None, cluster_id,
+            bootstrap or None,
+            cluster_id,
         )
         kafka_client = KafkaAdminClient(
             base_url=rest_endpoint,
@@ -439,6 +443,26 @@ async def _extract_environment(
         async with tf_client:
             nodes, edges = await _safe_extract("Tableflow", tf_client.extract(), on_progress)
             _merge_into(graph, nodes, edges)
+
+    # ── Phase 4b: Catalog enrichment ─────────────────────────────────────
+    active_providers = get_active_providers(graph)
+    if active_providers:
+        on_progress("Phase 4b", "Enriching catalog nodes")
+        for provider in active_providers:
+            if provider.catalog_type == "UNITY_CATALOG":
+                provider = DatabricksUCProvider(
+                    workspace_url=settings.databricks_workspace_url,
+                    token=settings.databricks_token,
+                )
+            try:
+                await provider.enrich(graph)
+            except Exception:
+                logger.warning(
+                    "Catalog enrichment failed for %s",
+                    provider.catalog_type,
+                    exc_info=True,
+                )
+        on_progress("Phase 4b", f"Enriched with {len(active_providers)} catalog provider(s)")
 
     # ── Phase 5 (optional): Metrics enrichment ──────────────────────────
     if enable_metrics:

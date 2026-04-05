@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from lineage_bridge.catalogs import get_provider
 from lineage_bridge.clients.base import ConfluentClient
 from lineage_bridge.models.graph import (
     EdgeType,
@@ -149,66 +150,13 @@ class TableflowClient(ConfluentClient):
         catalog_type = ci_spec.get("catalog_type", "")
         catalog_config = ci_spec.get("catalog_config", {})
 
-        if catalog_type == "UNITY_CATALOG":
-            uc_cfg = catalog_config.get("unity_catalog", {})
-            catalog_name = uc_cfg.get("catalog_name", "confluent_tableflow")
-            qualified = f"{catalog_name}.{cluster_id}.{topic_name}"
-            uc_id = self._uc_node_id(catalog_name, cluster_id, topic_name)
-
-            nodes.append(
-                LineageNode(
-                    node_id=uc_id,
-                    system=SystemType.DATABRICKS,
-                    node_type=NodeType.UC_TABLE,
-                    qualified_name=qualified,
-                    display_name=qualified,
-                    environment_id=self.environment_id,
-                    cluster_id=cluster_id,
-                    attributes={
-                        "catalog_name": catalog_name,
-                        "schema_name": cluster_id,
-                        "table_name": topic_name,
-                        "workspace_url": uc_cfg.get("workspace_url"),
-                    },
-                )
+        provider = get_provider(catalog_type)
+        if provider:
+            node, edge = provider.build_node(
+                catalog_config, tf_id, topic_name, cluster_id, self.environment_id
             )
-            edges.append(
-                LineageEdge(
-                    src_id=tf_id,
-                    dst_id=uc_id,
-                    edge_type=EdgeType.MATERIALIZES,
-                )
-            )
-
-        elif catalog_type == "AWS_GLUE":
-            glue_cfg = catalog_config.get("aws_glue", catalog_config)
-            database = glue_cfg.get("database_name", cluster_id)
-            qualified = f"glue://{database}/{topic_name}"
-            glue_id = f"external:uc_table:{self.environment_id}:{qualified}"
-
-            nodes.append(
-                LineageNode(
-                    node_id=glue_id,
-                    system=SystemType.EXTERNAL,
-                    node_type=NodeType.UC_TABLE,
-                    qualified_name=qualified,
-                    display_name=f"{database}.{topic_name} (glue)",
-                    environment_id=self.environment_id,
-                    cluster_id=cluster_id,
-                    attributes={
-                        "catalog_type": "AWS_GLUE",
-                        "database": database,
-                        "table_name": topic_name,
-                    },
-                )
-            )
-            edges.append(
-                LineageEdge(
-                    src_id=tf_id,
-                    dst_id=glue_id,
-                    edge_type=EdgeType.MATERIALIZES,
-                )
-            )
+            nodes.append(node)
+            edges.append(edge)
         else:
             logger.debug("Unknown catalog type %s — skipping", catalog_type)
 

@@ -115,7 +115,7 @@ class TestTableflowExtract:
 
     @respx.mock
     async def test_aws_glue_integration(self, tf_client):
-        """An AWS_GLUE catalog integration produces EXTERNAL UC_TABLE nodes."""
+        """An AWS_GLUE catalog integration produces AWS GLUE_TABLE nodes."""
         glue_ci = {
             "data": [
                 {
@@ -140,10 +140,10 @@ class TestTableflowExtract:
 
         nodes, edges = await tf_client.extract()
 
-        glue_nodes = [n for n in nodes if n.system == SystemType.EXTERNAL]
+        glue_nodes = [n for n in nodes if n.system == SystemType.AWS]
         assert len(glue_nodes) == 2
         for n in glue_nodes:
-            assert n.node_type == NodeType.UC_TABLE
+            assert n.node_type == NodeType.GLUE_TABLE
             assert "glue://" in n.qualified_name
             assert n.attributes["catalog_type"] == "AWS_GLUE"
             assert n.attributes["database"] == "my_glue_db"
@@ -174,6 +174,7 @@ class TestTableflowExtract:
         # Only tableflow_table nodes, no UC/Glue nodes
         node_types = {n.node_type for n in nodes}
         assert NodeType.UC_TABLE not in node_types
+        assert NodeType.GLUE_TABLE not in node_types
 
     @respx.mock
     async def test_empty_topics_returns_empty(self, tf_client):

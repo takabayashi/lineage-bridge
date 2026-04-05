@@ -81,7 +81,7 @@ def generate_sample_graph() -> LineageGraph:
     graph.add_node(conn_mysql)
 
     # ── Kafka topics ───────────────────────────────────────────────────
-    topic_names = ["orders", "customers", "enriched_orders", "orders_avro", "shipments"]
+    topic_names = ["orders", "customers", "enriched_orders", "orders_avro", "shipments", "payments"]
     topics: dict[str, LineageNode] = {}
     for t in topic_names:
         node = LineageNode(
@@ -207,6 +207,19 @@ def generate_sample_graph() -> LineageGraph:
     )
     graph.add_node(tf_table)
 
+    tf_table_payments = LineageNode(
+        node_id=_node_id("confluent", "tableflow_table", "payments_avro"),
+        system=SystemType.CONFLUENT,
+        node_type=NodeType.TABLEFLOW_TABLE,
+        qualified_name="payments_avro",
+        display_name="payments_avro (Tableflow)",
+        environment_id=ENV_ID,
+        cluster_id=CLUSTER_ID,
+        attributes={"storage_format": "iceberg", "status": "ACTIVE"},
+        tags=["tableflow", "iceberg"],
+    )
+    graph.add_node(tf_table_payments)
+
     # ── Unity Catalog table ────────────────────────────────────────────
     uc_table = LineageNode(
         node_id=_node_id("databricks", "uc_table", "catalog.lkc-xyz789.orders_avro"),
@@ -219,6 +232,19 @@ def generate_sample_graph() -> LineageGraph:
         tags=["unity-catalog", "databricks"],
     )
     graph.add_node(uc_table)
+
+    # ── AWS Glue table ──────────────────────────────────────────────────
+    glue_table = LineageNode(
+        node_id=_node_id("aws", "glue_table", "glue://lkc-xyz789/payments_avro"),
+        system=SystemType.AWS,
+        node_type=NodeType.GLUE_TABLE,
+        qualified_name="glue://lkc-xyz789/payments_avro",
+        display_name="Glue: lkc-xyz789.payments_avro",
+        environment_id=ENV_ID,
+        attributes={"database": "lkc-xyz789", "table_name": "payments_avro"},
+        tags=["aws-glue"],
+    )
+    graph.add_node(glue_table)
 
     # ── Consumer groups ────────────────────────────────────────────────
     cg_names = ["orders-processing-cg", "analytics-cg", "shipment-tracker-cg"]
@@ -280,6 +306,14 @@ def generate_sample_graph() -> LineageGraph:
 
     # UC table: tableflow -> UC
     graph.add_edge(_edge(tf_table.node_id, uc_table.node_id, EdgeType.MATERIALIZES))
+
+    # Glue table: payments topic -> tableflow -> Glue
+    graph.add_edge(
+        _edge(topics["payments"].node_id, tf_table_payments.node_id, EdgeType.MATERIALIZES)
+    )
+    graph.add_edge(
+        _edge(tf_table_payments.node_id, glue_table.node_id, EdgeType.MATERIALIZES)
+    )
 
     # Consumer groups
     graph.add_edge(

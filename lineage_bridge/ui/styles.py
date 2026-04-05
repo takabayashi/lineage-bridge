@@ -17,6 +17,7 @@ NODE_COLORS: dict[NodeType, str] = {
     NodeType.FLINK_JOB: "#00796B",  # dark teal
     NodeType.TABLEFLOW_TABLE: "#2E7D32",  # dark green
     NodeType.UC_TABLE: "#F57F17",  # dark amber
+    NodeType.GLUE_TABLE: "#0D47A1",  # AWS dark blue
     NodeType.SCHEMA: "#546E7A",  # blue-gray
     NodeType.EXTERNAL_DATASET: "#C62828",  # dark red
     NodeType.CONSUMER_GROUP: "#0277BD",  # dark light-blue
@@ -30,6 +31,7 @@ NODE_SIZES: dict[NodeType, int] = {
     NodeType.FLINK_JOB: 38,
     NodeType.TABLEFLOW_TABLE: 36,
     NodeType.UC_TABLE: 36,
+    NodeType.GLUE_TABLE: 36,
     NodeType.SCHEMA: 28,
     NodeType.EXTERNAL_DATASET: 34,
     NodeType.CONSUMER_GROUP: 30,
@@ -73,6 +75,7 @@ NODE_TYPE_LABELS: dict[NodeType, str] = {
     NodeType.FLINK_JOB: "Flink Job",
     NodeType.TABLEFLOW_TABLE: "Tableflow Table",
     NodeType.UC_TABLE: "Unity Catalog Table",
+    NodeType.GLUE_TABLE: "AWS Glue Table",
     NodeType.SCHEMA: "Schema",
     NodeType.EXTERNAL_DATASET: "External Dataset",
     NodeType.CONSUMER_GROUP: "Consumer Group",
@@ -95,6 +98,7 @@ NODE_SHAPES: dict[NodeType, str] = {
     NodeType.FLINK_JOB: "image",
     NodeType.TABLEFLOW_TABLE: "image",
     NodeType.UC_TABLE: "image",
+    NodeType.GLUE_TABLE: "image",
     NodeType.SCHEMA: "image",
     NodeType.EXTERNAL_DATASET: "image",
     NodeType.CONSUMER_GROUP: "image",
@@ -167,6 +171,19 @@ _SYMBOLS: dict[NodeType, str] = {
         '<path d="M-11,-8 L-11,6 Q-11,12 0,12 '
         'Q11,12 11,6 L11,-8" '
         'fill="none" stroke="#fff" stroke-width="2"/>'
+    ),
+    # Glue Table — table grid with bottom bar
+    NodeType.GLUE_TABLE: (
+        '<rect x="-12" y="-10" width="24" height="20" '
+        'rx="2" fill="none" stroke="#fff" stroke-width="2"/>'
+        '<line x1="-12" y1="-3" x2="12" y2="-3" '
+        'stroke="#fff" stroke-width="2"/>'
+        '<line x1="-12" y1="4" x2="12" y2="4" '
+        'stroke="#fff" stroke-width="1.5"/>'
+        '<line x1="-4" y1="-3" x2="-4" y2="10" '
+        'stroke="#fff" stroke-width="1.5"/>'
+        '<line x1="4" y1="-3" x2="4" y2="10" '
+        'stroke="#fff" stroke-width="1.5"/>'
     ),
     # Schema — document with lines
     NodeType.SCHEMA: (
@@ -312,6 +329,7 @@ NODE_TYPE_EMOJI: dict[NodeType, str] = {
     NodeType.FLINK_JOB: "\u26a1",        # ⚡ (bolt)
     NodeType.TABLEFLOW_TABLE: "\u2637",  # ☷ (grid)
     NodeType.UC_TABLE: "\u26c1",         # ⛁ (database)
+    NodeType.GLUE_TABLE: "\u26c1",      # ⛁ (database)
     NodeType.SCHEMA: "\u2637",           # ☷ (document)
     NodeType.EXTERNAL_DATASET: "\u2601", # ☁ (cloud)
     NodeType.CONSUMER_GROUP: "\u2638",   # ☸ (group)

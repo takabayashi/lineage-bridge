@@ -1,4 +1,4 @@
-.PHONY: extract ui test lint format clean install docker-build docker-extract docker-ui docker-down demo
+.PHONY: extract ui test lint format clean install docker-build docker-extract docker-ui docker-down demo infra-init infra-plan infra-apply infra-destroy infra-env
 
 install:
 	pip install -e ".[dev]"
@@ -46,3 +46,20 @@ demo:
 		|| echo '{"nodes":[],"edges":[]}' > lineage_graph.json
 	@echo "Launching Streamlit UI..."
 	streamlit run lineage_bridge/ui/app.py
+
+# ── Infrastructure ─────────────────────────────────────────────────────────
+
+infra-init:
+	cd infra && terraform init
+
+infra-plan:
+	cd infra && terraform plan
+
+infra-apply:
+	cd infra && terraform apply
+
+infra-destroy:
+	cd infra && terraform destroy
+
+infra-env:
+	./scripts/env-from-terraform.sh
