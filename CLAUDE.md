@@ -90,6 +90,7 @@ Adding a new catalog = one file in `catalogs/`, register in `catalogs/__init__.p
 
 - **Agent crew model:** Read `docs/crew.md` for the 8 personas, their specialties, and the peer review protocol. Always use these when planning work.
 - **Master plan:** Read `docs/plan.md` for the phased roadmap, current status, and workstream assignments. Update it as phases are completed.
+- **Design decisions:** Read `docs/decisions.md` before proposing changes — settled decisions are logged there with rationale. When making a new design or implementation decision, add an ADR entry with status, context, alternatives, and tradeoff.
 - **Rule:** No commit without Sentinel review (lint, format, tests, scope check).
 
 ## Conventions
