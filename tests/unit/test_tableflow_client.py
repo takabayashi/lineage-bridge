@@ -8,10 +8,9 @@ import httpx
 import pytest
 import respx
 
-from tests.conftest import load_fixture
-
 from lineage_bridge.clients.tableflow import TableflowClient
 from lineage_bridge.models.graph import EdgeType, NodeType, SystemType
+from tests.conftest import load_fixture
 
 # ── shared constants ──────────────────────────────────────────────────────
 
@@ -45,23 +44,20 @@ def _mock_paginated(path: str, fixture_name: str | None = None, data: list | Non
         resp_json = fixture
     else:
         resp_json = {"data": data or [], "metadata": {"next": None}}
-    respx.get(f"{BASE_URL}{path}").mock(
-        return_value=httpx.Response(200, json=resp_json)
-    )
+    respx.get(f"{BASE_URL}{path}").mock(return_value=httpx.Response(200, json=resp_json))
 
 
 # ── extract() tests ──────────────────────────────────────────────────────
 
 
 class TestTableflowExtract:
-
     @respx.mock
     async def test_extract_creates_tableflow_nodes(self, tf_client):
         """Tableflow topics produce TABLEFLOW_TABLE nodes."""
         _mock_paginated(TF_TOPICS_PATH, "tableflow_topics.json")
         _mock_paginated(CATALOG_INT_PATH, data=[])
 
-        nodes, edges = await tf_client.extract()
+        nodes, _edges = await tf_client.extract()
 
         tf_nodes = [n for n in nodes if n.node_type == NodeType.TABLEFLOW_TABLE]
         assert len(tf_nodes) == 2
@@ -81,7 +77,7 @@ class TestTableflowExtract:
         _mock_paginated(TF_TOPICS_PATH, "tableflow_topics.json")
         _mock_paginated(CATALOG_INT_PATH, data=[])
 
-        nodes, edges = await tf_client.extract()
+        _nodes, edges = await tf_client.extract()
 
         mat_edges = [e for e in edges if e.edge_type == EdgeType.MATERIALIZES]
         assert len(mat_edges) == 2
@@ -108,8 +104,7 @@ class TestTableflowExtract:
 
         # UC edges: tableflow -> UC table
         uc_edges = [
-            e for e in edges
-            if e.edge_type == EdgeType.MATERIALIZES and "uc_table" in e.dst_id
+            e for e in edges if e.edge_type == EdgeType.MATERIALIZES and "uc_table" in e.dst_id
         ]
         assert len(uc_edges) == 2
 
@@ -138,7 +133,7 @@ class TestTableflowExtract:
             return_value=httpx.Response(200, json=glue_ci)
         )
 
-        nodes, edges = await tf_client.extract()
+        nodes, _edges = await tf_client.extract()
 
         glue_nodes = [n for n in nodes if n.system == SystemType.AWS]
         assert len(glue_nodes) == 2
@@ -169,7 +164,7 @@ class TestTableflowExtract:
             return_value=httpx.Response(200, json=unknown_ci)
         )
 
-        nodes, edges = await tf_client.extract()
+        nodes, _edges = await tf_client.extract()
 
         # Only tableflow_table nodes, no UC/Glue nodes
         node_types = {n.node_type for n in nodes}

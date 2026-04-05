@@ -27,9 +27,7 @@ class TestGenerateSampleGraphNodeTypes:
         graph = generate_sample_graph()
         present_types = {n.node_type for n in graph.nodes}
         for ntype in NodeType:
-            assert ntype in present_types, (
-                f"Missing node type {ntype.name} in sample graph"
-            )
+            assert ntype in present_types, f"Missing node type {ntype.name} in sample graph"
 
 
 class TestGenerateSampleGraphEdgeTypes:

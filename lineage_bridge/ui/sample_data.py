@@ -311,9 +311,7 @@ def generate_sample_graph() -> LineageGraph:
     graph.add_edge(
         _edge(topics["payments"].node_id, tf_table_payments.node_id, EdgeType.MATERIALIZES)
     )
-    graph.add_edge(
-        _edge(tf_table_payments.node_id, glue_table.node_id, EdgeType.MATERIALIZES)
-    )
+    graph.add_edge(_edge(tf_table_payments.node_id, glue_table.node_id, EdgeType.MATERIALIZES))
 
     # Consumer groups
     graph.add_edge(

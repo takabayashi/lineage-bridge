@@ -375,7 +375,7 @@ def render_node_details(graph: LineageGraph) -> None:
         if schema_edges:
             st.markdown("---")
             st.markdown(f"**Schemas ({len(schema_edges)})**")
-            for idx, se in enumerate(schema_edges):
+            for _idx, se in enumerate(schema_edges):
                 schema_node = graph.get_node(se.dst_id)
                 if not schema_node:
                     continue

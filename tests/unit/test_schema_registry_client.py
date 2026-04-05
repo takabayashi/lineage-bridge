@@ -14,7 +14,6 @@ from lineage_bridge.clients.schema_registry import SchemaRegistryClient, _topic_
 from lineage_bridge.models.graph import EdgeType, NodeType, SystemType
 from tests.conftest import load_fixture
 
-
 # ── Fixtures ───────────────────────────────────────────────────────────
 
 ENV_ID = "env-abc123"
@@ -87,13 +86,15 @@ class TestCountFields:
         assert count == 8
 
     def test_json_schema_properties(self):
-        schema_str = json.dumps({
-            "type": "object",
-            "properties": {
-                "name": {"type": "string"},
-                "age": {"type": "integer"},
-            },
-        })
+        schema_str = json.dumps(
+            {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "age": {"type": "integer"},
+                },
+            }
+        )
         count = SchemaRegistryClient._count_fields(schema_str, "JSON")
         assert count == 2
 
@@ -152,9 +153,7 @@ class TestExtract:
             assert edge.attributes["role"] == "value"
 
     @respx.mock
-    async def test_extract_edge_src_dst_ids(
-        self, sr_client, schema_version_payload
-    ):
+    async def test_extract_edge_src_dst_ids(self, sr_client, schema_version_payload):
         respx.get(f"{BASE_URL}/subjects").mock(
             return_value=httpx.Response(200, json=["orders-value"])
         )
@@ -162,7 +161,7 @@ class TestExtract:
             return_value=httpx.Response(200, json=schema_version_payload)
         )
 
-        nodes, edges = await sr_client.extract()
+        _nodes, edges = await sr_client.extract()
 
         assert len(edges) == 1
         edge = edges[0]
@@ -216,9 +215,7 @@ class TestExtract:
 
     @respx.mock
     async def test_extract_empty_subjects(self, sr_client):
-        respx.get(f"{BASE_URL}/subjects").mock(
-            return_value=httpx.Response(200, json=[])
-        )
+        respx.get(f"{BASE_URL}/subjects").mock(return_value=httpx.Response(200, json=[]))
 
         nodes, edges = await sr_client.extract()
 

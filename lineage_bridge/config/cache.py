@@ -12,6 +12,7 @@ Key file:       ``~/.lineage_bridge/.cache_key``
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -28,16 +29,19 @@ _CACHE_FILE = _CACHE_DIR / "cache.json"
 _KEY_FILE = _CACHE_DIR / ".cache_key"
 
 # Fields that contain secrets and must be encrypted on disk.
-_ENCRYPTED_FIELDS = {"cluster_credentials", "sr_credentials", "flink_credentials", "provisioned_keys"}
+_ENCRYPTED_FIELDS = {
+    "cluster_credentials",
+    "sr_credentials",
+    "flink_credentials",
+    "provisioned_keys",
+}
 
 
 def _ensure_dir() -> None:
     _CACHE_DIR.mkdir(parents=True, exist_ok=True)
     # Restrict directory to owner only.
-    try:
+    with contextlib.suppress(OSError):
         os.chmod(_CACHE_DIR, stat.S_IRWXU)
-    except OSError:
-        pass
 
 
 def _get_or_create_key() -> bytes:
@@ -48,10 +52,8 @@ def _get_or_create_key() -> bytes:
     key = Fernet.generate_key()
     _KEY_FILE.write_bytes(key)
     # Restrict key file to owner read/write only.
-    try:
+    with contextlib.suppress(OSError):
         os.chmod(_KEY_FILE, stat.S_IRUSR | stat.S_IWUSR)
-    except OSError:
-        pass
     return key
 
 
@@ -102,10 +104,8 @@ def save_cache(data: dict[str, Any]) -> None:
         to_write = dict(data)
         fernet = _get_fernet()
         for field in _ENCRYPTED_FIELDS:
-            if field in to_write and to_write[field]:
-                to_write[f"_{field}_enc"] = _encrypt_value(
-                    fernet, to_write[field]
-                )
+            if to_write.get(field):
+                to_write[f"_{field}_enc"] = _encrypt_value(fernet, to_write[field])
                 del to_write[field]
             elif field in to_write:
                 del to_write[field]
@@ -114,10 +114,8 @@ def save_cache(data: dict[str, Any]) -> None:
             encoding="utf-8",
         )
         # Restrict cache file to owner only.
-        try:
+        with contextlib.suppress(OSError):
             os.chmod(_CACHE_FILE, stat.S_IRUSR | stat.S_IWUSR)
-        except OSError:
-            pass
     except Exception:
         logger.debug("Failed to save cache to %s", _CACHE_FILE, exc_info=True)
 

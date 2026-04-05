@@ -154,9 +154,7 @@ class ConnectClient(ConfluentClient):
             explicit_type = detail.get("type")
             direction = _classify_connector(connector_class, explicit_type)
             # Extract connector state from status block
-            conn_state = (
-                detail.get("status", {}).get("connector", {}).get("state", "")
-            )
+            conn_state = detail.get("status", {}).get("connector", {}).get("state", "")
 
             # Connector node
             nodes.append(

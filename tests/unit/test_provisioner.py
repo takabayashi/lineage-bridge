@@ -70,9 +70,7 @@ def test_constructor_default_prefix(mock_cloud):
 # ── Service Account ────────────────────────────────────────────────────
 
 
-async def test_ensure_service_account_creates_new(
-    provisioner, mock_cloud
-):
+async def test_ensure_service_account_creates_new(provisioner, mock_cloud):
     """ensure_service_account creates a new SA when none exists."""
     mock_cloud.paginate.return_value = []
     mock_cloud.post.return_value = {"id": "sa-new123"}
@@ -86,9 +84,7 @@ async def test_ensure_service_account_creates_new(
     assert body["display_name"] == "test-lb-extractor"
 
 
-async def test_ensure_service_account_finds_existing(
-    provisioner, mock_cloud
-):
+async def test_ensure_service_account_finds_existing(provisioner, mock_cloud):
     """ensure_service_account returns existing SA if name matches."""
     mock_cloud.paginate.return_value = [
         {"id": "sa-existing", "display_name": "test-lb-extractor"},
@@ -104,9 +100,7 @@ async def test_ensure_service_account_finds_existing(
 # ── Key Provisioning ───────────────────────────────────────────────────
 
 
-async def test_provision_key_cache_miss_calls_api(
-    provisioner, mock_cloud, no_sleep
-):
+async def test_provision_key_cache_miss_calls_api(provisioner, mock_cloud, no_sleep):
     """provision_key calls the API when there is no cached key."""
     mock_cloud.post.return_value = {
         "id": "api-key-123",
@@ -125,9 +119,7 @@ async def test_provision_key_cache_miss_calls_api(
     mock_cloud.post.assert_awaited_once()
 
 
-async def test_provision_key_cache_hit_skips_api(
-    provisioner, mock_cloud, no_sleep
-):
+async def test_provision_key_cache_hit_skips_api(provisioner, mock_cloud, no_sleep):
     """provision_key returns cached key without calling API."""
     # Pre-populate cache
     from lineage_bridge.config.cache import update_cache
@@ -155,9 +147,7 @@ async def test_provision_key_cache_hit_skips_api(
     mock_cloud.post.assert_not_awaited()
 
 
-async def test_provision_key_with_owner(
-    provisioner, mock_cloud, no_sleep
-):
+async def test_provision_key_with_owner(provisioner, mock_cloud, no_sleep):
     """provision_key includes owner when owner_id is provided."""
     mock_cloud.post.return_value = {
         "id": "key-owned",
@@ -176,9 +166,7 @@ async def test_provision_key_with_owner(
     assert key.owner_id == "sa-owner"
 
 
-async def test_provision_key_cached_after_creation(
-    provisioner, mock_cloud, no_sleep
-):
+async def test_provision_key_cached_after_creation(provisioner, mock_cloud, no_sleep):
     """Newly provisioned key is saved to cache for future reuse."""
     mock_cloud.post.return_value = {
         "id": "new-key",
@@ -202,9 +190,7 @@ async def test_provision_key_cached_after_creation(
     assert mock_cloud.post.await_count == 1
 
 
-async def test_provision_cluster_key(
-    provisioner, mock_cloud, no_sleep
-):
+async def test_provision_cluster_key(provisioner, mock_cloud, no_sleep):
     """provision_cluster_key delegates to provision_key with scope kafka."""
     mock_cloud.post.return_value = {
         "id": "k1",
@@ -219,9 +205,7 @@ async def test_provision_cluster_key(
     assert key.display_name == "test-lb-kafka-env-1"
 
 
-async def test_provision_sr_key(
-    provisioner, mock_cloud, no_sleep
-):
+async def test_provision_sr_key(provisioner, mock_cloud, no_sleep):
     """provision_sr_key delegates with scope sr."""
     mock_cloud.post.return_value = {
         "id": "k2",
@@ -236,9 +220,7 @@ async def test_provision_sr_key(
     assert key.display_name == "test-lb-sr-env-1"
 
 
-async def test_provision_flink_key(
-    provisioner, mock_cloud, no_sleep
-):
+async def test_provision_flink_key(provisioner, mock_cloud, no_sleep):
     """provision_flink_key delegates with scope flink."""
     mock_cloud.post.return_value = {
         "id": "k3",
@@ -256,9 +238,7 @@ async def test_provision_flink_key(
 # ── Key Listing ─────────────────────────────────────────────────────────
 
 
-async def test_list_provisioned_keys_filters_by_prefix(
-    provisioner, mock_cloud
-):
+async def test_list_provisioned_keys_filters_by_prefix(provisioner, mock_cloud):
     """list_provisioned_keys only returns keys matching prefix."""
     mock_cloud.paginate.return_value = [
         {"id": "k1", "spec": {"display_name": "test-lb-sr-env-1"}},
@@ -276,9 +256,7 @@ async def test_list_provisioned_keys_filters_by_prefix(
 # ── Key Revocation ──────────────────────────────────────────────────────
 
 
-async def test_revoke_key_calls_delete(
-    provisioner, mock_cloud, no_sleep
-):
+async def test_revoke_key_calls_delete(provisioner, mock_cloud, no_sleep):
     """revoke_key calls DELETE on the API."""
     # First provision a key to cache it
     mock_cloud.post.return_value = {
@@ -293,23 +271,15 @@ async def test_revoke_key_calls_delete(
 
     await provisioner.revoke_key("key-to-revoke")
 
-    mock_cloud.delete.assert_awaited_with(
-        "/iam/v2/api-keys/key-to-revoke"
-    )
+    mock_cloud.delete.assert_awaited_with("/iam/v2/api-keys/key-to-revoke")
 
     # Verify key removed from cache
     cached = KeyProvisioner.get_all_cached_keys()
-    matching = [
-        v
-        for v in cached.values()
-        if v.get("key_id") == "key-to-revoke"
-    ]
+    matching = [v for v in cached.values() if v.get("key_id") == "key-to-revoke"]
     assert len(matching) == 0
 
 
-async def test_revoke_all_revokes_matching_keys(
-    provisioner, mock_cloud
-):
+async def test_revoke_all_revokes_matching_keys(provisioner, mock_cloud):
     """revoke_all deletes all keys with our prefix."""
     mock_cloud.paginate.return_value = [
         {"id": "k1", "spec": {"display_name": "test-lb-sr-env-1"}},
@@ -321,9 +291,7 @@ async def test_revoke_all_revokes_matching_keys(
     assert mock_cloud.delete.await_count == 2
 
 
-async def test_revoke_all_handles_individual_failure(
-    provisioner, mock_cloud
-):
+async def test_revoke_all_handles_individual_failure(provisioner, mock_cloud):
     """revoke_all continues even if one revoke fails."""
     mock_cloud.paginate.return_value = [
         {"id": "k1", "spec": {"display_name": "test-lb-a"}},
@@ -351,14 +319,10 @@ async def test_delete_service_account(provisioner, mock_cloud):
 
     await provisioner.delete_service_account()
 
-    mock_cloud.delete.assert_awaited_with(
-        "/iam/v2/service-accounts/sa-1"
-    )
+    mock_cloud.delete.assert_awaited_with("/iam/v2/service-accounts/sa-1")
 
 
-async def test_delete_service_account_no_match(
-    provisioner, mock_cloud
-):
+async def test_delete_service_account_no_match(provisioner, mock_cloud):
     """delete_service_account does nothing when no SA matches."""
     mock_cloud.paginate.return_value = [
         {"id": "sa-x", "display_name": "unrelated"},
@@ -372,9 +336,7 @@ async def test_delete_service_account_no_match(
 # ── Error handling ──────────────────────────────────────────────────────
 
 
-async def test_provision_key_api_error(
-    provisioner, mock_cloud, no_sleep
-):
+async def test_provision_key_api_error(provisioner, mock_cloud, no_sleep):
     """provision_key propagates API errors."""
     mock_cloud.post.side_effect = RuntimeError("API unreachable")
 
@@ -386,9 +348,7 @@ async def test_provision_key_api_error(
         )
 
 
-async def test_ensure_service_account_api_error(
-    provisioner, mock_cloud
-):
+async def test_ensure_service_account_api_error(provisioner, mock_cloud):
     """ensure_service_account propagates API errors."""
     mock_cloud.paginate.side_effect = RuntimeError("timeout")
 

@@ -31,16 +31,14 @@ _INSERT_INTO_RE = re.compile(rf"\bINSERT\s+INTO\s+({_IDENT})", re.IGNORECASE)
 # CREATE TABLE <name> [WITH (...)] AS SELECT ... (CTAS — the table is the sink)
 _CTAS_RE = re.compile(
     rf"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?({_IDENT})"
-    r"(?:\s+WITH\s*\([^)]*\))?"     # optional WITH (…) block
+    r"(?:\s+WITH\s*\([^)]*\))?"  # optional WITH (…) block
     r"\s+AS\b",
     re.IGNORECASE | re.DOTALL,
 )
 
 # FROM <table>  /  JOIN <table>
 # Negative lookahead excludes windowing functions (handled separately).
-_FROM_RE = re.compile(
-    rf"\bFROM\s+(?!(?:TUMBLE|HOP|CUMULATE|SESSION)\b)({_IDENT})", re.IGNORECASE
-)
+_FROM_RE = re.compile(rf"\bFROM\s+(?!(?:TUMBLE|HOP|CUMULATE|SESSION)\b)({_IDENT})", re.IGNORECASE)
 _JOIN_RE = re.compile(rf"\bJOIN\s+({_IDENT})", re.IGNORECASE)
 
 # Flink windowing: TUMBLE(TABLE <name>, …), HOP(TABLE <name>, …), etc.
@@ -80,9 +78,9 @@ def _last_segment(name: str) -> str:
     parts = re.split(r"(?<=`)\s*\.\s*(?=`)|(?<=\")\s*\.\s*(?=\")|\.", name)
     last = parts[-1].strip()
     # Strip surrounding backticks or double quotes
-    if last.startswith("`") and last.endswith("`"):
-        last = last[1:-1]
-    elif last.startswith('"') and last.endswith('"'):
+    is_backtick = last.startswith("`") and last.endswith("`")
+    is_quoted = last.startswith('"') and last.endswith('"')
+    if is_backtick or is_quoted:
         last = last[1:-1]
     return last
 
@@ -176,7 +174,9 @@ class FlinkClient:
                     # Strip leading SET commands
                     sql = re.sub(
                         r"^(\s*SET\s+'[^']*'\s+'[^']*'\s*;\s*)+",
-                        "", sql, flags=re.IGNORECASE,
+                        "",
+                        sql,
+                        flags=re.IGNORECASE,
                     ).strip()
                     ct_match = _CREATE_TABLE_RE.search(sql)
                     if ct_match:
@@ -201,18 +201,24 @@ class FlinkClient:
                     stmt_name = stmt.get("name", "")
                     phase = stmt.get("status", {}).get("phase", "")
                     if phase.upper() not in (
-                        "RUNNING", "COMPLETED", "STOPPED", "SUSPENDED",
+                        "RUNNING",
+                        "COMPLETED",
+                        "STOPPED",
+                        "SUSPENDED",
                     ):
                         logger.debug(
                             "Flink skip %s: phase=%s",
-                            stmt_name, phase,
+                            stmt_name,
+                            phase,
                         )
                         continue
                     sql = stmt.get("spec", {}).get("statement", "").strip()
                     # Strip leading SET commands (workspace UI prepends them)
                     sql = re.sub(
                         r"^(\s*SET\s+'[^']*'\s+'[^']*'\s*;\s*)+",
-                        "", sql, flags=re.IGNORECASE,
+                        "",
+                        sql,
+                        flags=re.IGNORECASE,
                     ).strip()
                     # Skip pure DDL (CREATE TABLE without AS SELECT)
                     is_create = _CREATE_TABLE_RE.match(sql)
@@ -222,13 +228,11 @@ class FlinkClient:
                         continue
                     # Skip non-lineage statements (SELECT, SHOW, DESC, etc.)
                     sql_upper = sql.upper().lstrip()
-                    if not (
-                        sql_upper.startswith("INSERT")
-                        or sql_upper.startswith("CREATE TABLE")
-                    ):
+                    if not (sql_upper.startswith("INSERT") or sql_upper.startswith("CREATE TABLE")):
                         logger.debug(
                             "Flink skip %s: not INSERT/CREATE (%s…)",
-                            stmt_name, sql_upper[:30],
+                            stmt_name,
+                            sql_upper[:30],
                         )
                         continue
                     s_nodes, s_edges = self._process_statement(stmt, table_topic_map)
@@ -378,8 +382,18 @@ class FlinkClient:
 
         # Filter out SQL noise keywords and windowing function names.
         noise = {
-            "select", "where", "group", "having", "order", "limit",
-            "values", "set", "tumble", "hop", "cumulate", "session",
+            "select",
+            "where",
+            "group",
+            "having",
+            "order",
+            "limit",
+            "values",
+            "set",
+            "tumble",
+            "hop",
+            "cumulate",
+            "session",
         }
         sources = {s for s in sources if s.lower() not in noise}
         sinks = {s for s in sinks if s.lower() not in noise}

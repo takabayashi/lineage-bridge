@@ -130,9 +130,12 @@ class TestParseFlinkSql:
         # The SET stripping happens in extract(), not _parse_flink_sql,
         # so we strip it here manually for the parser test.
         import re
+
         sql = re.sub(
             r"^(\s*SET\s+'[^']*'\s+'[^']*'\s*;\s*)+",
-            "", sql, flags=re.IGNORECASE,
+            "",
+            sql,
+            flags=re.IGNORECASE,
         ).strip()
         sources, sinks = FlinkClient._parse_flink_sql(sql)
         assert sinks == {"best_stocks"}
@@ -143,7 +146,6 @@ class TestParseFlinkSql:
 
 
 class TestFlinkExtract:
-
     @respx.mock
     async def test_extract_no_compute_pools_returns_empty(self, flink_client, monkeypatch):
         """When there are no compute pools, extract returns empty lists."""
@@ -180,10 +182,7 @@ class TestFlinkExtract:
         )
 
         # 2) Flink statements response
-        stmt_path = (
-            f"/sql/v1/organizations/{ORG_ID}"
-            f"/environments/{ENV_ID}/statements"
-        )
+        stmt_path = f"/sql/v1/organizations/{ORG_ID}/environments/{ENV_ID}/statements"
         statements_resp = {
             "data": [
                 {

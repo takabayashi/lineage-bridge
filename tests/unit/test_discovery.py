@@ -10,7 +10,6 @@ import respx
 
 from lineage_bridge.clients.base import ConfluentClient
 from lineage_bridge.clients.discovery import (
-    ClusterInfo,
     EnvironmentInfo,
     discover_services,
     list_clusters,

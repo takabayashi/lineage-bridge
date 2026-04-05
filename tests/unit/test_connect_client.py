@@ -8,8 +8,6 @@ import httpx
 import pytest
 import respx
 
-from tests.conftest import load_fixture
-
 from lineage_bridge.clients.connect import (
     ConnectClient,
     _classify_connector,
@@ -17,6 +15,7 @@ from lineage_bridge.clients.connect import (
     _infer_external_dataset,
 )
 from lineage_bridge.models.graph import EdgeType, NodeType, SystemType
+from tests.conftest import load_fixture
 
 # ── Constants shared across tests ──────────────────────────────────────────
 BASE_URL = "https://api.confluent.cloud"
@@ -194,7 +193,9 @@ async def test_extract_source_connector(source_config_fixture, no_sleep):
     assert conn.qualified_name == "postgres-source-orders"
     assert conn.system == SystemType.CONFLUENT
     assert conn.attributes["direction"] == "source"
-    assert conn.attributes["connector_class"] == "io.debezium.connector.postgresql.PostgresConnector"
+    assert (
+        conn.attributes["connector_class"] == "io.debezium.connector.postgresql.PostgresConnector"
+    )
     assert conn.node_id == f"confluent:connector:{ENV_ID}:postgres-source-orders"
 
     ext_nodes = [n for n in nodes if n.node_type == NodeType.EXTERNAL_DATASET]
@@ -278,7 +279,7 @@ async def test_extract_handles_failed_connector_fetch(no_sleep):
     )
 
     async with _make_client() as client:
-        nodes, edges = await client.extract()
+        nodes, _edges = await client.extract()
 
     # Only good-connector should produce nodes
     connector_nodes = [n for n in nodes if n.node_type == NodeType.CONNECTOR]
@@ -313,7 +314,7 @@ async def test_extract_expanded_response_format(no_sleep):
     )
 
     async with _make_client() as client:
-        nodes, edges = await client.extract()
+        nodes, _edges = await client.extract()
 
     connector_nodes = [n for n in nodes if n.node_type == NodeType.CONNECTOR]
     assert len(connector_nodes) == 1

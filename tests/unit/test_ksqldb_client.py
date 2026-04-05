@@ -12,7 +12,6 @@ from lineage_bridge.clients.ksqldb import KsqlDBClient, _strip_quotes
 from lineage_bridge.models.graph import EdgeType, NodeType, SystemType
 from tests.conftest import load_fixture
 
-
 # ── Constants ──────────────────────────────────────────────────────────
 
 ENV_ID = "env-abc123"
@@ -108,7 +107,7 @@ class TestParseSourceNames:
         assert result == ["MyStream"]
 
     def test_backtick_hyphenated_name_known_limitation(self):
-        """The regex [\w.]+ does not capture hyphens, so backtick-quoted
+        r"""The regex [\w.]+ does not capture hyphens, so backtick-quoted
         names with hyphens are truncated. Document this known limitation."""
         sql = "CREATE STREAM out AS SELECT * FROM `My-Stream` EMIT CHANGES;"
         result = KsqlDBClient._parse_source_names(sql)
@@ -148,9 +147,7 @@ class TestStripQuotes:
 
 class TestExtract:
     @respx.mock
-    async def test_extract_creates_query_nodes_and_edges(
-        self, ksql_client, queries_payload
-    ):
+    async def test_extract_creates_query_nodes_and_edges(self, ksql_client, queries_payload):
         # Mock cluster discovery.
         respx.get(f"{CLOUD_URL}/ksqldbcm/v2/clusters").mock(
             return_value=httpx.Response(200, json=_clusters_response())
@@ -160,7 +157,7 @@ class TestExtract:
             return_value=httpx.Response(200, json=queries_payload)
         )
 
-        nodes, edges = await ksql_client.extract()
+        nodes, _edges = await ksql_client.extract()
 
         # Nodes: 1 query + 2 source topics (orders, customers) + 1 sink topic (enriched_orders)
         query_nodes = [n for n in nodes if n.node_type == NodeType.KSQLDB_QUERY]
@@ -185,7 +182,7 @@ class TestExtract:
             return_value=httpx.Response(200, json=queries_payload)
         )
 
-        nodes, edges = await ksql_client.extract()
+        _nodes, edges = await ksql_client.extract()
 
         consumes_edges = [e for e in edges if e.edge_type == EdgeType.CONSUMES]
         assert len(consumes_edges) == 2
@@ -208,7 +205,7 @@ class TestExtract:
             return_value=httpx.Response(200, json=queries_payload)
         )
 
-        nodes, edges = await ksql_client.extract()
+        _nodes, edges = await ksql_client.extract()
 
         produces_edges = [e for e in edges if e.edge_type == EdgeType.PRODUCES]
         assert len(produces_edges) == 1
@@ -254,7 +251,10 @@ class TestExtract:
             "status": {},
         }
         respx.get(f"{CLOUD_URL}/ksqldbcm/v2/clusters").mock(
-            return_value=httpx.Response(200, json=_clusters_response(clusters=[cluster_no_endpoint]))
+            return_value=httpx.Response(
+                200,
+                json=_clusters_response(clusters=[cluster_no_endpoint]),
+            )
         )
 
         nodes, edges = await ksql_client.extract()

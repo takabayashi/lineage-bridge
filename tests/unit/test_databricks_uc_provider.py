@@ -8,8 +8,6 @@ import httpx
 import pytest
 import respx
 
-from tests.conftest import load_fixture
-
 from lineage_bridge.catalogs.databricks_uc import DatabricksUCProvider
 from lineage_bridge.models.graph import (
     EdgeType,
@@ -18,6 +16,7 @@ from lineage_bridge.models.graph import (
     NodeType,
     SystemType,
 )
+from tests.conftest import load_fixture
 
 WORKSPACE_URL = "https://acme-prod.cloud.databricks.com"
 TOKEN = "dapi-test-token-123"
@@ -68,9 +67,8 @@ def uc_graph():
 
 
 class TestBuildNode:
-
     def test_creates_correct_node_id(self, provider, sample_ci_config):
-        node, edge = provider.build_node(
+        node, _edge = provider.build_node(
             sample_ci_config,
             "confluent:tableflow_table:env-abc:lkc-abc123.orders",
             "orders",
@@ -80,9 +78,7 @@ class TestBuildNode:
         assert node.node_id == "databricks:uc_table:env-abc:confluent_tableflow.lkc-abc123.orders"
 
     def test_node_attributes(self, provider, sample_ci_config):
-        node, _ = provider.build_node(
-            sample_ci_config, "tf-id", "orders", "lkc-abc123", "env-abc"
-        )
+        node, _ = provider.build_node(sample_ci_config, "tf-id", "orders", "lkc-abc123", "env-abc")
         assert node.system == SystemType.DATABRICKS
         assert node.node_type == NodeType.UC_TABLE
         assert node.attributes["catalog_name"] == "confluent_tableflow"
@@ -91,9 +87,7 @@ class TestBuildNode:
         assert node.attributes["workspace_url"] == WORKSPACE_URL
 
     def test_edge_type_materializes(self, provider, sample_ci_config):
-        _, edge = provider.build_node(
-            sample_ci_config, "tf-id", "orders", "lkc-abc123", "env-abc"
-        )
+        _, edge = provider.build_node(sample_ci_config, "tf-id", "orders", "lkc-abc123", "env-abc")
         assert edge.edge_type == EdgeType.MATERIALIZES
         assert edge.src_id == "tf-id"
         assert "uc_table" in edge.dst_id
@@ -107,7 +101,6 @@ class TestBuildNode:
 
 
 class TestBuildUrl:
-
     def test_with_workspace_url(self, provider):
         node = LineageNode(
             node_id="test",
@@ -144,7 +137,6 @@ class TestBuildUrl:
 
 
 class TestEnrich:
-
     @respx.mock
     async def test_enrich_merges_attributes(self, provider, uc_graph, no_sleep):
         fixture = load_fixture("databricks_table.json")

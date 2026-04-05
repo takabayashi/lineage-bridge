@@ -2,15 +2,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install dependencies first (layer caching)
+# Copy source and config
 COPY pyproject.toml .
-RUN pip install --no-cache-dir .
-
-# Copy source code
 COPY lineage_bridge/ lineage_bridge/
 
-# Re-install with source so entry points work
-RUN pip install --no-cache-dir -e .
+# Install package
+RUN pip install --no-cache-dir .
 
 # Create data directory for output
 RUN mkdir -p /app/data

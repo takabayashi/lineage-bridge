@@ -53,8 +53,7 @@ def _build_tooltip(node: LineageNode) -> str:
     loc_html = ""
     if loc_parts:
         loc_html = (
-            f"<div style='font-size:11px;color:#999;margin-top:4px'>"
-            f"{' / '.join(loc_parts)}</div>"
+            f"<div style='font-size:11px;color:#999;margin-top:4px'>{' / '.join(loc_parts)}</div>"
         )
 
     # ── Tags row ────────────────────────────────────────────────────
@@ -149,9 +148,7 @@ def _build_tooltip(node: LineageNode) -> str:
             detail_lines.append(f"Phase: {a['phase']}")
         if a.get("table_formats"):
             fmts = a["table_formats"]
-            detail_lines.append(
-                f"Formats: {', '.join(fmts) if isinstance(fmts, list) else fmts}"
-            )
+            detail_lines.append(f"Formats: {', '.join(fmts) if isinstance(fmts, list) else fmts}")
         if a.get("storage_kind"):
             detail_lines.append(f"Storage: {a['storage_kind']}")
         if a.get("suspended"):
@@ -187,9 +184,7 @@ def _build_tooltip(node: LineageNode) -> str:
     if detail_lines:
         details_html = (
             "<div style='margin-top:5px;font-size:11px;"
-            "color:#666;line-height:1.5'>"
-            + " &middot; ".join(detail_lines)
-            + "</div>"
+            "color:#666;line-height:1.5'>" + " &middot; ".join(detail_lines) + "</div>"
         )
 
     return (
@@ -220,9 +215,7 @@ def _fmt_bytes(val: float) -> str:
     return f"{val:,.1f} PB"
 
 
-def _collect_hop_neighborhood(
-    graph: LineageGraph, center_id: str, hops: int
-) -> set[str]:
+def _collect_hop_neighborhood(graph: LineageGraph, center_id: str, hops: int) -> set[str]:
     """Return node IDs within *hops* of *center_id* (both dirs)."""
     upstream = graph.upstream(center_id, hops)
     downstream = graph.downstream(center_id, hops)
@@ -249,11 +242,7 @@ def _get_connected_node_ids(graph: LineageGraph) -> set[str]:
 
 def _get_topics_with_schemas(graph: LineageGraph) -> set[str]:
     """Return topic node IDs that have at least one HAS_SCHEMA edge."""
-    return {
-        e.src_id
-        for e in graph.edges
-        if e.edge_type == EdgeType.HAS_SCHEMA
-    }
+    return {e.src_id for e in graph.edges if e.edge_type == EdgeType.HAS_SCHEMA}
 
 
 def render_graph(
@@ -282,21 +271,13 @@ def render_graph(
         Tuple of (agraph_nodes, agraph_edges).
     """
     # Determine which node IDs to include
-    if selected_node and selected_node in {
-        n.node_id for n in graph.nodes
-    }:
-        allowed_ids = _collect_hop_neighborhood(
-            graph, selected_node, hops
-        )
+    if selected_node and selected_node in {n.node_id for n in graph.nodes}:
+        allowed_ids = _collect_hop_neighborhood(graph, selected_node, hops)
     else:
         allowed_ids = None
 
     # Pre-compute connected nodes
-    connected_ids = (
-        _get_connected_node_ids(graph)
-        if hide_disconnected
-        else None
-    )
+    connected_ids = _get_connected_node_ids(graph) if hide_disconnected else None
 
     included_ids: set[str] = set()
     agraph_nodes: list[Node] = []
@@ -304,17 +285,11 @@ def render_graph(
 
     for node in graph.nodes:
         # Hop filter
-        if (
-            allowed_ids is not None
-            and node.node_id not in allowed_ids
-        ):
+        if allowed_ids is not None and node.node_id not in allowed_ids:
             continue
 
         # Disconnected filter
-        if (
-            connected_ids is not None
-            and node.node_id not in connected_ids
-        ):
+        if connected_ids is not None and node.node_id not in connected_ids:
             continue
 
         # Type filter
@@ -322,11 +297,7 @@ def render_graph(
             continue
 
         # Environment filter
-        if (
-            environment_filter
-            and node.environment_id
-            and node.environment_id != environment_filter
-        ):
+        if environment_filter and node.environment_id and node.environment_id != environment_filter:
             continue
 
         # Cluster filter
@@ -362,13 +333,8 @@ def render_graph(
     # Build edges (only between included nodes)
     agraph_edges: list[Edge] = []
     for edge in graph.edges:
-        if (
-            edge.src_id in included_ids
-            and edge.dst_id in included_ids
-        ):
-            edge_label = EDGE_TYPE_LABELS.get(
-                edge.edge_type, edge.edge_type.value
-            )
+        if edge.src_id in included_ids and edge.dst_id in included_ids:
+            edge_label = EDGE_TYPE_LABELS.get(edge.edge_type, edge.edge_type.value)
             vis_props = build_edge_vis_props(edge.edge_type)
             agraph_edges.append(
                 Edge(
@@ -517,20 +483,12 @@ def render_graph_raw(
     for the custom vis.js component.
     """
     # Determine which node IDs to include
-    if selected_node and selected_node in {
-        n.node_id for n in graph.nodes
-    }:
-        allowed_ids = _collect_hop_neighborhood(
-            graph, selected_node, hops
-        )
+    if selected_node and selected_node in {n.node_id for n in graph.nodes}:
+        allowed_ids = _collect_hop_neighborhood(graph, selected_node, hops)
     else:
         allowed_ids = None
 
-    connected_ids = (
-        _get_connected_node_ids(graph)
-        if hide_disconnected
-        else None
-    )
+    connected_ids = _get_connected_node_ids(graph) if hide_disconnected else None
 
     # Pre-compute topics that have schemas
     topics_with_schemas = _get_topics_with_schemas(graph)
@@ -551,9 +509,7 @@ def render_graph_raw(
         # Expand each match to its N-hop neighborhood
         search_neighborhood = set()
         for mid in matched_ids:
-            search_neighborhood |= _collect_hop_neighborhood(
-                graph, mid, hops
-            )
+            search_neighborhood |= _collect_hop_neighborhood(graph, mid, hops)
 
     included_ids: set[str] = set()
     raw_nodes: list[dict[str, Any]] = []
@@ -563,23 +519,13 @@ def render_graph_raw(
         if node.node_type == NodeType.SCHEMA:
             continue
 
-        if (
-            allowed_ids is not None
-            and node.node_id not in allowed_ids
-        ):
+        if allowed_ids is not None and node.node_id not in allowed_ids:
             continue
-        if (
-            connected_ids is not None
-            and node.node_id not in connected_ids
-        ):
+        if connected_ids is not None and node.node_id not in connected_ids:
             continue
         if filters and not filters.get(node.node_type, True):
             continue
-        if (
-            environment_filter
-            and node.environment_id
-            and node.environment_id != environment_filter
-        ):
+        if environment_filter and node.environment_id and node.environment_id != environment_filter:
             continue
         # Cluster filter: keep nodes in the selected cluster, plus
         # nodes with no cluster_id (e.g. Flink jobs, environment-scoped
@@ -599,10 +545,7 @@ def render_graph_raw(
         vis_props = build_node_vis_props(node.node_type)
 
         # Use schema-badged icon for topics with schemas
-        if (
-            node.node_type == NodeType.KAFKA_TOPIC
-            and node.node_id in topics_with_schemas
-        ):
+        if node.node_type == NodeType.KAFKA_TOPIC and node.node_id in topics_with_schemas:
             vis_props["image"] = TOPIC_WITH_SCHEMA_ICON
 
         # Status badge for nodes with phase/state
@@ -627,13 +570,8 @@ def render_graph_raw(
         if edge.edge_type == EdgeType.HAS_SCHEMA:
             continue
 
-        if (
-            edge.src_id in included_ids
-            and edge.dst_id in included_ids
-        ):
-            edge_label = EDGE_TYPE_LABELS.get(
-                edge.edge_type, edge.edge_type.value
-            )
+        if edge.src_id in included_ids and edge.dst_id in included_ids:
+            edge_label = EDGE_TYPE_LABELS.get(edge.edge_type, edge.edge_type.value)
             vis_props = build_edge_vis_props(edge.edge_type)
             raw_edges.append(
                 {

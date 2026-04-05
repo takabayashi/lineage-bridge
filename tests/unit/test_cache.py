@@ -48,9 +48,7 @@ def test_round_trip_plain_data():
 def test_round_trip_encrypted_fields():
     """Encrypted fields are encrypted on disk but decrypted on load."""
     data = {
-        "cluster_credentials": {
-            "lkc-1": {"api_key": "key1", "api_secret": "secret1"}
-        },
+        "cluster_credentials": {"lkc-1": {"api_key": "key1", "api_secret": "secret1"}},
         "provisioned_keys": {
             "lineage-bridge-sr-env-1": {
                 "key_id": "k1",
@@ -73,10 +71,7 @@ def test_round_trip_encrypted_fields():
     # Load returns decrypted values
     loaded = load_cache()
     assert loaded["cluster_credentials"]["lkc-1"]["api_key"] == "key1"
-    assert (
-        loaded["provisioned_keys"]["lineage-bridge-sr-env-1"]["api_secret"]
-        == "as1"
-    )
+    assert loaded["provisioned_keys"]["lineage-bridge-sr-env-1"]["api_secret"] == "as1"
 
 
 def test_round_trip_sr_credentials():
@@ -92,9 +87,7 @@ def test_round_trip_sr_credentials():
 def test_round_trip_flink_credentials():
     """flink_credentials field is also encrypted/decrypted."""
     data = {
-        "flink_credentials": {
-            "env-2": {"api_key": "fk", "api_secret": "fs"}
-        },
+        "flink_credentials": {"env-2": {"api_key": "fk", "api_secret": "fs"}},
     }
     save_cache(data)
     loaded = load_cache()
@@ -122,9 +115,7 @@ def test_load_cache_corrupted_key_file():
     The encrypted fields become empty dicts but the plain data is preserved.
     """
     data = {
-        "cluster_credentials": {
-            "lkc-1": {"api_key": "k", "api_secret": "s"}
-        },
+        "cluster_credentials": {"lkc-1": {"api_key": "k", "api_secret": "s"}},
         "plain": "ok",
     }
     save_cache(data)
@@ -171,9 +162,7 @@ def test_update_cache_creates_file():
 def test_update_cache_with_encrypted_field():
     """update_cache can add encrypted fields that survive round-trip."""
     update_cache(
-        provisioned_keys={
-            "test-key": {"key_id": "k1", "api_key": "ak", "api_secret": "as"}
-        }
+        provisioned_keys={"test-key": {"key_id": "k1", "api_key": "ak", "api_secret": "as"}}
     )
     loaded = load_cache()
     assert loaded["provisioned_keys"]["test-key"]["api_key"] == "ak"
@@ -216,13 +205,9 @@ def test_key_file_permissions():
 
 def test_key_reused_across_calls():
     """The same Fernet key is returned on subsequent calls."""
-    save_cache(
-        {"cluster_credentials": {"lkc": {"k": "v"}}}
-    )
+    save_cache({"cluster_credentials": {"lkc": {"k": "v"}}})
     key1 = cache_mod._KEY_FILE.read_bytes().strip()
     # Save again — key should not change
-    save_cache(
-        {"cluster_credentials": {"lkc": {"k": "v2"}}}
-    )
+    save_cache({"cluster_credentials": {"lkc": {"k": "v2"}}})
     key2 = cache_mod._KEY_FILE.read_bytes().strip()
     assert key1 == key2

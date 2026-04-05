@@ -15,10 +15,9 @@ from lineage_bridge.models.graph import (
 
 
 class TestBuildNode:
-
     def test_creates_correct_node_id(self):
         provider = GlueCatalogProvider()
-        node, edge = provider.build_node(
+        node, _edge = provider.build_node(
             {"aws_glue": {"database_name": "my_db"}},
             "confluent:tableflow_table:env-abc:lkc-abc123.orders",
             "orders",
@@ -67,14 +66,11 @@ class TestBuildNode:
 
     def test_default_database_name(self):
         provider = GlueCatalogProvider()
-        node, _ = provider.build_node(
-            {"aws_glue": {}}, "tf-id", "orders", "lkc-abc123", "env-abc"
-        )
+        node, _ = provider.build_node({"aws_glue": {}}, "tf-id", "orders", "lkc-abc123", "env-abc")
         assert node.attributes["database"] == "lkc-abc123"
 
 
 class TestBuildUrl:
-
     def test_returns_url_with_database_and_table(self):
         provider = GlueCatalogProvider()
         node = LineageNode(
@@ -108,7 +104,6 @@ class TestBuildUrl:
 
 
 class TestEnrich:
-
     async def test_enrich_is_noop(self):
         provider = GlueCatalogProvider()
         graph = LineageGraph()

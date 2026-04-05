@@ -72,7 +72,7 @@ class Settings(BaseSettings):
 
     # ── Per-cluster credentials ─────────────────────────────────────────
     # JSON map: {"lkc-abc123": {"api_key": "...", "api_secret": "..."}, ...}
-    # Set via env: LINEAGE_BRIDGE_CLUSTER_CREDENTIALS='{"lkc-abc":{"api_key":"...","api_secret":"..."}}'
+    # Set via env: LINEAGE_BRIDGE_CLUSTER_CREDENTIALS='{"lkc-abc":{"api_key":".."}}'
     cluster_credentials: dict[str, ClusterCredential] = Field(
         default_factory=dict,
         description="Per-cluster API credentials keyed by cluster ID",

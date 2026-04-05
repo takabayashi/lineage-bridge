@@ -8,10 +8,8 @@ import httpx
 import pytest
 import respx
 
-from lineage_bridge.clients.metrics import MetricsClient, MetricsSummary
+from lineage_bridge.clients.metrics import MetricsClient
 from lineage_bridge.models.graph import (
-    EdgeType,
-    LineageEdge,
     LineageGraph,
     LineageNode,
     NodeType,
@@ -60,27 +58,19 @@ async def test_query_topic_metrics_aggregates(metrics_client):
     route.side_effect = [
         httpx.Response(
             200,
-            json={
-                "data": [{"metric.topic": "orders", "value": 1024.0}]
-            },
+            json={"data": [{"metric.topic": "orders", "value": 1024.0}]},
         ),
         httpx.Response(
             200,
-            json={
-                "data": [{"metric.topic": "orders", "value": 512.0}]
-            },
+            json={"data": [{"metric.topic": "orders", "value": 512.0}]},
         ),
         httpx.Response(
             200,
-            json={
-                "data": [{"metric.topic": "orders", "value": 100.0}]
-            },
+            json={"data": [{"metric.topic": "orders", "value": 100.0}]},
         ),
         httpx.Response(
             200,
-            json={
-                "data": [{"metric.topic": "orders", "value": 50.0}]
-            },
+            json={"data": [{"metric.topic": "orders", "value": 50.0}]},
         ),
     ]
 
@@ -131,12 +121,8 @@ async def test_enrich_updates_topic_and_connector_nodes(metrics_client):
         httpx.Response(200, json={"data": [{"metric.topic": "orders", "value": 10.0}]}),
         httpx.Response(200, json={"data": [{"metric.topic": "orders", "value": 5.0}]}),
         # Connector metrics
-        httpx.Response(
-            200, json={"data": [{"resource.connector.id": "my-sink", "value": 42.0}]}
-        ),
-        httpx.Response(
-            200, json={"data": [{"resource.connector.id": "my-sink", "value": 7.0}]}
-        ),
+        httpx.Response(200, json={"data": [{"resource.connector.id": "my-sink", "value": 42.0}]}),
+        httpx.Response(200, json={"data": [{"resource.connector.id": "my-sink", "value": 7.0}]}),
     ]
 
     count = await metrics_client.enrich(graph, CLUSTER_ID)

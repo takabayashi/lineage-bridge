@@ -16,7 +16,6 @@ from lineage_bridge.models.graph import (
 
 
 class TestGetProvider:
-
     def test_unity_catalog_returns_databricks_provider(self):
         provider = get_provider("UNITY_CATALOG")
         assert provider is not None
@@ -35,7 +34,6 @@ class TestGetProvider:
 
 
 class TestGetActiveProviders:
-
     def test_mixed_uc_and_glue_nodes(self):
         graph = LineageGraph()
         graph.add_node(

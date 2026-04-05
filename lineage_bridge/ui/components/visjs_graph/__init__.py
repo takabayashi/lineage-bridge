@@ -12,9 +12,7 @@ import streamlit.components.v1 as components
 
 _COMPONENT_DIR = Path(__file__).parent
 
-_component = components.declare_component(
-    "visjs_graph", path=str(_COMPONENT_DIR)
-)
+_component = components.declare_component("visjs_graph", path=str(_COMPONENT_DIR))
 
 
 def visjs_graph(

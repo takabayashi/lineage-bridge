@@ -10,8 +10,6 @@ import respx
 
 from lineage_bridge.clients.stream_catalog import StreamCatalogClient
 from lineage_bridge.models.graph import (
-    EdgeType,
-    LineageEdge,
     LineageGraph,
     LineageNode,
     NodeType,
@@ -59,8 +57,9 @@ def _build_graph_with_nodes(*names: str) -> LineageGraph:
     return graph
 
 
-def _catalog_entity(name: str, owner: str = "", description: str = "",
-                    classifications: list[str] | None = None) -> dict:
+def _catalog_entity(
+    name: str, owner: str = "", description: str = "", classifications: list[str] | None = None
+) -> dict:
     """Build a catalog search result entity."""
     entity: dict = {
         "attributes": {"name": name},
@@ -78,6 +77,7 @@ def _catalog_entity(name: str, owner: str = "", description: str = "",
 
 def _mock_search(entities_by_type: dict[str, list[dict]]):
     """Mock the catalog search endpoint, routing by type query param."""
+
     def side_effect(request: httpx.Request) -> httpx.Response:
         entity_type = request.url.params.get("type", "")
         entities = entities_by_type.get(entity_type, [])
@@ -90,7 +90,6 @@ def _mock_search(entities_by_type: dict[str, list[dict]]):
 
 
 class TestStreamCatalogExtract:
-
     async def test_extract_returns_empty(self, sc_client):
         """extract() always returns empty lists -- enrichment is separate."""
         nodes, edges = await sc_client.extract()
@@ -102,19 +101,20 @@ class TestStreamCatalogExtract:
 
 
 class TestStreamCatalogEnrich:
-
     @respx.mock
     async def test_enrich_adds_owner_and_description(self, sc_client):
         """Owner and description from the catalog are merged into matching nodes."""
         graph = _build_graph_with_nodes("orders", "customers")
 
-        _mock_search({
-            "kafka_topic": [
-                _catalog_entity("orders", owner="team-data", description="All orders"),
-                _catalog_entity("customers", owner="team-crm", description="Customer records"),
-            ],
-            "kafka_connector": [],
-        })
+        _mock_search(
+            {
+                "kafka_topic": [
+                    _catalog_entity("orders", owner="team-data", description="All orders"),
+                    _catalog_entity("customers", owner="team-crm", description="Customer records"),
+                ],
+                "kafka_connector": [],
+            }
+        )
 
         await sc_client.enrich(graph)
 
@@ -132,12 +132,14 @@ class TestStreamCatalogEnrich:
         """Classification names are merged into node.tags."""
         graph = _build_graph_with_nodes("orders")
 
-        _mock_search({
-            "kafka_topic": [
-                _catalog_entity("orders", classifications=["PII", "GDPR"]),
-            ],
-            "kafka_connector": [],
-        })
+        _mock_search(
+            {
+                "kafka_topic": [
+                    _catalog_entity("orders", classifications=["PII", "GDPR"]),
+                ],
+                "kafka_connector": [],
+            }
+        )
 
         await sc_client.enrich(graph)
 
@@ -151,13 +153,15 @@ class TestStreamCatalogEnrich:
         """Entities not matching any graph node are silently skipped."""
         graph = _build_graph_with_nodes("orders")
 
-        _mock_search({
-            "kafka_topic": [
-                _catalog_entity("orders", owner="team-data"),
-                _catalog_entity("unknown-topic", owner="nobody"),
-            ],
-            "kafka_connector": [],
-        })
+        _mock_search(
+            {
+                "kafka_topic": [
+                    _catalog_entity("orders", owner="team-data"),
+                    _catalog_entity("unknown-topic", owner="nobody"),
+                ],
+                "kafka_connector": [],
+            }
+        )
 
         await sc_client.enrich(graph)
 

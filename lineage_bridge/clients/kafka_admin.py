@@ -37,23 +37,24 @@ def _list_offsets_via_protocol(
         from confluent_kafka import ConsumerGroupTopicPartitions
         from confluent_kafka.admin import AdminClient
 
-        admin = AdminClient({
-            "bootstrap.servers": bootstrap_servers,
-            "security.protocol": "SASL_SSL",
-            "sasl.mechanisms": "PLAIN",
-            "sasl.username": api_key,
-            "sasl.password": api_secret,
-        })
-        futures = admin.list_consumer_group_offsets(
-            [ConsumerGroupTopicPartitions(group_id)]
+        admin = AdminClient(
+            {
+                "bootstrap.servers": bootstrap_servers,
+                "security.protocol": "SASL_SSL",
+                "sasl.mechanisms": "PLAIN",
+                "sasl.username": api_key,
+                "sasl.password": api_secret,
+            }
         )
-        for gid, fut in futures.items():
+        futures = admin.list_consumer_group_offsets([ConsumerGroupTopicPartitions(group_id)])
+        for _gid, fut in futures.items():
             result = fut.result(timeout=10)
             return {tp.topic for tp in result.topic_partitions if tp.topic}
     except Exception:
         logger.debug(
             "Kafka protocol offset lookup failed for group %s",
-            group_id, exc_info=True,
+            group_id,
+            exc_info=True,
         )
     return set()
 
@@ -156,11 +157,14 @@ class KafkaAdminClient(ConfluentClient):
                 lag_items = await self._get_consumer_lag(gid)
                 logger.debug(
                     "Lag endpoint returned %d items for group %s",
-                    len(lag_items), gid,
+                    len(lag_items),
+                    gid,
                 )
             except Exception as exc:
                 logger.debug(
-                    "Lag endpoint failed for group %s: %s", gid, exc,
+                    "Lag endpoint failed for group %s: %s",
+                    gid,
+                    exc,
                 )
                 lag_items = []
 
@@ -192,8 +196,9 @@ class KafkaAdminClient(ConfluentClient):
             # discover committed offsets (works when lag endpoint returns 404).
             if not seen_topics and self._bootstrap_servers:
                 logger.debug(
-                    "Falling back to Kafka protocol for group %s "
-                    "(bootstrap=%s)", gid, self._bootstrap_servers,
+                    "Falling back to Kafka protocol for group %s (bootstrap=%s)",
+                    gid,
+                    self._bootstrap_servers,
                 )
                 offset_topics = await asyncio.to_thread(
                     _list_offsets_via_protocol,
@@ -204,7 +209,8 @@ class KafkaAdminClient(ConfluentClient):
                 )
                 logger.debug(
                     "Protocol fallback for group %s returned: %s",
-                    gid, offset_topics,
+                    gid,
+                    offset_topics,
                 )
                 for tname in offset_topics:
                     if tname not in topic_names:
@@ -221,12 +227,15 @@ class KafkaAdminClient(ConfluentClient):
                         )
                     )
                     logger.debug(
-                        "Added MEMBER_OF edge: %s -> %s", gid, tname,
+                        "Added MEMBER_OF edge: %s -> %s",
+                        gid,
+                        tname,
                     )
             elif not seen_topics:
                 logger.debug(
                     "No lag data and no bootstrap_servers for group %s "
-                    "— cannot discover topic membership", gid,
+                    "— cannot discover topic membership",
+                    gid,
                 )
 
         logger.info(

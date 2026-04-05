@@ -236,9 +236,7 @@ class KeyProvisioner:
         return [
             k
             for k in all_keys
-            if k.get("spec", {})
-            .get("display_name", "")
-            .startswith(self._prefix)
+            if k.get("spec", {}).get("display_name", "").startswith(self._prefix)
         ]
 
     async def revoke_key(self, key_id: str) -> None:
@@ -311,11 +309,7 @@ class KeyProvisioner:
         """Remove a provisioned key from cache by key_id."""
         cache = load_cache()
         provisioned = cache.get("provisioned_keys", {})
-        to_remove = [
-            name
-            for name, entry in provisioned.items()
-            if entry.get("key_id") == key_id
-        ]
+        to_remove = [name for name, entry in provisioned.items() if entry.get("key_id") == key_id]
         for name in to_remove:
             del provisioned[name]
         update_cache(provisioned_keys=provisioned)

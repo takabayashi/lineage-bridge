@@ -389,7 +389,8 @@ async def _extract_environment(
         else:
             on_progress(
                 "Warning",
-                f"Could not determine organization ID for Flink in {env_id} — Flink extraction skipped",
+                f"Could not determine organization ID for Flink in {env_id}"
+                " — Flink extraction skipped",
             )
 
     if phase2_tasks:

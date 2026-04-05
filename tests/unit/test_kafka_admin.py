@@ -10,14 +10,13 @@ import httpx
 import pytest
 import respx
 
-from tests.conftest import load_fixture
-
 from lineage_bridge.clients.kafka_admin import (
-    KafkaAdminClient,
     _INTERNAL_PREFIXES,
+    KafkaAdminClient,
     _list_offsets_via_protocol,
 )
 from lineage_bridge.models.graph import EdgeType, NodeType, SystemType
+from tests.conftest import load_fixture
 
 # ── Constants shared across tests ──────────────────────────────────────────
 BASE_URL = "https://lkc-abc123.us-east-1.aws.confluent.cloud:443"
@@ -91,7 +90,7 @@ async def test_extract_creates_topic_nodes(kafka_topics_fixture, no_sleep):
     )
 
     async with _make_client() as client:
-        nodes, edges = await client.extract()
+        nodes, _edges = await client.extract()
 
     topic_nodes = [n for n in nodes if n.node_type == NodeType.KAFKA_TOPIC]
     assert len(topic_nodes) == 3
@@ -106,7 +105,7 @@ async def test_extract_creates_topic_nodes(kafka_topics_fixture, no_sleep):
     assert orders_node.attributes["partitions_count"] == 6
     assert orders_node.attributes["replication_factor"] == 3
     assert orders_node.node_id == f"confluent:kafka_topic:{ENV_ID}:orders"
-    assert f"/topics/orders" in orders_node.url
+    assert "/topics/orders" in orders_node.url
 
 
 @respx.mock
@@ -196,10 +195,10 @@ async def test_extract_creates_member_of_edges(
     )
 
     async with _make_client() as client:
-        nodes, edges = await client.extract()
+        _nodes, edges = await client.extract()
 
     member_of_edges = [e for e in edges if e.edge_type == EdgeType.MEMBER_OF]
-    # order-processing-group -> orders, enrichment-service -> orders, enrichment-service -> customers
+    # opg -> orders, enrichment-svc -> orders, enrichment-svc -> customers
     assert len(member_of_edges) == 3
 
     # Verify the edge from order-processing-group -> orders
@@ -269,13 +268,19 @@ def test_list_offsets_via_protocol_success():
         MockAdmin.return_value = mock_admin
 
         # Need to patch the imports inside the function
-        with patch.dict("sys.modules", {
-            "confluent_kafka": MagicMock(),
-            "confluent_kafka.admin": MagicMock(AdminClient=MockAdmin),
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "confluent_kafka": MagicMock(),
+                "confluent_kafka.admin": MagicMock(AdminClient=MockAdmin),
+            },
+        ):
             # Re-run through the actual function but with mocked imports
             result = _list_offsets_via_protocol(
-                "broker:9092", "key", "secret", "group-1",
+                "broker:9092",
+                "key",
+                "secret",
+                "group-1",
             )
 
     # The function uses local imports, so we test it returns a set
@@ -287,23 +292,32 @@ def test_list_offsets_via_protocol_import_error():
     with patch.dict("sys.modules", {"confluent_kafka": None, "confluent_kafka.admin": None}):
         # Force re-import to hit ImportError path
         result = _list_offsets_via_protocol(
-            "broker:9092", "key", "secret", "group-1",
+            "broker:9092",
+            "key",
+            "secret",
+            "group-1",
         )
     assert result == set()
 
 
 def test_list_offsets_via_protocol_exception():
     """Returns empty set when AdminClient raises an exception."""
-    with patch.dict("sys.modules", {
-        "confluent_kafka": MagicMock(
-            ConsumerGroupTopicPartitions=MagicMock(),
-        ),
-        "confluent_kafka.admin": MagicMock(
-            AdminClient=MagicMock(side_effect=RuntimeError("connection failed")),
-        ),
-    }):
+    with patch.dict(
+        "sys.modules",
+        {
+            "confluent_kafka": MagicMock(
+                ConsumerGroupTopicPartitions=MagicMock(),
+            ),
+            "confluent_kafka.admin": MagicMock(
+                AdminClient=MagicMock(side_effect=RuntimeError("connection failed")),
+            ),
+        },
+    ):
         result = _list_offsets_via_protocol(
-            "broker:9092", "key", "secret", "group-1",
+            "broker:9092",
+            "key",
+            "secret",
+            "group-1",
         )
     assert result == set()
 

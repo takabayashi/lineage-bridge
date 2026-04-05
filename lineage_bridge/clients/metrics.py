@@ -113,9 +113,7 @@ class MetricsClient:
             "limit": 1000,
         }
         try:
-            resp = await self._client.post(
-                "/v2/metrics/cloud/query", json_body=body
-            )
+            resp = await self._client.post("/v2/metrics/cloud/query", json_body=body)
             return resp.get("data", [])
         except Exception as exc:
             logger.debug(
@@ -126,9 +124,7 @@ class MetricsClient:
             )
             return []
 
-    async def query_topic_metrics(
-        self, cluster_id: str
-    ) -> dict[str, MetricsSummary]:
+    async def query_topic_metrics(self, cluster_id: str) -> dict[str, MetricsSummary]:
         """Query topic-level metrics for a Kafka cluster.
 
         Returns a dict of topic_name -> MetricsSummary.
@@ -136,9 +132,7 @@ class MetricsClient:
         summaries: dict[str, MetricsSummary] = {}
 
         for metric in _TOPIC_METRICS:
-            data = await self._query_metric(
-                metric, cluster_id, "metric.topic"
-            )
+            data = await self._query_metric(metric, cluster_id, "metric.topic")
             for point in data:
                 topic = point.get("metric.topic", "")
                 if not topic:
@@ -158,16 +152,12 @@ class MetricsClient:
 
         return summaries
 
-    async def query_connector_metrics(
-        self, cluster_id: str
-    ) -> dict[str, MetricsSummary]:
+    async def query_connector_metrics(self, cluster_id: str) -> dict[str, MetricsSummary]:
         """Query connector-level metrics for a Kafka cluster."""
         summaries: dict[str, MetricsSummary] = {}
 
         for metric in _CONNECTOR_METRICS:
-            data = await self._query_metric(
-                metric, cluster_id, "resource.connector.id"
-            )
+            data = await self._query_metric(metric, cluster_id, "resource.connector.id")
             for point in data:
                 connector = point.get("resource.connector.id", "")
                 if not connector:

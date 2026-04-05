@@ -251,7 +251,8 @@ class LineageGraph:
             return 0
         # Build subgraph without HAS_SCHEMA edges
         flow_edges = [
-            (u, v) for u, v, d in self._graph.edges(data=True)
+            (u, v)
+            for u, v, d in self._graph.edges(data=True)
             if d.get("edge_type") != EdgeType.HAS_SCHEMA.value
         ]
         if not flow_edges:
@@ -268,10 +269,7 @@ class LineageGraph:
         for node_id, node in self._nodes.items():
             if node.node_type == NodeType.SCHEMA:
                 continue
-            if (
-                self._graph.in_degree(node_id) == 0
-                and self._graph.out_degree(node_id) == 0
-            ):
+            if self._graph.in_degree(node_id) == 0 and self._graph.out_degree(node_id) == 0:
                 warnings.append(f"Orphan node: {node_id}")
         for edge in self._edges.values():
             if edge.src_id not in self._nodes:
