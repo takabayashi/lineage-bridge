@@ -150,9 +150,7 @@ _SYMBOLS: dict[NodeType, str] = {
         'font-family="monospace" fill="#fff">SQL</text>'
     ),
     # Flink — bolt/lightning
-    NodeType.FLINK_JOB: (
-        '<polygon points="2,-14 -8,2 -1,2 -4,14 8,-2 1,-2"/>'
-    ),
+    NodeType.FLINK_JOB: ('<polygon points="2,-14 -8,2 -1,2 -4,14 8,-2 1,-2"/>'),
     # Tableflow — table grid
     NodeType.TABLEFLOW_TABLE: (
         '<rect x="-12" y="-10" width="24" height="20" '
@@ -200,7 +198,7 @@ _SYMBOLS: dict[NodeType, str] = {
     # External Dataset — cloud
     NodeType.EXTERNAL_DATASET: (
         '<path d="M-6,4 Q-14,4 -14,-2 Q-14,-8 -8,-8 '
-        'Q-6,-14 0,-12 Q4,-16 8,-12 Q14,-12 14,-6 '
+        "Q-6,-14 0,-12 Q4,-16 8,-12 Q14,-12 14,-6 "
         'Q16,-2 12,0 Q14,4 8,4 Z" '
         'fill="none" stroke="#fff" stroke-width="2"/>'
     ),
@@ -273,22 +271,22 @@ TOPIC_WITH_SCHEMA_ICON: str = build_topic_with_schema_icon()
 # Maps status/phase/state values to (badge_color, badge_letter).
 STATUS_BADGE_MAP: dict[str, tuple[str, str]] = {
     # Running / Active states — green
-    "RUNNING": ("#4CAF50", "\u25B6"),       # ▶
-    "ACTIVE": ("#4CAF50", "\u25B6"),        # ▶
-    "STABLE": ("#4CAF50", "\u25B6"),        # ▶
-    "Stable": ("#4CAF50", "\u25B6"),        # ▶
+    "RUNNING": ("#4CAF50", "\u25b6"),  # ▶
+    "ACTIVE": ("#4CAF50", "\u25b6"),  # ▶
+    "STABLE": ("#4CAF50", "\u25b6"),  # ▶
+    "Stable": ("#4CAF50", "\u25b6"),  # ▶
     # Completed — blue
-    "COMPLETED": ("#1976D2", "\u2713"),     # ✓
+    "COMPLETED": ("#1976D2", "\u2713"),  # ✓
     # Paused / Degraded — amber
-    "PAUSED": ("#FF9800", "\u23F8"),        # ⏸ (approx)
+    "PAUSED": ("#FF9800", "\u23f8"),  # ⏸ (approx)
     "DEGRADED": ("#FF9800", "!"),
     "REBALANCING": ("#FF9800", "~"),
     # Failed / Error — red
-    "FAILED": ("#F44336", "\u2717"),        # ✗
-    "ERROR": ("#F44336", "\u2717"),         # ✗
-    "STOPPED": ("#F44336", "\u25A0"),       # ■
+    "FAILED": ("#F44336", "\u2717"),  # ✗
+    "ERROR": ("#F44336", "\u2717"),  # ✗
+    "STOPPED": ("#F44336", "\u25a0"),  # ■
     # Suspended (tableflow) — red
-    "SUSPENDED": ("#F44336", "\u25A0"),     # ■
+    "SUSPENDED": ("#F44336", "\u25a0"),  # ■
     # Unknown / other — gray
     "UNKNOWN": ("#9E9E9E", "?"),
 }
@@ -323,16 +321,16 @@ def build_status_badge_icon(ntype: NodeType, status: str) -> str | None:
 
 # ── Legend emoji/unicode markers ──────────────────────────────────────
 NODE_TYPE_EMOJI: dict[NodeType, str] = {
-    NodeType.KAFKA_TOPIC: "\u224b",      # ≋ (wave)
-    NodeType.CONNECTOR: "\u2693",        # ⚓ (anchor/plug)
-    NodeType.KSQLDB_QUERY: "\u2a37",     # ⨷ (query)
-    NodeType.FLINK_JOB: "\u26a1",        # ⚡ (bolt)
+    NodeType.KAFKA_TOPIC: "\u224b",  # ≋ (wave)
+    NodeType.CONNECTOR: "\u2693",  # ⚓ (anchor/plug)
+    NodeType.KSQLDB_QUERY: "\u2a37",  # ⨷ (query)
+    NodeType.FLINK_JOB: "\u26a1",  # ⚡ (bolt)
     NodeType.TABLEFLOW_TABLE: "\u2637",  # ☷ (grid)
-    NodeType.UC_TABLE: "\u26c1",         # ⛁ (database)
-    NodeType.GLUE_TABLE: "\u26c1",      # ⛁ (database)
-    NodeType.SCHEMA: "\u2637",           # ☷ (document)
-    NodeType.EXTERNAL_DATASET: "\u2601", # ☁ (cloud)
-    NodeType.CONSUMER_GROUP: "\u2638",   # ☸ (group)
+    NodeType.UC_TABLE: "\u26c1",  # ⛁ (database)
+    NodeType.GLUE_TABLE: "\u26c1",  # ⛁ (database)
+    NodeType.SCHEMA: "\u2637",  # ☷ (document)
+    NodeType.EXTERNAL_DATASET: "\u2601",  # ☁ (cloud)
+    NodeType.CONSUMER_GROUP: "\u2638",  # ☸ (group)
 }
 
 
@@ -360,12 +358,12 @@ def build_node_vis_props(ntype: NodeType) -> dict[str, Any]:
     }
 
 
-def build_confluent_cloud_url(node: "LineageNode") -> str | None:
+def build_confluent_cloud_url(node: Any) -> str | None:
     """Build a Confluent Cloud console URL for the given node.
 
     Returns None if the node type is not supported or required IDs are missing.
     """
-    from lineage_bridge.models.graph import LineageNode, NodeType
+    from lineage_bridge.models.graph import NodeType
 
     base = "https://confluent.cloud/environments"
     env = node.environment_id
@@ -404,12 +402,22 @@ def build_confluent_cloud_url(node: "LineageNode") -> str | None:
             return None
         # qualified_name is "cluster_id.topic_name", extract the topic part
         topic_name = name.split(".", 1)[-1] if "." in name else name
-        return (
-            f"{base}/{env}/clusters/{cluster}"
-            f"/topics/{topic_name}/overview?tab=cloud"
-        )
+        return f"{base}/{env}/clusters/{cluster}/topics/{topic_name}/overview?tab=cloud"
 
     return None
+
+
+def build_node_url(node: Any) -> str | None:
+    """Build a URL for any node type — dispatches to catalog providers for catalog nodes."""
+    from lineage_bridge.catalogs.aws_glue import GlueCatalogProvider
+    from lineage_bridge.catalogs.databricks_uc import DatabricksUCProvider
+    from lineage_bridge.models.graph import NodeType
+
+    if node.node_type == NodeType.UC_TABLE:
+        return DatabricksUCProvider().build_url(node)
+    if node.node_type == NodeType.GLUE_TABLE:
+        return GlueCatalogProvider().build_url(node)
+    return build_confluent_cloud_url(node)
 
 
 def build_edge_vis_props(etype: EdgeType) -> dict[str, Any]:

@@ -6,7 +6,12 @@ from __future__ import annotations
 
 import base64
 
-from lineage_bridge.models.graph import EdgeType, NodeType
+from lineage_bridge.models.graph import (
+    EdgeType,
+    LineageNode,
+    NodeType,
+    SystemType,
+)
 from lineage_bridge.ui.styles import (
     EDGE_COLORS,
     EDGE_DASHES,
@@ -18,9 +23,9 @@ from lineage_bridge.ui.styles import (
     _make_icon_svg,
     _svg_to_data_uri,
     build_edge_vis_props,
+    build_node_url,
     build_node_vis_props,
 )
-
 
 # ── _svg_to_data_uri tests ──────────────────────────────────────────
 
@@ -142,9 +147,7 @@ class TestBuildEdgeVisProps:
 
 class TestTopicWithSchemaIcon:
     def test_is_valid_data_uri(self):
-        assert TOPIC_WITH_SCHEMA_ICON.startswith(
-            "data:image/svg+xml;base64,"
-        )
+        assert TOPIC_WITH_SCHEMA_ICON.startswith("data:image/svg+xml;base64,")
 
     def test_contains_badge(self):
         encoded = TOPIC_WITH_SCHEMA_ICON.split(",", 1)[1]
@@ -159,18 +162,107 @@ class TestTopicWithSchemaIcon:
 class TestLabelCoverage:
     def test_node_type_labels_cover_all(self):
         for ntype in NodeType:
-            assert ntype in NODE_TYPE_LABELS, (
-                f"Missing label for NodeType.{ntype.name}"
-            )
+            assert ntype in NODE_TYPE_LABELS, f"Missing label for NodeType.{ntype.name}"
 
     def test_edge_type_labels_cover_all(self):
         for etype in EdgeType:
-            assert etype in EDGE_TYPE_LABELS, (
-                f"Missing label for EdgeType.{etype.name}"
-            )
+            assert etype in EDGE_TYPE_LABELS, f"Missing label for EdgeType.{etype.name}"
 
     def test_node_colors_cover_all(self):
         for ntype in NodeType:
-            assert ntype in NODE_COLORS, (
-                f"Missing color for NodeType.{ntype.name}"
-            )
+            assert ntype in NODE_COLORS, f"Missing color for NodeType.{ntype.name}"
+
+
+# ── build_node_url tests ───────────────────────────────────────────
+
+
+class TestBuildNodeUrl:
+    def _make_node(
+        self,
+        node_type: NodeType,
+        system: SystemType = SystemType.CONFLUENT,
+        qualified_name: str = "test",
+        attributes: dict | None = None,
+        environment_id: str | None = "env-123",
+        cluster_id: str | None = "lkc-abc",
+    ) -> LineageNode:
+        return LineageNode(
+            node_id=f"{system.value}:{node_type.value}:{environment_id or 'none'}:{qualified_name}",
+            system=system,
+            node_type=node_type,
+            qualified_name=qualified_name,
+            display_name=qualified_name,
+            environment_id=environment_id,
+            cluster_id=cluster_id,
+            attributes=attributes or {},
+        )
+
+    def test_uc_table_with_workspace_url(self):
+        node = self._make_node(
+            NodeType.UC_TABLE,
+            system=SystemType.DATABRICKS,
+            qualified_name="my_catalog.my_schema.my_table",
+            attributes={"workspace_url": "https://myworkspace.databricks.com"},
+        )
+        url = build_node_url(node)
+        assert url is not None
+        assert "myworkspace.databricks.com" in url
+        assert "/explore/data/my_catalog/my_schema/my_table" in url
+
+    def test_uc_table_without_workspace_url(self):
+        node = self._make_node(
+            NodeType.UC_TABLE,
+            system=SystemType.DATABRICKS,
+            qualified_name="catalog.schema.table",
+            attributes={},
+        )
+        url = build_node_url(node)
+        assert url is None
+
+    def test_glue_table_with_database_and_table_name(self):
+        node = self._make_node(
+            NodeType.GLUE_TABLE,
+            system=SystemType.AWS,
+            qualified_name="glue://mydb/mytable",
+            attributes={
+                "database": "mydb",
+                "table_name": "mytable",
+                "aws_region": "us-west-2",
+            },
+        )
+        url = build_node_url(node)
+        assert url is not None
+        assert "us-west-2.console.aws.amazon.com/glue" in url
+        assert "mytable" in url
+        assert "database=mydb" in url
+
+    def test_glue_table_missing_attributes(self):
+        node = self._make_node(
+            NodeType.GLUE_TABLE,
+            system=SystemType.AWS,
+            qualified_name="glue://unknown",
+            attributes={},
+        )
+        url = build_node_url(node)
+        assert url is None
+
+    def test_kafka_topic_delegates_to_confluent(self):
+        node = self._make_node(
+            NodeType.KAFKA_TOPIC,
+            qualified_name="my-topic",
+        )
+        url = build_node_url(node)
+        assert url is not None
+        assert "confluent.cloud" in url
+        assert "/topics/my-topic/" in url
+
+    def test_unsupported_type_returns_none(self):
+        node = self._make_node(
+            NodeType.EXTERNAL_DATASET,
+            system=SystemType.EXTERNAL,
+            qualified_name="ext-dataset",
+            environment_id=None,
+            cluster_id=None,
+        )
+        url = build_node_url(node)
+        assert url is None

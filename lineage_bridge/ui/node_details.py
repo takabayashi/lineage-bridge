@@ -10,7 +10,7 @@ from lineage_bridge.models.graph import EdgeType, LineageGraph, NodeType
 from lineage_bridge.ui.styles import (
     NODE_COLORS,
     NODE_TYPE_LABELS,
-    build_confluent_cloud_url,
+    build_node_url,
 )
 
 
@@ -33,9 +33,7 @@ def render_node_details(graph: LineageGraph) -> None:
     if not sel_node:
         return
 
-    ntype_label = NODE_TYPE_LABELS.get(
-        sel_node.node_type, sel_node.node_type.value
-    )
+    ntype_label = NODE_TYPE_LABELS.get(sel_node.node_type, sel_node.node_type.value)
     ncolor = NODE_COLORS.get(sel_node.node_type, "#757575")
 
     # Panel header
@@ -56,7 +54,8 @@ def render_node_details(graph: LineageGraph) -> None:
     )
 
     if st.button(
-        "Close", key="close_detail_btn",
+        "Close",
+        key="close_detail_btn",
         use_container_width=True,
     ):
         st.session_state._dismissed_node = sel_id
@@ -64,7 +63,7 @@ def render_node_details(graph: LineageGraph) -> None:
         st.rerun()
 
     a = sel_node.attributes
-    cloud_url = sel_node.url or build_confluent_cloud_url(sel_node)
+    cloud_url = sel_node.url or build_node_url(sel_node)
     ntype = sel_node.node_type
 
     # ── 1. Resource Info ─────────────────────────────────────────
@@ -114,9 +113,13 @@ def render_node_details(graph: LineageGraph) -> None:
 
         if sel_node.cluster_id:
             cluster_link_url = (
-                f"https://confluent.cloud/environments/{sel_node.environment_id}"
-                f"/clusters/{sel_node.cluster_id}"
-            ) if sel_node.environment_id else ""
+                (
+                    f"https://confluent.cloud/environments/{sel_node.environment_id}"
+                    f"/clusters/{sel_node.cluster_id}"
+                )
+                if sel_node.environment_id
+                else ""
+            )
             if cluster_link_url:
                 cluster_link = (
                     f"<a href='{cluster_link_url}' target='_blank' "
@@ -182,8 +185,7 @@ def render_node_details(graph: LineageGraph) -> None:
                 phase = a["phase"]
                 phase_color = "#4CAF50" if phase == "RUNNING" else "#FF9800"
                 st.markdown(
-                    f"**Phase:** <span style='color:{phase_color};"
-                    f"font-weight:600;'>{phase}</span>",
+                    f"**Phase:** <span style='color:{phase_color};font-weight:600;'>{phase}</span>",
                     unsafe_allow_html=True,
                 )
             if a.get("compute_pool_id"):
@@ -203,8 +205,7 @@ def render_node_details(graph: LineageGraph) -> None:
                 state = a["state"]
                 state_color = "#4CAF50" if state == "RUNNING" else "#FF9800"
                 st.markdown(
-                    f"**State:** <span style='color:{state_color};"
-                    f"font-weight:600;'>{state}</span>",
+                    f"**State:** <span style='color:{state_color};font-weight:600;'>{state}</span>",
                     unsafe_allow_html=True,
                 )
         with kcol2:
@@ -222,8 +223,7 @@ def render_node_details(graph: LineageGraph) -> None:
                 phase = a["phase"]
                 phase_color = "#4CAF50" if phase == "ACTIVE" else "#FF9800"
                 st.markdown(
-                    f"**Phase:** <span style='color:{phase_color};"
-                    f"font-weight:600;'>{phase}</span>",
+                    f"**Phase:** <span style='color:{phase_color};font-weight:600;'>{phase}</span>",
                     unsafe_allow_html=True,
                 )
             if a.get("table_formats"):
@@ -235,8 +235,7 @@ def render_node_details(graph: LineageGraph) -> None:
                 st.markdown(f"**Storage:** {a['storage_kind']}")
             if a.get("suspended"):
                 st.markdown(
-                    "**Status:** <span style='color:#F44336;"
-                    "font-weight:600;'>SUSPENDED</span>",
+                    "**Status:** <span style='color:#F44336;font-weight:600;'>SUSPENDED</span>",
                     unsafe_allow_html=True,
                 )
         if a.get("table_path"):
@@ -265,6 +264,26 @@ def render_node_details(graph: LineageGraph) -> None:
         if a.get("database"):
             st.markdown(f"**Database:** {a['database']}")
 
+    elif ntype == NodeType.GLUE_TABLE:
+        st.markdown("**AWS Glue Table**")
+        gcol1, gcol2 = st.columns(2)
+        with gcol1:
+            if a.get("database"):
+                st.markdown(f"**Database:** {a['database']}")
+        with gcol2:
+            if a.get("table_name"):
+                st.markdown(f"**Table:** {a['table_name']}")
+        if a.get("aws_region"):
+            st.markdown(f"**Region:** {a['aws_region']}")
+        glue_url = build_node_url(sel_node)
+        if glue_url:
+            st.markdown(
+                f"**Console:** <a href='{glue_url}' "
+                f"target='_blank' style='color:{ncolor};'>"
+                f"Open in AWS Glue &#x2197;</a>",
+                unsafe_allow_html=True,
+            )
+
     elif ntype == NodeType.SCHEMA:
         st.markdown("**Schema Details**")
         scol1, scol2, scol3 = st.columns(3)
@@ -281,8 +300,7 @@ def render_node_details(graph: LineageGraph) -> None:
             st.markdown(f"**Schema ID:** `{a['schema_id']}`")
         # Show which topics use this schema
         schema_topics = [
-            e for e in graph.edges
-            if e.dst_id == sel_id and e.edge_type == EdgeType.HAS_SCHEMA
+            e for e in graph.edges if e.dst_id == sel_id and e.edge_type == EdgeType.HAS_SCHEMA
         ]
         if schema_topics:
             st.markdown(f"**Used by {len(schema_topics)} topic(s):**")
@@ -300,8 +318,7 @@ def render_node_details(graph: LineageGraph) -> None:
                 state = a["state"]
                 state_color = "#4CAF50" if state in ("STABLE", "Stable") else "#FF9800"
                 st.markdown(
-                    f"**State:** <span style='color:{state_color};"
-                    f"font-weight:600;'>{state}</span>",
+                    f"**State:** <span style='color:{state_color};font-weight:600;'>{state}</span>",
                     unsafe_allow_html=True,
                 )
         with gcol2:
@@ -317,8 +334,10 @@ def render_node_details(graph: LineageGraph) -> None:
     has_metrics = any(
         a.get(k) is not None
         for k in (
-            "metrics_active", "metrics_received_records",
-            "metrics_sent_records", "metrics_received_bytes",
+            "metrics_active",
+            "metrics_received_records",
+            "metrics_sent_records",
+            "metrics_received_bytes",
             "metrics_sent_bytes",
         )
     )
@@ -351,8 +370,7 @@ def render_node_details(graph: LineageGraph) -> None:
     # ── 5. Schemas (for topics: associated schemas; for schema nodes: self) ──
     if ntype == NodeType.KAFKA_TOPIC:
         schema_edges = [
-            e for e in graph.edges
-            if e.src_id == sel_id and e.edge_type == EdgeType.HAS_SCHEMA
+            e for e in graph.edges if e.src_id == sel_id and e.edge_type == EdgeType.HAS_SCHEMA
         ]
         if schema_edges:
             st.markdown("---")
@@ -395,17 +413,43 @@ def render_node_details(graph: LineageGraph) -> None:
 
     # ── 7. Other attributes (catch-all) ──────────────────────────
     _known_keys = {
-        "partitions_count", "replication_factor", "is_internal",
-        "description", "owner", "connector_class", "direction",
-        "tasks_max", "output_data_format", "sql", "phase",
-        "compute_pool_id", "principal", "ksqldb_cluster_id", "state",
-        "table_formats", "storage_kind", "table_path", "suspended",
-        "catalog_name", "schema_name", "table_name", "workspace_url",
-        "catalog_type", "database", "schema_type", "version",
-        "field_count", "schema_id", "is_simple", "inferred_from",
-        "metrics_active", "metrics_received_records",
-        "metrics_sent_records", "metrics_received_bytes",
-        "metrics_sent_bytes", "metrics_window_hours",
+        "partitions_count",
+        "replication_factor",
+        "is_internal",
+        "description",
+        "owner",
+        "connector_class",
+        "direction",
+        "tasks_max",
+        "output_data_format",
+        "sql",
+        "phase",
+        "compute_pool_id",
+        "principal",
+        "ksqldb_cluster_id",
+        "state",
+        "table_formats",
+        "storage_kind",
+        "table_path",
+        "suspended",
+        "catalog_name",
+        "schema_name",
+        "table_name",
+        "workspace_url",
+        "catalog_type",
+        "database",
+        "schema_type",
+        "version",
+        "field_count",
+        "schema_id",
+        "is_simple",
+        "inferred_from",
+        "metrics_active",
+        "metrics_received_records",
+        "metrics_sent_records",
+        "metrics_received_bytes",
+        "metrics_sent_bytes",
+        "metrics_window_hours",
     }
     extra_attrs = {k: v for k, v in a.items() if k not in _known_keys}
     if extra_attrs:
