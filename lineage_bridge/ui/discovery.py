@@ -21,6 +21,12 @@ def _try_load_settings():
 
         return Settings()  # type: ignore[call-arg]
     except Exception:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Failed to load settings from .env / environment variables",
+            exc_info=True,
+        )
         return None
 
 

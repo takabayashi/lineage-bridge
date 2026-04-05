@@ -49,8 +49,8 @@ st.markdown(
 
     /* Stats bar on graph view */
     div[data-testid="stMetric"] {
-        background: #f8f9fa;
-        border: 1px solid #e9ecef;
+        background: rgba(128,128,128,0.08);
+        border: 1px solid rgba(128,128,128,0.2);
         border-radius: 8px;
         padding: 0.6rem 1rem;
     }
@@ -108,15 +108,15 @@ st.markdown(
         display: flex; align-items: center; gap: 0.4rem;
         padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.9rem;
     }
-    .step-done { background: #e8f5e9; color: #2e7d32; }
-    .step-current { background: #e3f2fd; color: #1565c0; font-weight: 600; }
-    .step-pending { background: #f5f5f5; color: #9e9e9e; }
-    .step-arrow { color: #bdbdbd; font-size: 1.2rem; }
+    .step-done { background: rgba(76,175,80,0.15); color: #4CAF50; }
+    .step-current { background: rgba(21,101,192,0.15); color: #42a5f5; font-weight: 600; }
+    .step-pending { background: rgba(128,128,128,0.1); color: #9e9e9e; }
+    .step-arrow { color: #888; font-size: 1.2rem; }
 
     /* Extraction time badge */
     .extraction-time {
-        font-size: 0.8rem; color: #757575;
-        background: #f5f5f5; padding: 2px 8px; border-radius: 4px;
+        font-size: 0.8rem; color: #999;
+        background: rgba(128,128,128,0.1); padding: 2px 8px; border-radius: 4px;
     }
     </style>
     """,

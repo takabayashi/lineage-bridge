@@ -53,7 +53,7 @@ def _build_tooltip(node: LineageNode) -> str:
     loc_html = ""
     if loc_parts:
         loc_html = (
-            f"<div style='font-size:11px;color:#888;margin-top:4px'>"
+            f"<div style='font-size:11px;color:#999;margin-top:4px'>"
             f"{' / '.join(loc_parts)}</div>"
         )
 
@@ -97,8 +97,8 @@ def _build_tooltip(node: LineageNode) -> str:
     if metric_parts:
         metrics_html = (
             f"<div style='margin-top:5px;padding:3px 7px;"
-            f"background:#f5f5f5;border-radius:4px;"
-            f"font-size:11px;color:#555'>"
+            f"background:rgba(0,0,0,0.05);border-radius:4px;"
+            f"font-size:11px;color:#666'>"
             f"{' &middot; '.join(metric_parts)}</div>"
         )
 
@@ -187,7 +187,7 @@ def _build_tooltip(node: LineageNode) -> str:
     if detail_lines:
         details_html = (
             "<div style='margin-top:5px;font-size:11px;"
-            "color:#444;line-height:1.5'>"
+            "color:#666;line-height:1.5'>"
             + " &middot; ".join(detail_lines)
             + "</div>"
         )
@@ -202,7 +202,7 @@ def _build_tooltip(node: LineageNode) -> str:
         f"text-transform:uppercase;letter-spacing:0.5px;"
         f"color:{color}'>{label}</div>"
         f"<div style='font-size:14px;font-weight:700;"
-        f"color:#1a1a2e;margin-top:2px;"
+        f"color:#222;margin-top:2px;"
         f"overflow:hidden;text-overflow:ellipsis;"
         f"white-space:nowrap;max-width:300px' "
         f"title='{node.display_name}'>{_trunc(node.display_name, 40)}</div>"

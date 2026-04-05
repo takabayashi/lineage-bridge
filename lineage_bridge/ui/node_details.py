@@ -47,7 +47,7 @@ def render_node_details(graph: LineageGraph) -> None:
         f" font-weight:600; text-transform:uppercase;"
         f" letter-spacing:0.5px;'>{ntype_label}</div>"
         f"<div style='font-size:16px; font-weight:700;"
-        f" color:#1a1a2e; margin-top:2px;'>"
+        f" color:inherit; margin-top:2px;'>"
         f"{sel_node.display_name}</div>"
         f"</div>",
         unsafe_allow_html=True,
@@ -383,14 +383,15 @@ def render_node_details(graph: LineageGraph) -> None:
                 role_color = "#1976D2" if role == "value" else "#7B1FA2"
                 sa = schema_node.attributes
                 st.markdown(
-                    f"<div style='padding:6px 10px;background:#f8f9fa;"
+                    f"<div style='padding:6px 10px;"
+                    f"background:rgba(128,128,128,0.08);"
                     f"border-radius:6px;border-left:3px solid {role_color};"
                     f"margin:4px 0;'>"
                     f"<span style='background:{role_color};color:white;"
                     f"padding:1px 6px;border-radius:4px;font-size:11px;'>"
                     f"{role}</span> "
                     f"<strong>{schema_node.display_name}</strong>"
-                    f"<br><span style='font-size:12px;color:#666;'>"
+                    f"<br><span style='font-size:12px;color:#999;'>"
                     f"{sa.get('schema_type', '')} "
                     f"{'v' + str(sa['version']) if sa.get('version') else ''}"
                     f"{' | ' + str(sa['field_count']) + ' fields' if sa.get('field_count') else ''}"
