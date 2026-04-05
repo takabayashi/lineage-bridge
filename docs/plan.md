@@ -86,6 +86,11 @@ Committed in 3 commits. 304 tests, all passing.
 
 **Commits:**
 1. `ad417c5` — Per-extractor timeouts, graph validation, Kafka fallback tests (Weaver + Lens)
+2. `d68f760` — Dark mode fix: theme-safe colors for CSS, tooltips, and detail panel (Prism)
+3. `862f5b8` — CI fix: resolve all lint errors, fix Dockerfile build order (Anvil)
+4. `3c03955` — Add pytest-cov to dev dependencies (Anvil)
+
+**Release:** `v0.2.0` tagged and pushed. CI + Docker workflows green.
 
 ---
 
