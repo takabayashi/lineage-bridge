@@ -53,7 +53,7 @@ Committed in 3 commits. 304 tests, all passing.
 
 ---
 
-## Phase 3: UI Decomposition + UX Improvements (NEXT)
+## Phase 3: UI Decomposition + UX Improvements (COMPLETED 2026-04-04)
 
 **Goal:** Break up app.py monolith (1517 lines), apply UX findings from Phase 2.
 
@@ -67,9 +67,13 @@ Committed in 3 commits. 304 tests, all passing.
 
 **Review:** Sentinel validates no regressions after refactor.
 
+**Commits:**
+1. `e3a8a98` — Decompose app.py into state, discovery, extraction, sidebar (Weaver)
+2. `d1bd809` — Expand graph renderer tests to 104 (Lens)
+
 ---
 
-## Phase 4: Polish & Hardening
+## Phase 4: Polish & Hardening (NEXT)
 
 **Goal:** Coverage targets, validation, E2E testing. Tag v0.2.0.
 
