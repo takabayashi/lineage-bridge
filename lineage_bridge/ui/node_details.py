@@ -399,6 +399,20 @@ def render_node_details(graph: LineageGraph) -> None:
                     f"</span></div>",
                     unsafe_allow_html=True,
                 )
+                schema_str = sa.get("schema_string", "")
+                if schema_str:
+                    schema_type = sa.get("schema_type", "AVRO")
+                    lang = "json" if schema_type in ("AVRO", "JSON") else "protobuf"
+                    # Pretty-print JSON-based schemas
+                    if lang == "json":
+                        try:
+                            import json as _json
+
+                            schema_str = _json.dumps(_json.loads(schema_str), indent=2)
+                        except (ValueError, TypeError):
+                            pass
+                    with st.expander(f"Schema Definition ({role})", expanded=False):
+                        st.code(schema_str, language=lang)
 
     # ── 6. Tags & Metadata ───────────────────────────────────────
     if sel_node.tags:
@@ -443,6 +457,7 @@ def render_node_details(graph: LineageGraph) -> None:
         "version",
         "field_count",
         "schema_id",
+        "schema_string",
         "is_simple",
         "inferred_from",
         "metrics_active",
@@ -458,9 +473,18 @@ def render_node_details(graph: LineageGraph) -> None:
             st.table([{"Key": k, "Value": str(v)} for k, v in extra_attrs.items()])
 
     # ── 8. Neighbors ─────────────────────────────────────────────
+    # Exclude schema and consumer group nodes — they are shown in
+    # their own sections and are not part of the data lineage flow.
+    _neighbor_exclude = {NodeType.SCHEMA, NodeType.CONSUMER_GROUP}
     st.markdown("---")
-    upstream = graph.get_neighbors(sel_id, direction="upstream")
-    downstream = graph.get_neighbors(sel_id, direction="downstream")
+    upstream = [
+        n for n in graph.get_neighbors(sel_id, direction="upstream")
+        if n.node_type not in _neighbor_exclude
+    ]
+    downstream = [
+        n for n in graph.get_neighbors(sel_id, direction="downstream")
+        if n.node_type not in _neighbor_exclude
+    ]
 
     nb_col1, nb_col2 = st.columns(2)
     with nb_col1:

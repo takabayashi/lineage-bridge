@@ -92,6 +92,7 @@ class SchemaRegistryClient(ConfluentClient):
                         "version": schema_info.get("version"),
                         "schema_id": schema_info.get("id"),
                         "field_count": field_count,
+                        "schema_string": schema_str,
                     },
                 )
             )
