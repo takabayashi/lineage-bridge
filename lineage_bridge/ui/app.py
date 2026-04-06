@@ -44,6 +44,16 @@ load_cached_selections()
 st.markdown(
     """
     <style>
+    /* Make Streamlit header transparent so it doesn't cover content,
+       but keep it in the DOM so the sidebar open button remains visible */
+    header[data-testid="stHeader"] {
+        background: transparent !important;
+        pointer-events: none !important;
+    }
+    header[data-testid="stHeader"] * {
+        pointer-events: auto;
+    }
+
     /* Tighten top padding */
     .block-container { padding-top: 1.5rem; }
 
@@ -77,9 +87,6 @@ st.markdown(
     .main div[data-testid="stVerticalBlock"] > div:has(iframe) {
         overflow: hidden;
         position: relative;
-    }
-    header[data-testid="stHeader"] {
-        z-index: 999 !important;
     }
 
     /* Sidebar: ensure scrolling works */

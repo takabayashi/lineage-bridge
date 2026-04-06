@@ -1,0 +1,48 @@
+# ── LineageBridge Demo — Terraform Variables ─────────────────────────────────
+#
+# Copy this file and fill in your credentials:
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# Then run:
+#   make demo-up
+#
+# Estimated cost: ~$50-80/month
+#   - Confluent basic cluster + connectors: ~$25-40/month
+#   - AWS S3: ~$1-2/month
+#   - Databricks: $0 (no compute, only catalog resources)
+#
+# Destroy when done:
+#   make demo-down
+# ─────────────────────────────────────────────────────────────────────────────
+
+# AWS region — must match Confluent cluster region
+aws_region = "us-east-1"
+
+# Confluent Cloud API key — create at:
+# https://confluent.cloud/settings/api-keys (cloud-level, not cluster-scoped)
+confluent_cloud_api_key    = "YOUR_CONFLUENT_CLOUD_API_KEY"
+confluent_cloud_api_secret = "YOUR_CONFLUENT_CLOUD_API_SECRET"
+
+# Databricks workspace URL (existing workspace with Unity Catalog enabled)
+databricks_workspace_url = "https://dbc-XXXXXXXX-XXXX.cloud.databricks.com"
+
+# Databricks personal access token — create at:
+# <workspace_url>/#settings/user/developer/access-tokens
+databricks_token = "YOUR_DATABRICKS_TOKEN"
+
+# Databricks service principal OAuth credentials — create at:
+# https://accounts.cloud.databricks.com → Service Principals → Generate OAuth Secret
+# These are used for the Confluent Tableflow ↔ Unity Catalog integration
+databricks_client_id     = "YOUR_DATABRICKS_CLIENT_ID"
+databricks_client_secret = "YOUR_DATABRICKS_CLIENT_SECRET"
+
+# Confluent Tableflow API key
+# Leave as placeholder — `make demo-up` creates this automatically via Confluent CLI.
+# If you prefer to create manually:
+#   confluent api-key create --resource tableflow --service-account <sa-id> --environment <env-id>
+confluent_tableflow_api_key    = "YOUR_TABLEFLOW_API_KEY"
+confluent_tableflow_api_secret = "YOUR_TABLEFLOW_API_SECRET"
+
+# AWS account ID (12 digits) — find at:
+# https://console.aws.amazon.com/billing/home → Account ID
+aws_account_id = "YOUR_AWS_ACCOUNT_ID"

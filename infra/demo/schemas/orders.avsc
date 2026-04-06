@@ -1,0 +1,14 @@
+{
+  "type": "record",
+  "name": "Order",
+  "namespace": "com.lineagebridge.demo",
+  "fields": [
+    {"name": "order_id", "type": "string"},
+    {"name": "customer_id", "type": "string"},
+    {"name": "product_name", "type": "string"},
+    {"name": "quantity", "type": "int"},
+    {"name": "price", "type": {"type": "bytes", "logicalType": "decimal", "precision": 10, "scale": 2}},
+    {"name": "order_status", "type": {"type": "enum", "name": "Status", "symbols": ["PENDING", "SHIPPED", "DELIVERED"]}},
+    {"name": "created_at", "type": {"type": "long", "logicalType": "timestamp-millis"}}
+  ]
+}
