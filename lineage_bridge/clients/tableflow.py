@@ -19,6 +19,15 @@ from lineage_bridge.models.graph import (
 
 logger = logging.getLogger(__name__)
 
+# Map API "config.kind" values to catalog registry keys
+_KIND_TO_CATALOG_TYPE: dict[str, str] = {
+    "Unity": "UNITY_CATALOG",
+    "AwsGlue": "AWS_GLUE",
+    # Legacy/direct registry keys pass through
+    "UNITY_CATALOG": "UNITY_CATALOG",
+    "AWS_GLUE": "AWS_GLUE",
+}
+
 
 class TableflowClient(ConfluentClient):
     """Extracts Tableflow lineage (topic → table → UC/Glue)."""
@@ -147,8 +156,11 @@ class TableflowClient(ConfluentClient):
         edges: list[LineageEdge] = []
 
         ci_spec = ci.get("spec", {})
-        catalog_type = ci_spec.get("catalog_type", "")
-        catalog_config = ci_spec.get("catalog_config", {})
+        ci_config = ci_spec.get("config", {})
+        # API returns kind ("Unity", "AwsGlue") — map to registry keys
+        kind = ci_config.get("kind", "") or ci_spec.get("catalog_type", "")
+        catalog_type = _KIND_TO_CATALOG_TYPE.get(kind, kind)
+        catalog_config = ci_config
 
         provider = get_provider(catalog_type)
         if provider:

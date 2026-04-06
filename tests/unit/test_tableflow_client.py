@@ -117,11 +117,9 @@ class TestTableflowExtract:
                     "id": "tci-glue-001",
                     "spec": {
                         "kafka_cluster": {"id": "lkc-abc123"},
-                        "catalog_type": "AWS_GLUE",
-                        "catalog_config": {
-                            "aws_glue": {
-                                "database_name": "my_glue_db",
-                            }
+                        "config": {
+                            "kind": "AwsGlue",
+                            "database_name": "my_glue_db",
                         },
                     },
                 }
@@ -152,8 +150,9 @@ class TestTableflowExtract:
                     "id": "tci-x-001",
                     "spec": {
                         "kafka_cluster": {"id": "lkc-abc123"},
-                        "catalog_type": "SNOWFLAKE_ICECAT",
-                        "catalog_config": {},
+                        "config": {
+                            "kind": "SnowflakeIcecat",
+                        },
                     },
                 }
             ],

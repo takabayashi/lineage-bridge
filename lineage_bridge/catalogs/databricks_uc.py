@@ -49,10 +49,14 @@ class DatabricksUCProvider:
         environment_id: str,
     ) -> tuple[LineageNode, LineageEdge]:
         """Create a UC_TABLE node and MATERIALIZES edge from the tableflow node."""
-        uc_cfg = ci_config.get("unity_catalog", {})
+        # Support both flat config format (API) and nested format (legacy/tests)
+        uc_cfg = ci_config.get("unity_catalog", ci_config)
         catalog_name = uc_cfg.get("catalog_name", "confluent_tableflow")
-        qualified = f"{catalog_name}.{cluster_id}.{topic_name}"
-        uc_id = f"databricks:uc_table:{environment_id}:{catalog_name}.{cluster_id}.{topic_name}"
+        workspace_url = uc_cfg.get("workspace_endpoint") or uc_cfg.get("workspace_url")
+        # Confluent replaces dots with underscores in UC table names
+        uc_table_name = topic_name.replace(".", "_")
+        qualified = f"{catalog_name}.{cluster_id}.{uc_table_name}"
+        uc_id = f"databricks:uc_table:{environment_id}:{qualified}"
 
         node = LineageNode(
             node_id=uc_id,
@@ -65,8 +69,8 @@ class DatabricksUCProvider:
             attributes={
                 "catalog_name": catalog_name,
                 "schema_name": cluster_id,
-                "table_name": topic_name,
-                "workspace_url": uc_cfg.get("workspace_url"),
+                "table_name": uc_table_name,
+                "workspace_url": workspace_url,
             },
         )
         edge = LineageEdge(

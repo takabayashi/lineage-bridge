@@ -19,22 +19,17 @@
         "display_name": "unity-catalog-prod",
         "kafka_cluster": {"id": "lkc-abc123"},
         "environment": {"id": "env-abc123"},
-        "catalog_type": "UNITY_CATALOG",
-        "catalog_config": {
-          "unity_catalog": {
-            "workspace_url": "https://acme-prod.cloud.databricks.com",
-            "catalog_name": "confluent_tableflow",
-            "credentials": {
-              "kind": "ServicePrincipal",
-              "client_id": "sp-abc123",
-              "client_secret": "********"
-            }
-          }
+        "config": {
+          "kind": "Unity",
+          "workspace_endpoint": "https://acme-prod.cloud.databricks.com",
+          "catalog_name": "confluent_tableflow",
+          "client_id": "sp-abc123",
+          "client_secret": "********"
         },
         "suspended": false
       },
       "status": {
-        "phase": "ACTIVE",
+        "phase": "CONNECTED",
         "detail": "CatalogIntegration is syncing successfully."
       }
     }
