@@ -258,6 +258,195 @@ resource "confluent_connector" "datagen_customers" {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# FLINK — Compute Pool + SQL Statements
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Flink Compute Pool ──────────────────────────────────────────────────────
+
+resource "confluent_flink_compute_pool" "demo" {
+  display_name = "${local.demo_prefix}-flink"
+  cloud        = "AWS"
+  region       = var.aws_region
+  max_cfu      = 5
+
+  environment {
+    id = confluent_environment.demo.id
+  }
+}
+
+# ── Flink API Key (scoped to Flink region) ──────────────────────────────────
+
+resource "confluent_api_key" "flink" {
+  display_name = "${local.demo_prefix}-flink-key"
+  description  = "Flink API key for demo"
+
+  owner {
+    id          = confluent_service_account.demo.id
+    api_version = confluent_service_account.demo.api_version
+    kind        = confluent_service_account.demo.kind
+  }
+
+  managed_resource {
+    id          = data.confluent_flink_region.demo.id
+    api_version = data.confluent_flink_region.demo.api_version
+    kind        = data.confluent_flink_region.demo.kind
+
+    environment {
+      id = confluent_environment.demo.id
+    }
+  }
+
+  depends_on = [confluent_role_binding.env_admin]
+}
+
+# ── Output Topics for Flink ─────────────────────────────────────────────────
+
+resource "confluent_kafka_topic" "enriched_orders" {
+  kafka_cluster {
+    id = confluent_kafka_cluster.demo.id
+  }
+
+  topic_name       = "lineage_bridge.enriched_orders"
+  partitions_count = 3
+  rest_endpoint    = confluent_kafka_cluster.demo.rest_endpoint
+
+  credentials {
+    key    = confluent_api_key.kafka.id
+    secret = confluent_api_key.kafka.secret
+  }
+}
+
+resource "confluent_kafka_topic" "order_stats" {
+  kafka_cluster {
+    id = confluent_kafka_cluster.demo.id
+  }
+
+  topic_name       = "lineage_bridge.order_stats"
+  partitions_count = 3
+  rest_endpoint    = confluent_kafka_cluster.demo.rest_endpoint
+
+  credentials {
+    key    = confluent_api_key.kafka.id
+    secret = confluent_api_key.kafka.secret
+  }
+}
+
+# ── Flink SQL: Enriched Orders (JOIN orders + customers) ────────────────────
+
+resource "confluent_flink_statement" "enriched_orders" {
+  organization {
+    id = data.confluent_organization.demo.id
+  }
+
+  environment {
+    id = confluent_environment.demo.id
+  }
+
+  compute_pool {
+    id = confluent_flink_compute_pool.demo.id
+  }
+
+  principal {
+    id = confluent_service_account.demo.id
+  }
+
+  rest_endpoint = data.confluent_flink_region.demo.rest_endpoint
+
+  statement = <<-SQL
+    INSERT INTO `${confluent_kafka_topic.enriched_orders.topic_name}`
+    SELECT
+      o.`order_id`,
+      o.`customer_id`,
+      c.`name`       AS `customer_name`,
+      c.`country`    AS `customer_country`,
+      o.`product_name`,
+      o.`quantity`,
+      o.`price`,
+      o.`order_status`,
+      o.`created_at`
+    FROM `${confluent_kafka_topic.orders.topic_name}` o
+    LEFT JOIN `${confluent_kafka_topic.customers.topic_name}` c
+      ON o.`customer_id` = c.`customer_id`;
+  SQL
+
+  properties = {
+    "sql.current-catalog"  = confluent_environment.demo.display_name
+    "sql.current-database" = confluent_kafka_cluster.demo.display_name
+  }
+
+  credentials {
+    key    = var.confluent_cloud_api_key
+    secret = var.confluent_cloud_api_secret
+  }
+
+  depends_on = [
+    confluent_connector.datagen_orders,
+    confluent_connector.datagen_customers,
+    confluent_kafka_topic.enriched_orders,
+  ]
+}
+
+# ── Flink SQL: Order Stats (tumbling window aggregation) ────────────────────
+
+resource "confluent_flink_statement" "order_stats" {
+  organization {
+    id = data.confluent_organization.demo.id
+  }
+
+  environment {
+    id = confluent_environment.demo.id
+  }
+
+  compute_pool {
+    id = confluent_flink_compute_pool.demo.id
+  }
+
+  principal {
+    id = confluent_service_account.demo.id
+  }
+
+  rest_endpoint = data.confluent_flink_region.demo.rest_endpoint
+
+  statement = <<-SQL
+    INSERT INTO `${confluent_kafka_topic.order_stats.topic_name}`
+    SELECT
+      `order_status`,
+      COUNT(*)       AS `order_count`,
+      SUM(`quantity`) AS `total_quantity`,
+      window_start,
+      window_end
+    FROM TABLE(
+      TUMBLE(TABLE `${confluent_kafka_topic.orders.topic_name}`, DESCRIPTOR(`$rowtime`), INTERVAL '1' MINUTE)
+    )
+    GROUP BY `order_status`, window_start, window_end;
+  SQL
+
+  properties = {
+    "sql.current-catalog"  = confluent_environment.demo.display_name
+    "sql.current-database" = confluent_kafka_cluster.demo.display_name
+  }
+
+  credentials {
+    key    = var.confluent_cloud_api_key
+    secret = var.confluent_cloud_api_secret
+  }
+
+  depends_on = [
+    confluent_connector.datagen_orders,
+    confluent_kafka_topic.order_stats,
+  ]
+}
+
+# ── Data sources (needed by Flink statements) ──────────────────────────────
+
+data "confluent_organization" "demo" {}
+
+data "confluent_flink_region" "demo" {
+  cloud  = "AWS"
+  region = var.aws_region
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # AWS — S3 Bucket + IAM Role (shared by Confluent Tableflow + Databricks UC)
 # ═══════════════════════════════════════════════════════════════════════════════
 
