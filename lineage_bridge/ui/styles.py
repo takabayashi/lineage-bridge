@@ -11,16 +11,16 @@ from lineage_bridge.models.graph import EdgeType, NodeType
 
 # ── Color palette per node type ────────────────────────────────────────
 NODE_COLORS: dict[NodeType, str] = {
-    NodeType.KAFKA_TOPIC: "#1976D2",  # strong blue
-    NodeType.CONNECTOR: "#E65100",  # deep orange
-    NodeType.KSQLDB_QUERY: "#7B1FA2",  # deep purple
-    NodeType.FLINK_JOB: "#00796B",  # dark teal
-    NodeType.TABLEFLOW_TABLE: "#2E7D32",  # dark green
-    NodeType.UC_TABLE: "#F57F17",  # dark amber
+    NodeType.KAFKA_TOPIC: "#1976D2",  # Confluent blue
+    NodeType.CONNECTOR: "#0D47A1",  # Confluent dark blue
+    NodeType.KSQLDB_QUERY: "#42A5F5",  # Confluent light blue
+    NodeType.FLINK_JOB: "#D32F2F",  # Flink red
+    NodeType.TABLEFLOW_TABLE: "#1565C0",  # Confluent medium blue
+    NodeType.UC_TABLE: "#F9A825",  # Databricks amber/yellow
     NodeType.GLUE_TABLE: "#0D47A1",  # AWS dark blue
-    NodeType.SCHEMA: "#546E7A",  # blue-gray
-    NodeType.EXTERNAL_DATASET: "#C62828",  # dark red
-    NodeType.CONSUMER_GROUP: "#0277BD",  # dark light-blue
+    NodeType.SCHEMA: "#90CAF9",  # Confluent pale blue
+    NodeType.EXTERNAL_DATASET: "#757575",  # neutral gray
+    NodeType.CONSUMER_GROUP: "#2196F3",  # Confluent mid blue
 }
 
 # ── Node sizes (agraph pixel diameter) ─────────────────────────────────
@@ -117,12 +117,12 @@ def _svg_to_data_uri(svg: str) -> str:
 
 
 def _make_icon_svg(color: str, symbol_path: str) -> str:
-    """Build a 64x64 SVG with a colored circle and white symbol."""
+    """Build a 64x64 SVG with a colored rounded-square and white symbol."""
     return (
         '<svg xmlns="http://www.w3.org/2000/svg" '
         'width="64" height="64" viewBox="0 0 64 64">'
-        f'<circle cx="32" cy="32" r="30" fill="{color}" '
-        'stroke="#fff" stroke-width="2"/>'
+        f'<rect x="2" y="2" width="60" height="60" rx="14" '
+        f'fill="{color}" stroke="#fff" stroke-width="2"/>'
         f'<g fill="#fff" transform="translate(32,32)">'
         f"{symbol_path}</g></svg>"
     )
@@ -130,88 +130,113 @@ def _make_icon_svg(color: str, symbol_path: str) -> str:
 
 # Symbol paths (centered at origin, fit within ~±14px)
 _SYMBOLS: dict[NodeType, str] = {
-    # Kafka Topic — stream/wave lines
+    # Kafka Topic — vertical cylinder (log/stream storage)
     NodeType.KAFKA_TOPIC: (
-        '<path d="M-12,-4 Q-6,-12 0,-4 Q6,4 12,-4" '
-        'fill="none" stroke="#fff" stroke-width="2.5"/>'
-        '<path d="M-12,4 Q-6,-4 0,4 Q6,12 12,4" '
-        'fill="none" stroke="#fff" stroke-width="2.5"/>'
+        '<ellipse cx="0" cy="-10" rx="12" ry="5" fill="#fff"/>'
+        '<rect x="-12" y="-10" width="24" height="18" fill="#fff"/>'
+        '<ellipse cx="0" cy="8" rx="12" ry="5" fill="#fff"/>'
+        '<ellipse cx="0" cy="-10" rx="12" ry="5" fill="none" '
+        'stroke="rgba(0,0,0,0.15)" stroke-width="1"/>'
+        '<ellipse cx="0" cy="-4" rx="12" ry="4" fill="none" '
+        'stroke="rgba(0,0,0,0.1)" stroke-width="0.8"/>'
     ),
-    # Connector — plug icon
+    # Connector — bidirectional arrows with center hub (data bridge)
     NodeType.CONNECTOR: (
-        '<rect x="-4" y="-12" width="8" height="10" rx="1"/>'
-        '<rect x="-8" y="-2" width="16" height="6" rx="2"/>'
-        '<rect x="-3" y="4" width="6" height="8" rx="1"/>'
+        '<circle cx="0" cy="0" r="5" fill="#fff"/>'
+        # left arrow
+        '<rect x="-14" y="-1.5" width="9" height="3" rx="1" fill="#fff"/>'
+        '<polygon points="-14,-5 -14,5 -19,0" fill="#fff"/>'
+        # right arrow
+        '<rect x="5" y="-1.5" width="9" height="3" rx="1" fill="#fff"/>'
+        '<polygon points="14,-5 14,5 19,0" fill="#fff"/>'
     ),
-    # ksqlDB — SQL text
+    # ksqlDB — terminal prompt with ">" cursor
     NodeType.KSQLDB_QUERY: (
-        '<text x="0" y="5" text-anchor="middle" '
-        'font-size="16" font-weight="bold" '
-        'font-family="monospace" fill="#fff">SQL</text>'
+        '<rect x="-14" y="-12" width="28" height="24" rx="3" '
+        'fill="none" stroke="#fff" stroke-width="2"/>'
+        # terminal top bar
+        '<line x1="-14" y1="-6" x2="14" y2="-6" stroke="#fff" stroke-width="1.5"/>'
+        '<circle cx="-10" cy="-9" r="1.5" fill="#fff"/>'
+        '<circle cx="-5" cy="-9" r="1.5" fill="#fff"/>'
+        # prompt chevron >_
+        '<polyline points="-8,0 -2,4 -8,8" fill="none" '
+        'stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>'
+        '<line x1="1" y1="8" x2="9" y2="8" stroke="#fff" stroke-width="2.5" '
+        'stroke-linecap="round"/>'
     ),
-    # Flink — bolt/lightning
-    NodeType.FLINK_JOB: ('<polygon points="2,-14 -8,2 -1,2 -4,14 8,-2 1,-2"/>'),
-    # Tableflow — table grid
+    # Flink — gear/engine (processing engine)
+    NodeType.FLINK_JOB: (
+        # outer gear with 6 teeth
+        '<path d="M-3,-14 L3,-14 L4,-10 L10,-7 L13,-11 L14,-5 L11,-3 L11,3 '
+        'L14,5 L13,11 L10,7 L4,10 L3,14 L-3,14 L-4,10 L-10,7 L-13,11 '
+        'L-14,5 L-11,3 L-11,-3 L-14,-5 L-13,-11 L-10,-7 L-4,-10 Z" fill="#fff"/>'
+        # inner circle (hub)
+        '<circle cx="0" cy="0" r="5" fill="none" stroke="rgba(0,0,0,0.2)" '
+        'stroke-width="1.5"/>'
+    ),
+    # Tableflow — arrow flowing into a table (stream-to-table)
     NodeType.TABLEFLOW_TABLE: (
-        '<rect x="-12" y="-10" width="24" height="20" '
-        'rx="2" fill="none" stroke="#fff" stroke-width="2"/>'
-        '<line x1="-12" y1="-3" x2="12" y2="-3" '
-        'stroke="#fff" stroke-width="2"/>'
-        '<line x1="-12" y1="4" x2="12" y2="4" '
-        'stroke="#fff" stroke-width="1.5"/>'
-        '<line x1="0" y1="-3" x2="0" y2="10" '
-        'stroke="#fff" stroke-width="1.5"/>'
+        # down arrow at top
+        '<polygon points="-4,-14 4,-14 4,-6 8,-6 0,0 -8,-6 -4,-6" fill="#fff"/>'
+        # table below
+        '<rect x="-12" y="2" width="24" height="12" rx="2" '
+        'fill="none" stroke="#fff" stroke-width="2"/>'
+        '<line x1="-12" y1="7" x2="12" y2="7" stroke="#fff" stroke-width="1.5"/>'
+        '<line x1="-2" y1="2" x2="-2" y2="14" stroke="#fff" stroke-width="1.5"/>'
     ),
-    # UC Table — database cylinder
+    # UC Table — database cylinder (classic DB icon)
     NodeType.UC_TABLE: (
-        '<ellipse cx="0" cy="-8" rx="11" ry="5" '
-        'fill="none" stroke="#fff" stroke-width="2"/>'
-        '<path d="M-11,-8 L-11,6 Q-11,12 0,12 '
-        'Q11,12 11,6 L11,-8" '
-        'fill="none" stroke="#fff" stroke-width="2"/>'
+        '<ellipse cx="0" cy="-9" rx="13" ry="6" fill="#fff"/>'
+        '<rect x="-13" y="-9" width="26" height="16" fill="#fff"/>'
+        '<ellipse cx="0" cy="7" rx="13" ry="6" fill="#fff"/>'
+        '<ellipse cx="0" cy="-9" rx="13" ry="6" fill="none" '
+        'stroke="rgba(0,0,0,0.2)" stroke-width="1"/>'
+        '<ellipse cx="0" cy="-2" rx="13" ry="5" fill="none" '
+        'stroke="rgba(0,0,0,0.12)" stroke-width="0.8"/>'
     ),
-    # Glue Table — table grid with bottom bar
+    # Glue Table — database cylinder (classic DB icon)
     NodeType.GLUE_TABLE: (
-        '<rect x="-12" y="-10" width="24" height="20" '
-        'rx="2" fill="none" stroke="#fff" stroke-width="2"/>'
-        '<line x1="-12" y1="-3" x2="12" y2="-3" '
-        'stroke="#fff" stroke-width="2"/>'
-        '<line x1="-12" y1="4" x2="12" y2="4" '
-        'stroke="#fff" stroke-width="1.5"/>'
-        '<line x1="-4" y1="-3" x2="-4" y2="10" '
-        'stroke="#fff" stroke-width="1.5"/>'
-        '<line x1="4" y1="-3" x2="4" y2="10" '
-        'stroke="#fff" stroke-width="1.5"/>'
+        '<ellipse cx="0" cy="-9" rx="13" ry="6" fill="#fff"/>'
+        '<rect x="-13" y="-9" width="26" height="16" fill="#fff"/>'
+        '<ellipse cx="0" cy="7" rx="13" ry="6" fill="#fff"/>'
+        '<ellipse cx="0" cy="-9" rx="13" ry="6" fill="none" '
+        'stroke="rgba(0,0,0,0.2)" stroke-width="1"/>'
+        '<ellipse cx="0" cy="-2" rx="13" ry="5" fill="none" '
+        'stroke="rgba(0,0,0,0.12)" stroke-width="0.8"/>'
     ),
-    # Schema — document with lines
+    # Schema — curly braces { } (schema/contract feel)
     NodeType.SCHEMA: (
-        '<path d="M-7,-12 L5,-12 L10,-7 L10,12 '
-        'L-7,12 Z" fill="none" stroke="#fff" '
-        'stroke-width="2"/>'
-        '<line x1="-3" y1="-3" x2="6" y2="-3" '
-        'stroke="#fff" stroke-width="1.5"/>'
-        '<line x1="-3" y1="2" x2="6" y2="2" '
-        'stroke="#fff" stroke-width="1.5"/>'
-        '<line x1="-3" y1="7" x2="4" y2="7" '
-        'stroke="#fff" stroke-width="1.5"/>'
+        '<path d="M-5,-13 Q-10,-13 -10,-8 L-10,-3 Q-10,0 -13,0 '
+        'Q-10,0 -10,3 L-10,8 Q-10,13 -5,13" '
+        'fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>'
+        '<path d="M5,-13 Q10,-13 10,-8 L10,-3 Q10,0 13,0 '
+        'Q10,0 10,3 L10,8 Q10,13 5,13" '
+        'fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>'
+        # dots inside
+        '<circle cx="-2" cy="-4" r="1.5" fill="#fff"/>'
+        '<circle cx="2" cy="0" r="1.5" fill="#fff"/>'
+        '<circle cx="-2" cy="4" r="1.5" fill="#fff"/>'
     ),
-    # External Dataset — cloud
+    # External Dataset — cloud with up/down arrow (external data source)
     NodeType.EXTERNAL_DATASET: (
-        '<path d="M-6,4 Q-14,4 -14,-2 Q-14,-8 -8,-8 '
-        "Q-6,-14 0,-12 Q4,-16 8,-12 Q14,-12 14,-6 "
-        'Q16,-2 12,0 Q14,4 8,4 Z" '
-        'fill="none" stroke="#fff" stroke-width="2"/>'
+        '<path d="M-4,2 Q-14,2 -14,-4 Q-14,-10 -8,-10 '
+        "Q-6,-15 0,-13 Q4,-17 8,-13 Q14,-13 14,-7 "
+        'Q16,-3 12,-1 Q14,2 8,2 Z" '
+        'fill="#fff"/>'
+        # small down arrow below cloud
+        '<polygon points="-4,5 4,5 0,11" fill="#fff"/>'
     ),
-    # Consumer Group — two people
+    # Consumer Group — three stacked user circles (group of consumers)
     NodeType.CONSUMER_GROUP: (
-        '<circle cx="-5" cy="-6" r="4" fill="none" '
-        'stroke="#fff" stroke-width="2"/>'
-        '<path d="M-12,8 Q-12,0 -5,-1 Q2,0 2,8" '
-        'fill="none" stroke="#fff" stroke-width="2"/>'
-        '<circle cx="6" cy="-7" r="3.5" fill="none" '
-        'stroke="#fff" stroke-width="1.5"/>'
-        '<path d="M0,7 Q0,0 6,-2 Q12,0 12,7" '
-        'fill="none" stroke="#fff" stroke-width="1.5"/>'
+        # back person
+        '<circle cx="0" cy="-8" r="3" fill="#fff" opacity="0.5"/>'
+        '<path d="M-6,0 Q-6,-4 0,-5 Q6,-4 6,0" fill="#fff" opacity="0.5"/>'
+        # middle person
+        '<circle cx="-5" cy="-4" r="3.5" fill="#fff" opacity="0.75"/>'
+        '<path d="M-12,5 Q-12,0 -5,-2 Q2,0 2,5" fill="#fff" opacity="0.75"/>'
+        # front person
+        '<circle cx="5" cy="-3" r="4" fill="#fff"/>'
+        '<path d="M-2,7 Q-2,1 5,-1 Q12,1 12,7" fill="#fff"/>'
     ),
 }
 
