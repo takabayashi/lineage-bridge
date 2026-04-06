@@ -318,7 +318,8 @@ resource "confluent_flink_statement" "enriched_orders" {
     id = confluent_service_account.demo.id
   }
 
-  rest_endpoint = data.confluent_flink_region.demo.rest_endpoint
+  statement_name = "${local.demo_prefix}-enrich-orders"
+  rest_endpoint  = data.confluent_flink_region.demo.rest_endpoint
 
   statement = <<-SQL
     CREATE TABLE `lineage_bridge.enriched_orders` AS
@@ -372,7 +373,8 @@ resource "confluent_flink_statement" "order_stats" {
     id = confluent_service_account.demo.id
   }
 
-  rest_endpoint = data.confluent_flink_region.demo.rest_endpoint
+  statement_name = "${local.demo_prefix}-order-stats"
+  rest_endpoint  = data.confluent_flink_region.demo.rest_endpoint
 
   statement = <<-SQL
     CREATE TABLE `lineage_bridge.order_stats` AS

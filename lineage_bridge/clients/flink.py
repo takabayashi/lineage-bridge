@@ -68,19 +68,30 @@ def _extract_name(match: re.Match[str]) -> str:
 def _last_segment(name: str) -> str:
     """Return the last segment of a possibly catalog-qualified name.
 
-    Handles:  `cat`.`db`.`table` → table
-              "cat"."db"."table" → table
-              cat.db.table       → table
-              table              → table
+    Handles:  `cat`.`db`.`table`     → table
+              `cat`.`db`.`my.table`  → my.table   (dot inside backticks is literal)
+              "cat"."db"."table"     → table
+              cat.db.table           → table
+              table                  → table
+              `my.topic`             → my.topic   (single quoted ident with dot)
     """
-    # Split on `.` that separates quoted identifiers
+    name = name.strip()
+
+    # Multi-part qualified name: split on `.` between quoted identifiers.
     # e.g. `cat`.`db`.`tbl` → ['`cat`', '`db`', '`tbl`']
-    parts = re.split(r"(?<=`)\s*\.\s*(?=`)|(?<=\")\s*\.\s*(?=\")|\.", name)
+    # Only split on dots that sit *between* closing and opening quotes.
+    parts = re.split(r"(?<=`)\s*\.\s*(?=`)|(?<=\")\s*\.\s*(?=\")", name)
+
+    # If no inter-quote splits happened, try plain dot split only for
+    # unquoted identifiers (no backticks/quotes at all).
+    if len(parts) == 1 and not name.startswith("`") and not name.startswith('"'):
+        parts = name.split(".")
+
     last = parts[-1].strip()
     # Strip surrounding backticks or double quotes
-    is_backtick = last.startswith("`") and last.endswith("`")
-    is_quoted = last.startswith('"') and last.endswith('"')
-    if is_backtick or is_quoted:
+    if last.startswith("`") and last.endswith("`"):
+        last = last[1:-1]
+    elif last.startswith('"') and last.endswith('"'):
         last = last[1:-1]
     return last
 
@@ -395,8 +406,8 @@ class FlinkClient:
             "cumulate",
             "session",
         }
-        sources = {s for s in sources if s.lower() not in noise}
-        sinks = {s for s in sinks if s.lower() not in noise}
+        sources = {s for s in sources if s.lower() not in noise and "(" not in s}
+        sinks = {s for s in sinks if s.lower() not in noise and "(" not in s}
 
         return sources, sinks
 
