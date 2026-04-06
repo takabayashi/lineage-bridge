@@ -8,14 +8,14 @@ DATABRICKS_HOST  := $(shell grep databricks_workspace_url terraform.tfvars 2>/de
 DATABRICKS_TOKEN := $(shell grep databricks_token terraform.tfvars 2>/dev/null | sed 's/.*= *"\(.*\)"/\1/')
 CATALOG_NAME     := $(shell terraform output -raw databricks_catalog_name 2>/dev/null || echo "lb_demo")
 
+.DEFAULT_GOAL := help
+
 .PHONY: demo-up demo-down clean-catalog clean status env help
 
-## Provision everything from scratch (init + apply + Tableflow key bootstrap)
-demo-up:
+demo-up: ## Provision everything from scratch (init + apply + Tableflow key bootstrap)
 	bash scripts/provision-demo.sh
 
-## Tear down everything (catalog cleanup + terraform destroy)
-demo-down:
+demo-down: ## Tear down everything (catalog cleanup + terraform destroy)
 	@echo ""
 	@echo "══════════════════════════════════════════════════════════════════"
 	@echo "  LineageBridge Demo — Destroying"
@@ -34,26 +34,28 @@ demo-down:
 	@echo "  Demo destroyed."
 	@echo "══════════════════════════════════════════════════════════════════"
 
-## Full cleanup: destroy + remove local Terraform state
-clean: demo-down
+clean: demo-down ## Tear down + remove local Terraform state files
 	rm -f terraform.tfstate terraform.tfstate.backup
 	rm -rf .terraform .terraform.lock.hcl
 
-## Show current resource status
-status:
+status: ## Show current Terraform resources
 	@terraform state list 2>/dev/null || echo "No state file found"
 
-## Generate .env file for LineageBridge
-env:
+env: ## Print .env contents for LineageBridge
 	@terraform output -raw demo_env_file
 
-## Help (default target)
-help:
-	@echo "Usage: make <target>"
+help: ## Show this help
 	@echo ""
-	@echo "  demo-up    Provision everything (single command)"
-	@echo "  demo-down  Tear down everything (single command)"
-	@echo "  clean      Tear down + remove local state files"
-	@echo "  status     Show current Terraform resources"
-	@echo "  env        Print .env contents for LineageBridge"
-	@echo "  help       Show this help"
+	@echo "  LineageBridge Demo Infrastructure"
+	@echo "  ─────────────────────────────────"
+	@echo ""
+	@echo "  Usage: make <target>"
+	@echo ""
+	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | \
+		awk -F':.*## ' '{ printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2 }'
+	@echo ""
+	@echo "  Quick start:"
+	@echo "    cp terraform.tfvars.example terraform.tfvars"
+	@echo "    # edit terraform.tfvars with your credentials"
+	@echo "    make demo-up"
+	@echo ""
