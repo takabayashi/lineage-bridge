@@ -515,7 +515,7 @@ resource "confluent_connector" "postgres_sink" {
     "pk.fields"                = "order_id"
     "auto.create"              = "true"
     "auto.evolve"              = "true"
-    "topics"                   = confluent_kafka_topic.enriched_orders.topic_name
+    "topics"                   = "lineage_bridge.enriched_orders"
     "tasks.max"                = "1"
   }
 

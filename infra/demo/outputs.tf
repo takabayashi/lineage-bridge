@@ -46,6 +46,17 @@ output "postgres_password" {
   sensitive   = true
 }
 
+output "flink_api_key" {
+  description = "Flink API key ID"
+  value       = confluent_api_key.flink.id
+}
+
+output "flink_api_secret" {
+  description = "Flink API key secret"
+  value       = confluent_api_key.flink.secret
+  sensitive   = true
+}
+
 output "demo_env_file" {
   description = "Suggested .env contents for LineageBridge"
   value       = <<-EOT
@@ -58,6 +69,8 @@ output "demo_env_file" {
     LINEAGE_BRIDGE_SCHEMA_REGISTRY_API_SECRET=${confluent_api_key.schema_registry.secret}
     LINEAGE_BRIDGE_TABLEFLOW_API_KEY=${var.confluent_tableflow_api_key}
     LINEAGE_BRIDGE_TABLEFLOW_API_SECRET=${var.confluent_tableflow_api_secret}
+    LINEAGE_BRIDGE_FLINK_API_KEY=${confluent_api_key.flink.id}
+    LINEAGE_BRIDGE_FLINK_API_SECRET=${confluent_api_key.flink.secret}
     LINEAGE_BRIDGE_DATABRICKS_WORKSPACE_URL=${var.databricks_workspace_url}
     LINEAGE_BRIDGE_DATABRICKS_TOKEN=${var.databricks_token}
   EOT
