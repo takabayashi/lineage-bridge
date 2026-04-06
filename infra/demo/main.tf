@@ -299,39 +299,7 @@ resource "confluent_api_key" "flink" {
   depends_on = [confluent_role_binding.env_admin]
 }
 
-# ── Output Topics for Flink ─────────────────────────────────────────────────
-
-resource "confluent_kafka_topic" "enriched_orders" {
-  kafka_cluster {
-    id = confluent_kafka_cluster.demo.id
-  }
-
-  topic_name       = "lineage_bridge.enriched_orders"
-  partitions_count = 3
-  rest_endpoint    = confluent_kafka_cluster.demo.rest_endpoint
-
-  credentials {
-    key    = confluent_api_key.kafka.id
-    secret = confluent_api_key.kafka.secret
-  }
-}
-
-resource "confluent_kafka_topic" "order_stats" {
-  kafka_cluster {
-    id = confluent_kafka_cluster.demo.id
-  }
-
-  topic_name       = "lineage_bridge.order_stats"
-  partitions_count = 3
-  rest_endpoint    = confluent_kafka_cluster.demo.rest_endpoint
-
-  credentials {
-    key    = confluent_api_key.kafka.id
-    secret = confluent_api_key.kafka.secret
-  }
-}
-
-# ── Flink SQL: Enriched Orders (JOIN orders + customers) ────────────────────
+# ── Flink SQL: Enriched Orders (CTAS — JOIN orders + customers) ─────────────
 
 resource "confluent_flink_statement" "enriched_orders" {
   organization {
@@ -353,7 +321,7 @@ resource "confluent_flink_statement" "enriched_orders" {
   rest_endpoint = data.confluent_flink_region.demo.rest_endpoint
 
   statement = <<-SQL
-    INSERT INTO `${confluent_kafka_topic.enriched_orders.topic_name}`
+    CREATE TABLE `lineage_bridge.enriched_orders` AS
     SELECT
       o.`order_id`,
       o.`customer_id`,
@@ -375,18 +343,17 @@ resource "confluent_flink_statement" "enriched_orders" {
   }
 
   credentials {
-    key    = var.confluent_cloud_api_key
-    secret = var.confluent_cloud_api_secret
+    key    = confluent_api_key.flink.id
+    secret = confluent_api_key.flink.secret
   }
 
   depends_on = [
     confluent_connector.datagen_orders,
     confluent_connector.datagen_customers,
-    confluent_kafka_topic.enriched_orders,
   ]
 }
 
-# ── Flink SQL: Order Stats (tumbling window aggregation) ────────────────────
+# ── Flink SQL: Order Stats (CTAS — tumbling window aggregation) ─────────────
 
 resource "confluent_flink_statement" "order_stats" {
   organization {
@@ -408,10 +375,10 @@ resource "confluent_flink_statement" "order_stats" {
   rest_endpoint = data.confluent_flink_region.demo.rest_endpoint
 
   statement = <<-SQL
-    INSERT INTO `${confluent_kafka_topic.order_stats.topic_name}`
+    CREATE TABLE `lineage_bridge.order_stats` AS
     SELECT
       `order_status`,
-      COUNT(*)       AS `order_count`,
+      COUNT(*)        AS `order_count`,
       SUM(`quantity`) AS `total_quantity`,
       window_start,
       window_end
@@ -427,13 +394,12 @@ resource "confluent_flink_statement" "order_stats" {
   }
 
   credentials {
-    key    = var.confluent_cloud_api_key
-    secret = var.confluent_cloud_api_secret
+    key    = confluent_api_key.flink.id
+    secret = confluent_api_key.flink.secret
   }
 
   depends_on = [
     confluent_connector.datagen_orders,
-    confluent_kafka_topic.order_stats,
   ]
 }
 
@@ -444,6 +410,123 @@ data "confluent_organization" "demo" {}
 data "confluent_flink_region" "demo" {
   cloud  = "AWS"
   region = var.aws_region
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# AWS — PostgreSQL RDS (sink target for enriched orders)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+data "aws_vpc" "default" {
+  default = true
+}
+
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+  filter {
+    name   = "default-for-az"
+    values = ["true"]
+  }
+}
+
+resource "aws_security_group" "postgres" {
+  name        = "${local.demo_prefix}-postgres"
+  description = "Allow PostgreSQL access from anywhere (demo only)"
+  vpc_id      = data.aws_vpc.default.id
+
+  ingress {
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "PostgreSQL from anywhere (demo)"
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = { Name = "${local.demo_prefix}-postgres" }
+}
+
+resource "aws_db_subnet_group" "demo" {
+  name       = "${local.demo_prefix}-postgres"
+  subnet_ids = data.aws_subnets.default.ids
+
+  tags = { Name = "${local.demo_prefix}-postgres" }
+}
+
+resource "random_password" "postgres" {
+  length  = 24
+  special = false
+}
+
+resource "aws_db_instance" "postgres" {
+  identifier     = "${local.demo_prefix}-postgres"
+  engine         = "postgres"
+  engine_version = "16"
+  instance_class = "db.t4g.micro"
+
+  allocated_storage = 20
+  storage_type      = "gp3"
+  storage_encrypted = true
+
+  db_name  = "lineage_bridge"
+  username = "lineage_bridge"
+  password = random_password.postgres.result
+
+  db_subnet_group_name   = aws_db_subnet_group.demo.name
+  vpc_security_group_ids = [aws_security_group.postgres.id]
+  publicly_accessible    = true
+  skip_final_snapshot    = true
+
+  tags = { Name = "${local.demo_prefix}-postgres" }
+}
+
+# ── PostgreSQL Sink Connector (enriched orders → RDS) ──────────────────────
+
+resource "confluent_connector" "postgres_sink" {
+  environment {
+    id = confluent_environment.demo.id
+  }
+
+  kafka_cluster {
+    id = confluent_kafka_cluster.demo.id
+  }
+
+  config_nonsensitive = {
+    "connector.class"          = "PostgresSink"
+    "name"                     = "${local.demo_prefix}-postgres-sink"
+    "kafka.auth.mode"          = "SERVICE_ACCOUNT"
+    "kafka.service.account.id" = confluent_service_account.demo.id
+    "input.data.format"        = "AVRO"
+    "connection.host"          = aws_db_instance.postgres.address
+    "connection.port"          = "5432"
+    "connection.user"          = aws_db_instance.postgres.username
+    "db.name"                  = aws_db_instance.postgres.db_name
+    "ssl.mode"                 = "require"
+    "insert.mode"              = "UPSERT"
+    "pk.mode"                  = "record_value"
+    "pk.fields"                = "order_id"
+    "auto.create"              = "true"
+    "auto.evolve"              = "true"
+    "topics"                   = confluent_kafka_topic.enriched_orders.topic_name
+    "tasks.max"                = "1"
+  }
+
+  config_sensitive = {
+    "connection.password" = random_password.postgres.result
+  }
+
+  depends_on = [
+    confluent_role_binding.cluster_admin,
+    confluent_flink_statement.enriched_orders,
+  ]
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -35,6 +35,17 @@ output "iam_role_arn" {
   value       = aws_iam_role.tableflow.arn
 }
 
+output "postgres_host" {
+  description = "PostgreSQL RDS endpoint"
+  value       = aws_db_instance.postgres.address
+}
+
+output "postgres_password" {
+  description = "PostgreSQL password"
+  value       = random_password.postgres.result
+  sensitive   = true
+}
+
 output "demo_env_file" {
   description = "Suggested .env contents for LineageBridge"
   value       = <<-EOT
