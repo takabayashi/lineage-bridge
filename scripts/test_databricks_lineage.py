@@ -109,17 +109,13 @@ def execute_sql(warehouse_id: str, sql: str, wait: bool = True) -> dict:
 
 def get_table_lineage(catalog: str, schema: str, table: str) -> dict:
     """Get table-level lineage from Databricks Lineage Tracking API."""
-    return api_get(
-        f"/api/2.0/lineage-tracking/table-lineage"
-        f"?table_name={catalog}.{schema}.{table}"
-    )
+    return api_get(f"/api/2.0/lineage-tracking/table-lineage?table_name={catalog}.{schema}.{table}")
 
 
 def get_column_lineage(catalog: str, schema: str, table: str) -> dict:
     """Get column-level lineage from Databricks Lineage Tracking API."""
     return api_get(
-        f"/api/2.0/lineage-tracking/column-lineage"
-        f"?table_name={catalog}.{schema}.{table}"
+        f"/api/2.0/lineage-tracking/column-lineage?table_name={catalog}.{schema}.{table}"
     )
 
 
@@ -179,9 +175,7 @@ def main():
             continue
         # Schema names with dashes need backtick quoting
         quoted_schema = f"`{s}`" if "-" in s else s
-        result = execute_sql(
-            warehouse_id, f"SHOW TABLES IN {demo_catalog}.{quoted_schema}"
-        )
+        result = execute_sql(warehouse_id, f"SHOW TABLES IN {demo_catalog}.{quoted_schema}")
         schema_tables = []
         if result.get("status", {}).get("state") == "SUCCEEDED":
             for row in result.get("result", {}).get("data_array", []):
@@ -254,7 +248,9 @@ def main():
     if result.get("status", {}).get("state") == "SUCCEEDED":
         print("  CTAS succeeded!")
     else:
-        print(f"  CTAS failed: {result.get('status', {}).get('error', {}).get('message', '')[:200]}")
+        print(
+            f"  CTAS failed: {result.get('status', {}).get('error', {}).get('message', '')[:200]}"
+        )
 
     # Join-based derived table
     if customers_table:
@@ -283,7 +279,9 @@ def main():
         if result.get("status", {}).get("state") == "SUCCEEDED":
             print("  JOIN CTAS succeeded!")
         else:
-            print(f"  JOIN failed: {result.get('status', {}).get('error', {}).get('message', '')[:200]}")
+            print(
+                f"  JOIN failed: {result.get('status', {}).get('error', {}).get('message', '')[:200]}"  # noqa: E501
+            )
 
     # Step 5: Wait for lineage tracking to catch up
     print("\n── Step 5: Waiting for lineage tracking (30s) ──")
@@ -326,7 +324,7 @@ def main():
 
     # Step 7: Cleanup
     print("\n── Step 7: Cleanup ──")
-    print(f"  To clean up test tables, run:")
+    print("  To clean up test tables, run:")
     print(f"    DROP TABLE IF EXISTS {derived_fqn};")
     if customers_table:
         print(f"    DROP TABLE IF EXISTS {derived_schema}.{join_table};")

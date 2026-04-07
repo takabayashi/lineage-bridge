@@ -144,9 +144,7 @@ class TableflowClient(ConfluentClient):
                 # Only build catalog node if topic's formats overlap
                 if required_formats and not required_formats.intersection(table_formats):
                     continue
-                cat_nodes, cat_edges = self._build_catalog_nodes(
-                    ci, tf_id, topic_name, cluster_id
-                )
+                cat_nodes, cat_edges = self._build_catalog_nodes(ci, tf_id, topic_name, cluster_id)
                 nodes.extend(cat_nodes)
                 edges.extend(cat_edges)
 

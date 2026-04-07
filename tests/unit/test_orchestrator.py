@@ -462,7 +462,6 @@ async def test_extract_environment_no_clusters(no_sleep):
         enable_schema_registry=False,
         enable_stream_catalog=False,
         enable_tableflow=False,
-
         sr_endpoints=None,
         sr_credentials=None,
         flink_credentials=None,
@@ -1117,7 +1116,6 @@ async def test_extract_environment_cluster_no_rest_endpoint(no_sleep):
         enable_schema_registry=False,
         enable_stream_catalog=False,
         enable_tableflow=False,
-
         sr_endpoints=None,
         sr_credentials=None,
         flink_credentials=None,
@@ -1477,9 +1475,7 @@ async def test_run_lineage_push_auto_discovers_warehouse():
             "lineage_bridge.clients.databricks_discovery.list_warehouses",
             new=AsyncMock(return_value=mock_warehouses),
         ),
-        patch(
-            "lineage_bridge.extractors.orchestrator.DatabricksUCProvider"
-        ) as MockProvider,
+        patch("lineage_bridge.extractors.orchestrator.DatabricksUCProvider") as MockProvider,
         patch("lineage_bridge.clients.databricks_sql.DatabricksSQLClient") as MockSQL,
     ):
         mock_provider = AsyncMock()

@@ -156,9 +156,7 @@ class WatcherEngine:
                 if event is not None:
                     self.event_feed.append(event)
                     self._pending_events.append(event)
-                    self._cooldown_deadline = (
-                        time.monotonic() + self.cooldown_seconds
-                    )
+                    self._cooldown_deadline = time.monotonic() + self.cooldown_seconds
                     self.state = WatcherState.COOLDOWN
                     logger.info(
                         "Audit event: %s on %s (%.0fs cooldown)",
@@ -191,9 +189,7 @@ class WatcherEngine:
         cluster_endpoints = []
         if env_ids:
             try:
-                cluster_endpoints = asyncio.run(
-                    self._discover_cluster_endpoints(env_ids[0])
-                )
+                cluster_endpoints = asyncio.run(self._discover_cluster_endpoints(env_ids[0]))
                 logger.info(
                     "Discovered %d cluster(s): %s",
                     len(cluster_endpoints),
@@ -228,9 +224,7 @@ class WatcherEngine:
                 for event in events:
                     self.event_feed.append(event)
                     self._pending_events.append(event)
-                    self._cooldown_deadline = (
-                        time.monotonic() + self.cooldown_seconds
-                    )
+                    self._cooldown_deadline = time.monotonic() + self.cooldown_seconds
                     self.state = WatcherState.COOLDOWN
                     logger.info(
                         "Change detected: %s (%.0fs cooldown)",
@@ -291,9 +285,7 @@ class WatcherEngine:
         self.extraction_history.append(record)
         self.state = WatcherState.WATCHING
 
-    async def _discover_cluster_endpoints(
-        self, environment_id: str
-    ) -> list:
+    async def _discover_cluster_endpoints(self, environment_id: str) -> list:
         """Discover Kafka cluster endpoints for an environment."""
         from lineage_bridge.clients.audit_consumer import ClusterEndpoint
         from lineage_bridge.clients.base import ConfluentClient
@@ -311,9 +303,7 @@ class WatcherEngine:
         for cluster in clusters:
             if not cluster.rest_endpoint:
                 continue
-            api_key, api_secret = self.settings.get_cluster_credentials(
-                cluster.id
-            )
+            api_key, api_secret = self.settings.get_cluster_credentials(cluster.id)
             endpoints.append(
                 ClusterEndpoint(
                     cluster_id=cluster.id,

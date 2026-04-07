@@ -89,9 +89,9 @@ def _last_segment(name: str) -> str:
 
     last = parts[-1].strip()
     # Strip surrounding backticks or double quotes
-    if last.startswith("`") and last.endswith("`"):
-        last = last[1:-1]
-    elif last.startswith('"') and last.endswith('"'):
+    if (last.startswith("`") and last.endswith("`")) or (
+        last.startswith('"') and last.endswith('"')
+    ):
         last = last[1:-1]
     return last
 

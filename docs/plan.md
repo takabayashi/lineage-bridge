@@ -117,19 +117,65 @@ Committed in 3 commits. 304 tests, all passing.
 
 ---
 
+## Post-v0.2.0: Feature Additions (2026-04-06 — 2026-04-07)
+
+### Databricks Lineage & SQL Push
+- `clients/databricks_discovery.py`: Workspace + catalog discovery
+- `clients/databricks_sql.py`: SQL Statement Execution API client
+- Lineage push to UC via `ALTER TABLE SET TBLPROPERTIES` + `COMMENT ON TABLE`
+- Separate extract and enrich into independent orchestrator operations
+
+### AWS Glue Enrichment
+- Full `enrich()` implementation with boto3 (get_table metadata)
+- `push_lineage()` via update_table parameters
+- Format-based catalog matching (DELTA → UC, ICEBERG → Glue)
+
+### Change-Detection Watcher
+- `watcher/engine.py`: REST polling (10s) + debounced re-extraction (30s cooldown)
+- `watcher/cli.py`: CLI entry point (`lineage-bridge-watch`)
+- `ui/watcher.py`: Watcher toggle in Streamlit sidebar
+- `models/audit_event.py`: Audit log event parsing (retained for future Kafka consumer)
+
+### UI & UX Improvements
+- Node icon redesign: representative shapes, color-coded by system
+- Dark mode support (theme-safe colors for CSS, tooltips, detail panel)
+- Schema definition display in topic detail panel
+- Short node labels for cleaner graph rendering
+- Canvas border and detail panel container improvements
+- Removed key provisioning UI, switched to single-env selection
+
+### Infrastructure
+- Docker multi-stage build + `.dockerignore` + watcher service in compose
+- Makefile: watch and docker-watch targets
+- Flink SQL parser fix: preserve dots inside backtick-quoted identifiers
+
+**Key commits:**
+- `bf85eae` — Databricks lineage discovery, push-to-UC, short node labels
+- `7ebaed6` — AWS Glue integration, format-based catalog matching
+- `64dbc98` — Change-detection watcher with audit log and REST polling modes
+- `b74aac8` — Remove key provisioning UI, single-env selection
+- `f7697ba` — Dark mode, canvas border, detail panel, clusters metric
+- `34bc1b1` — Docker multi-stage build, .dockerignore, watcher service
+- `080f520` — Provisioner test script, Databricks discovery tests
+
+**Test suite:** 492 tests passing, 70% coverage.
+
+---
+
 ## Dependency Graph
 
 ```
 Phase 1 (DONE) ──> Commits adcdc76, 61a194a, 3deb972
                         │
                         v
-Phase 2E (Forge: URL dispatch) ─────────┐
-Phase 2F (Prism: UX audit) ─────────────┤
-Phase 2G (Lens: node_details tests) ────┼──> PR #2
-Phase 2H (Anvil: CI/CD) ───────────────┘
-                                        v
-Phase 3I (Blueprint+Weaver: UI decomp) ─┐
-Phase 3J (Lens: graph_renderer tests) ──┼──> PR #3
-                                        v
-Phase 4 (Polish + hardening) ───────────┼──> PR #4 + v0.2.0
+Phase 2 (DONE) ──> URL dispatch, UX audit, node_details tests, CI/CD
+                        │
+                        v
+Phase 3 (DONE) ──> UI decomposition, graph renderer tests
+                        │
+                        v
+Phase 4 (DONE) ──> Polish + hardening ──> v0.2.0
+                        │
+                        v
+Post-v0.2.0 (DONE) ──> UC fixes, Databricks push, Glue enrichment, watcher, Docker
 ```

@@ -17,11 +17,8 @@ Thank you for your interest in contributing to LineageBridge! This guide will he
 git clone https://github.com/takabayashi/lineage-bridge.git
 cd lineage-bridge
 
-# Install with dev dependencies
+# Install with dev dependencies (uv recommended)
 uv pip install -e ".[dev]"
-
-# Or with pip
-pip install -e ".[dev]"
 ```
 
 ### Configuration
@@ -38,23 +35,26 @@ Only credentials go in `.env` — environment and cluster selection happens in t
 
 ```bash
 # Start the Streamlit UI
-streamlit run lineage_bridge/ui/app.py
+uv run streamlit run lineage_bridge/ui/app.py
 
-# Or via the CLI entry point
-lineage-bridge-ui
+# CLI extraction
+uv run lineage-bridge-extract
+
+# Change-detection watcher
+uv run lineage-bridge-watch
 ```
 
 ## Testing
 
 ```bash
 # Run all tests
-pytest tests/ -v
+uv run pytest tests/ -v
 
 # Run a specific test file
-pytest tests/unit/test_flink_client.py -v
+uv run pytest tests/unit/test_flink_client.py -v
 
 # Run with coverage
-pytest tests/ --cov=lineage_bridge --cov-report=term-missing
+uv run pytest --cov=lineage_bridge --cov-report=term-missing
 ```
 
 All tests must pass before submitting a PR.
@@ -65,16 +65,16 @@ We use [ruff](https://docs.astral.sh/ruff/) for linting and formatting:
 
 ```bash
 # Check for lint issues
-ruff check .
+uv run ruff check .
 
 # Auto-fix lint issues
-ruff check . --fix
+uv run ruff check . --fix
 
 # Check formatting
-ruff format --check .
+uv run ruff format --check .
 
 # Auto-format
-ruff format .
+uv run ruff format .
 ```
 
 Configuration is in `pyproject.toml`:
@@ -101,13 +101,16 @@ Configuration is in `pyproject.toml`:
 
 ```
 lineage_bridge/
-  clients/          # Confluent Cloud API clients (one per service)
-  config/           # Settings, credentials, caching
-  extractors/       # Orchestration layer
-  models/           # Pydantic data models (nodes, edges, graph)
+  clients/          # Confluent Cloud + Databricks API clients (async httpx)
+  catalogs/         # Data catalog providers (UC, Glue) — extensible
+  config/           # Settings, credentials, caching, key provisioning
+  extractors/       # Orchestration pipeline (5-phase extraction)
+  models/           # Pydantic data models (nodes, edges, graph, audit events)
   ui/               # Streamlit app + vis.js graph component
+  watcher/          # Change-detection engine + CLI
 tests/
   unit/             # Unit tests (mocked HTTP via respx)
+  integration/      # Integration tests (live APIs, manual trigger)
 ```
 
 ## Reporting Issues

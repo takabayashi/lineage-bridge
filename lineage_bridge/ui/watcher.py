@@ -66,20 +66,10 @@ def render_watcher_controls() -> None:
             # Show audit log credential inputs
             settings = _try_load_settings()
             default_bs = (
-                getattr(settings, "audit_log_bootstrap_servers", "") or ""
-                if settings
-                else ""
+                getattr(settings, "audit_log_bootstrap_servers", "") or "" if settings else ""
             )
-            default_key = (
-                getattr(settings, "audit_log_api_key", "") or ""
-                if settings
-                else ""
-            )
-            default_secret = (
-                getattr(settings, "audit_log_api_secret", "") or ""
-                if settings
-                else ""
-            )
+            default_key = getattr(settings, "audit_log_api_key", "") or "" if settings else ""
+            default_secret = getattr(settings, "audit_log_api_secret", "") or "" if settings else ""
 
             bootstrap_servers = st.text_input(
                 "Bootstrap servers",
@@ -132,13 +122,9 @@ def render_watcher_controls() -> None:
 
         p1, p2 = st.columns(2)
         with p1:
-            push_uc = st.checkbox(
-                "Push UC", key="watcher_push_uc", disabled=is_running
-            )
+            push_uc = st.checkbox("Push UC", key="watcher_push_uc", disabled=is_running)
         with p2:
-            push_glue = st.checkbox(
-                "Push Glue", key="watcher_push_glue", disabled=is_running
-            )
+            push_glue = st.checkbox("Push Glue", key="watcher_push_glue", disabled=is_running)
 
     with c_right:
         if engine is not None:
@@ -179,9 +165,7 @@ def render_watcher_controls() -> None:
             # For audit log mode, validate credentials are filled
             can_start = bool(has_params)
             start_help = ""
-            if mode == "Audit Log" and not (
-                bootstrap_servers and audit_key and audit_secret
-            ):
+            if mode == "Audit Log" and not (bootstrap_servers and audit_key and audit_secret):
                 can_start = False
                 start_help = "Fill in audit log credentials"
 
@@ -252,14 +236,16 @@ def _render_watcher_feed(engine: WatcherEngine) -> None:
     if events:
         rows = []
         for event in reversed(events):
-            rows.append({
-                "Time": event.time.strftime("%H:%M:%S"),
-                "Change": _friendly_method(event.method_name),
-                "Resource": event.resource_name,
-                "Environment": event.environment_id or "",
-                "Cluster": event.cluster_id or "",
-                "ID": event.id,
-            })
+            rows.append(
+                {
+                    "Time": event.time.strftime("%H:%M:%S"),
+                    "Change": _friendly_method(event.method_name),
+                    "Resource": event.resource_name,
+                    "Environment": event.environment_id or "",
+                    "Cluster": event.cluster_id or "",
+                    "ID": event.id,
+                }
+            )
         st.dataframe(
             rows,
             width="stretch",
@@ -281,29 +267,25 @@ def _render_watcher_feed(engine: WatcherEngine) -> None:
 
     # ── Extraction history ─────────────────────────────────────────
     if engine.extraction_history:
-        st.subheader(
-            f"Extraction History ({len(engine.extraction_history)} runs)"
-        )
+        st.subheader(f"Extraction History ({len(engine.extraction_history)} runs)")
         history_rows = []
         for record in reversed(engine.extraction_history):
             dur = ""
             if record.completed_at:
-                secs = (
-                    record.completed_at - record.triggered_at
-                ).total_seconds()
+                secs = (record.completed_at - record.triggered_at).total_seconds()
                 dur = f"{secs:.1f}s"
-            triggers = ", ".join(
-                _friendly_method(e.method_name) for e in record.trigger_events
+            triggers = ", ".join(_friendly_method(e.method_name) for e in record.trigger_events)
+            history_rows.append(
+                {
+                    "Time": record.triggered_at.strftime("%H:%M:%S"),
+                    "Status": "Failed" if record.error else "OK",
+                    "Nodes": record.node_count,
+                    "Edges": record.edge_count,
+                    "Duration": dur,
+                    "Triggers": triggers,
+                    "Error": record.error or "",
+                }
             )
-            history_rows.append({
-                "Time": record.triggered_at.strftime("%H:%M:%S"),
-                "Status": "Failed" if record.error else "OK",
-                "Nodes": record.node_count,
-                "Edges": record.edge_count,
-                "Duration": dur,
-                "Triggers": triggers,
-                "Error": record.error or "",
-            })
         st.dataframe(
             history_rows,
             width="stretch",
@@ -322,8 +304,7 @@ def _render_status_badge(engine: WatcherEngine) -> None:
     pulse_css = ""
     if is_active:
         pulse_css = (
-            f"animation: watcher-pulse 2s ease-in-out infinite;"
-            f"box-shadow: 0 0 0 0 {dot_color}80;"
+            f"animation: watcher-pulse 2s ease-in-out infinite;box-shadow: 0 0 0 0 {dot_color}80;"
         )
 
     event_count = len(engine.event_feed)
@@ -382,12 +363,8 @@ def _start_watcher(
         "enable_connect": last_params.get("enable_connect", True),
         "enable_ksqldb": last_params.get("enable_ksqldb", True),
         "enable_flink": last_params.get("enable_flink", True),
-        "enable_schema_registry": last_params.get(
-            "enable_schema_registry", True
-        ),
-        "enable_stream_catalog": last_params.get(
-            "enable_stream_catalog", False
-        ),
+        "enable_schema_registry": last_params.get("enable_schema_registry", True),
+        "enable_stream_catalog": last_params.get("enable_stream_catalog", False),
         "enable_tableflow": last_params.get("enable_tableflow", True),
         "enable_enrichment": last_params.get("enable_enrichment", True),
         "push_uc": push_uc,

@@ -478,11 +478,13 @@ def render_node_details(graph: LineageGraph) -> None:
     _neighbor_exclude = {NodeType.SCHEMA, NodeType.CONSUMER_GROUP}
     st.markdown("---")
     upstream = [
-        n for n in graph.get_neighbors(sel_id, direction="upstream")
+        n
+        for n in graph.get_neighbors(sel_id, direction="upstream")
         if n.node_type not in _neighbor_exclude
     ]
     downstream = [
-        n for n in graph.get_neighbors(sel_id, direction="downstream")
+        n
+        for n in graph.get_neighbors(sel_id, direction="downstream")
         if n.node_type not in _neighbor_exclude
     ]
 

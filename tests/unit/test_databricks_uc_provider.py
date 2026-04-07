@@ -118,9 +118,7 @@ class TestBuildNode:
 
     def test_flat_api_config_format(self, provider, flat_ci_config):
         """Flat config from real Confluent API (no 'unity_catalog' nesting)."""
-        node, edge = provider.build_node(
-            flat_ci_config, "tf-id", "orders", "lkc-abc123", "env-abc"
-        )
+        node, edge = provider.build_node(flat_ci_config, "tf-id", "orders", "lkc-abc123", "env-abc")
         assert node.node_id == "databricks:uc_table:env-abc:confluent_tableflow.lkc-abc123.orders"
         assert node.attributes["catalog_name"] == "confluent_tableflow"
         assert node.attributes["workspace_url"] == WORKSPACE_URL
@@ -296,36 +294,48 @@ class TestEnrich:
         ).mock(return_value=httpx.Response(200, json=fixture))
 
         # Lineage for seed node returns a downstream table
-        respx.get(LINEAGE_URL, params__contains={"table_name": "confluent_tableflow.lkc-abc123.orders-tableflow"}).mock(
-            return_value=httpx.Response(200, json={
-                "downstreams": [
-                    {
-                        "tableInfo": {
-                            "catalog_name": "confluent_tableflow",
-                            "schema_name": "lkc-abc123",
-                            "name": "order_summary",
-                            "table_type": "TABLE",
+        respx.get(
+            LINEAGE_URL,
+            params__contains={"table_name": "confluent_tableflow.lkc-abc123.orders-tableflow"},
+        ).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "downstreams": [
+                        {
+                            "tableInfo": {
+                                "catalog_name": "confluent_tableflow",
+                                "schema_name": "lkc-abc123",
+                                "name": "order_summary",
+                                "table_type": "TABLE",
+                            }
                         }
-                    }
-                ]
-            })
+                    ]
+                },
+            )
         )
 
         # Metadata enrichment for the discovered table
         respx.get(
             f"{WORKSPACE_URL}/api/2.1/unity-catalog/tables/"
             "confluent_tableflow.lkc-abc123.order_summary"
-        ).mock(return_value=httpx.Response(200, json={
-            "owner": "test-user",
-            "table_type": "MANAGED",
-            "columns": [],
-            "storage_location": "s3://bucket/path",
-        }))
+        ).mock(
+            return_value=httpx.Response(
+                200,
+                json={
+                    "owner": "test-user",
+                    "table_type": "MANAGED",
+                    "columns": [],
+                    "storage_location": "s3://bucket/path",
+                },
+            )
+        )
 
         # No further downstream from the discovered table
-        respx.get(LINEAGE_URL, params__contains={"table_name": "confluent_tableflow.lkc-abc123.order_summary"}).mock(
-            return_value=httpx.Response(200, json={})
-        )
+        respx.get(
+            LINEAGE_URL,
+            params__contains={"table_name": "confluent_tableflow.lkc-abc123.order_summary"},
+        ).mock(return_value=httpx.Response(200, json={}))
 
         await provider.enrich(uc_graph)
 
@@ -340,8 +350,10 @@ class TestEnrich:
         # Check TRANSFORMS edge was created
         assert any(
             e.edge_type == EdgeType.TRANSFORMS
-            and e.src_id == "databricks:uc_table:env-abc:confluent_tableflow.lkc-abc123.orders-tableflow"
-            and e.dst_id == "databricks:uc_table:env-abc:confluent_tableflow.lkc-abc123.order_summary"
+            and e.src_id
+            == "databricks:uc_table:env-abc:confluent_tableflow.lkc-abc123.orders-tableflow"
+            and e.dst_id
+            == "databricks:uc_table:env-abc:confluent_tableflow.lkc-abc123.order_summary"
             for e in uc_graph.edges
         )
 
@@ -386,16 +398,20 @@ def push_graph():
     graph.add_node(topic)
     graph.add_node(tf_node)
     graph.add_node(uc_node)
-    graph.add_edge(LineageEdge(
-        src_id=topic.node_id,
-        dst_id=tf_node.node_id,
-        edge_type=EdgeType.MATERIALIZES,
-    ))
-    graph.add_edge(LineageEdge(
-        src_id=tf_node.node_id,
-        dst_id=uc_node.node_id,
-        edge_type=EdgeType.MATERIALIZES,
-    ))
+    graph.add_edge(
+        LineageEdge(
+            src_id=topic.node_id,
+            dst_id=tf_node.node_id,
+            edge_type=EdgeType.MATERIALIZES,
+        )
+    )
+    graph.add_edge(
+        LineageEdge(
+            src_id=tf_node.node_id,
+            dst_id=uc_node.node_id,
+            edge_type=EdgeType.MATERIALIZES,
+        )
+    )
     return graph
 
 
@@ -413,10 +429,13 @@ class TestPushLineage:
     async def test_push_lineage_sets_properties(self, provider, push_graph, sql_client):
         """push_lineage sets TBLPROPERTIES on UC tables."""
         respx.post(STATEMENTS_URL).mock(
-            return_value=httpx.Response(200, json={
-                "statement_id": "stmt-1",
-                "status": {"state": "SUCCEEDED"},
-            })
+            return_value=httpx.Response(
+                200,
+                json={
+                    "statement_id": "stmt-1",
+                    "status": {"state": "SUCCEEDED"},
+                },
+            )
         )
 
         result = await provider.push_lineage(
@@ -432,10 +451,13 @@ class TestPushLineage:
     async def test_push_lineage_sets_comments(self, provider, push_graph, sql_client):
         """push_lineage sets COMMENT ON TABLE."""
         respx.post(STATEMENTS_URL).mock(
-            return_value=httpx.Response(200, json={
-                "statement_id": "stmt-1",
-                "status": {"state": "SUCCEEDED"},
-            })
+            return_value=httpx.Response(
+                200,
+                json={
+                    "statement_id": "stmt-1",
+                    "status": {"state": "SUCCEEDED"},
+                },
+            )
         )
 
         result = await provider.push_lineage(
@@ -450,10 +472,13 @@ class TestPushLineage:
     async def test_push_lineage_creates_bridge_table(self, provider, push_graph, sql_client):
         """push_lineage creates and populates bridge table when requested."""
         respx.post(STATEMENTS_URL).mock(
-            return_value=httpx.Response(200, json={
-                "statement_id": "stmt-1",
-                "status": {"state": "SUCCEEDED"},
-            })
+            return_value=httpx.Response(
+                200,
+                json={
+                    "statement_id": "stmt-1",
+                    "status": {"state": "SUCCEEDED"},
+                },
+            )
         )
 
         result = await provider.push_lineage(
@@ -471,13 +496,15 @@ class TestPushLineage:
     async def test_push_lineage_skips_non_uc_nodes(self, provider, sql_client):
         """push_lineage returns empty result when no UC nodes exist."""
         graph = LineageGraph()
-        graph.add_node(LineageNode(
-            node_id="confluent:kafka_topic:env-abc:orders",
-            system=SystemType.CONFLUENT,
-            node_type=NodeType.KAFKA_TOPIC,
-            qualified_name="orders",
-            display_name="orders",
-        ))
+        graph.add_node(
+            LineageNode(
+                node_id="confluent:kafka_topic:env-abc:orders",
+                system=SystemType.CONFLUENT,
+                node_type=NodeType.KAFKA_TOPIC,
+                qualified_name="orders",
+                display_name="orders",
+            )
+        )
 
         result = await provider.push_lineage(graph, sql_client)
         assert result.tables_updated == 0
@@ -486,13 +513,16 @@ class TestPushLineage:
     async def test_push_lineage_handles_sql_error(self, provider, push_graph, sql_client):
         """push_lineage records errors for failed SQL statements."""
         respx.post(STATEMENTS_URL).mock(
-            return_value=httpx.Response(200, json={
-                "statement_id": "stmt-1",
-                "status": {
-                    "state": "FAILED",
-                    "error": {"message": "PERMISSION_DENIED"},
+            return_value=httpx.Response(
+                200,
+                json={
+                    "statement_id": "stmt-1",
+                    "status": {
+                        "state": "FAILED",
+                        "error": {"message": "PERMISSION_DENIED"},
+                    },
                 },
-            })
+            )
         )
 
         result = await provider.push_lineage(push_graph, sql_client)

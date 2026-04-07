@@ -277,9 +277,7 @@ class DatabricksUCProvider:
         result = PushResult()
 
         uc_nodes = [
-            n
-            for n in graph.filter_by_type(NodeType.UC_TABLE)
-            if n.system == SystemType.DATABRICKS
+            n for n in graph.filter_by_type(NodeType.UC_TABLE) if n.system == SystemType.DATABRICKS
         ]
         if not uc_nodes:
             return result
@@ -305,14 +303,10 @@ class DatabricksUCProvider:
                 continue
 
             if set_properties:
-                await self._set_table_properties(
-                    sql_client, node, upstream, now, result
-                )
+                await self._set_table_properties(sql_client, node, upstream, now, result)
 
             if set_comments:
-                await self._set_table_comment(
-                    sql_client, node, upstream, now, result
-                )
+                await self._set_table_comment(sql_client, node, upstream, now, result)
 
             if create_bridge_table:
                 await self._insert_bridge_rows(

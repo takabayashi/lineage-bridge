@@ -77,7 +77,9 @@ class TestChangePollerPoll:
         )
 
         with patch.object(
-            poller, "_take_snapshot", new_callable=AsyncMock,
+            poller,
+            "_take_snapshot",
+            new_callable=AsyncMock,
             return_value=_Snapshot(topics="abc"),
         ):
             events = await poller.poll()
@@ -98,7 +100,9 @@ class TestChangePollerPoll:
         poller._last_snapshot = _Snapshot(topics="abc")
 
         with patch.object(
-            poller, "_take_snapshot", new_callable=AsyncMock,
+            poller,
+            "_take_snapshot",
+            new_callable=AsyncMock,
             return_value=_Snapshot(topics="abc"),
         ):
             events = await poller.poll()
@@ -118,7 +122,9 @@ class TestChangePollerPoll:
         poller._last_snapshot = _Snapshot(topics="abc", connectors="def")
 
         with patch.object(
-            poller, "_take_snapshot", new_callable=AsyncMock,
+            poller,
+            "_take_snapshot",
+            new_callable=AsyncMock,
             return_value=_Snapshot(topics="xyz", connectors="def"),
         ):
             events = await poller.poll()
@@ -142,7 +148,9 @@ class TestChangePollerPoll:
         poller._last_snapshot = _Snapshot(topics="a", connectors="b")
 
         with patch.object(
-            poller, "_take_snapshot", new_callable=AsyncMock,
+            poller,
+            "_take_snapshot",
+            new_callable=AsyncMock,
             return_value=_Snapshot(topics="x", connectors="y"),
         ):
             events = await poller.poll()
@@ -165,7 +173,9 @@ class TestChangePollerPoll:
         poller._last_snapshot = _Snapshot(topics="abc")
 
         with patch.object(
-            poller, "_take_snapshot", new_callable=AsyncMock,
+            poller,
+            "_take_snapshot",
+            new_callable=AsyncMock,
             side_effect=RuntimeError("network error"),
         ):
             events = await poller.poll()
@@ -186,7 +196,9 @@ class TestChangePollerPoll:
         new_snapshot = _Snapshot(topics="new")
 
         with patch.object(
-            poller, "_take_snapshot", new_callable=AsyncMock,
+            poller,
+            "_take_snapshot",
+            new_callable=AsyncMock,
             return_value=new_snapshot,
         ):
             await poller.poll()
@@ -206,7 +218,9 @@ class TestChangePollerPoll:
         poller._last_snapshot = _Snapshot(ksqldb_queries="old")
 
         with patch.object(
-            poller, "_take_snapshot", new_callable=AsyncMock,
+            poller,
+            "_take_snapshot",
+            new_callable=AsyncMock,
             return_value=_Snapshot(ksqldb_queries="new"),
         ):
             events = await poller.poll()
@@ -221,8 +235,7 @@ class TestChangePollerPoll:
 
 _CREATE_TOPIC_EVENT = {
     "id": "ae-001",
-    "source": "crn://confluent.cloud/organization=org-abc/environment=env-2yzd0o"
-    "/kafka=lkc-jkn588",
+    "source": "crn://confluent.cloud/organization=org-abc/environment=env-2yzd0o/kafka=lkc-jkn588",
     "type": "io.confluent.kafka.server/authorization",
     "time": "2026-04-06T10:30:00Z",
     "data": {
@@ -245,9 +258,7 @@ class TestAuditLogConsumer:
         mock_consumer = MagicMock()
         mock_consumer.poll.return_value = mock_msg
 
-        with patch.object(
-            AuditLogConsumer, "_create_consumer", return_value=mock_consumer
-        ):
+        with patch.object(AuditLogConsumer, "_create_consumer", return_value=mock_consumer):
             consumer = AuditLogConsumer("bs:9092", "key", "secret")
             event = consumer.poll_one()
 
@@ -261,19 +272,20 @@ class TestAuditLogConsumer:
         mock_consumer = MagicMock()
         mock_consumer.poll.return_value = None
 
-        with patch.object(
-            AuditLogConsumer, "_create_consumer", return_value=mock_consumer
-        ):
+        with patch.object(AuditLogConsumer, "_create_consumer", return_value=mock_consumer):
             consumer = AuditLogConsumer("bs:9092", "key", "secret")
             assert consumer.poll_one() is None
 
     def test_poll_one_skips_non_relevant_events(self):
         """Non-lineage events (e.g., kafka.Fetch) are filtered out."""
         fetch_event = dict(_CREATE_TOPIC_EVENT)
-        fetch_event = {**_CREATE_TOPIC_EVENT, "data": {
-            **_CREATE_TOPIC_EVENT["data"],
-            "methodName": "kafka.Fetch",
-        }}
+        fetch_event = {
+            **_CREATE_TOPIC_EVENT,
+            "data": {
+                **_CREATE_TOPIC_EVENT["data"],
+                "methodName": "kafka.Fetch",
+            },
+        }
 
         mock_msg = MagicMock()
         mock_msg.error.return_value = None
@@ -282,9 +294,7 @@ class TestAuditLogConsumer:
         mock_consumer = MagicMock()
         mock_consumer.poll.return_value = mock_msg
 
-        with patch.object(
-            AuditLogConsumer, "_create_consumer", return_value=mock_consumer
-        ):
+        with patch.object(AuditLogConsumer, "_create_consumer", return_value=mock_consumer):
             consumer = AuditLogConsumer("bs:9092", "key", "secret")
             assert consumer.poll_one() is None
 
@@ -296,9 +306,7 @@ class TestAuditLogConsumer:
         mock_consumer = MagicMock()
         mock_consumer.poll.return_value = mock_msg
 
-        with patch.object(
-            AuditLogConsumer, "_create_consumer", return_value=mock_consumer
-        ):
+        with patch.object(AuditLogConsumer, "_create_consumer", return_value=mock_consumer):
             consumer = AuditLogConsumer("bs:9092", "key", "secret")
             assert consumer.poll_one() is None
 
@@ -311,9 +319,7 @@ class TestAuditLogConsumer:
         mock_consumer = MagicMock()
         mock_consumer.poll.return_value = mock_msg
 
-        with patch.object(
-            AuditLogConsumer, "_create_consumer", return_value=mock_consumer
-        ):
+        with patch.object(AuditLogConsumer, "_create_consumer", return_value=mock_consumer):
             consumer = AuditLogConsumer("bs:9092", "key", "secret")
             assert consumer.poll_one() is None
 
@@ -321,9 +327,7 @@ class TestAuditLogConsumer:
         """close() calls the underlying consumer's close()."""
         mock_consumer = MagicMock()
 
-        with patch.object(
-            AuditLogConsumer, "_create_consumer", return_value=mock_consumer
-        ):
+        with patch.object(AuditLogConsumer, "_create_consumer", return_value=mock_consumer):
             consumer = AuditLogConsumer("bs:9092", "key", "secret")
             consumer.close()
 

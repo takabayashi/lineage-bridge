@@ -186,9 +186,7 @@ class GlueCatalogProvider:
         result = PushResult()
 
         glue_nodes = [
-            n
-            for n in graph.filter_by_type(NodeType.GLUE_TABLE)
-            if n.system == SystemType.AWS
+            n for n in graph.filter_by_type(NodeType.GLUE_TABLE) if n.system == SystemType.AWS
         ]
         if not glue_nodes:
             return result

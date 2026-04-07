@@ -168,7 +168,7 @@ _SYMBOLS: dict[NodeType, str] = {
     NodeType.FLINK_JOB: (
         # outer gear with 6 teeth
         '<path d="M-3,-14 L3,-14 L4,-10 L10,-7 L13,-11 L14,-5 L11,-3 L11,3 '
-        'L14,5 L13,11 L10,7 L4,10 L3,14 L-3,14 L-4,10 L-10,7 L-13,11 '
+        "L14,5 L13,11 L10,7 L4,10 L3,14 L-3,14 L-4,10 L-10,7 L-13,11 "
         'L-14,5 L-11,3 L-11,-3 L-14,-5 L-13,-11 L-10,-7 L-4,-10 Z" fill="#fff"/>'
         # inner circle (hub)
         '<circle cx="0" cy="0" r="5" fill="none" stroke="rgba(0,0,0,0.2)" '

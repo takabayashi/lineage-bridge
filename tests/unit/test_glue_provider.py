@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from lineage_bridge.catalogs.aws_glue import GlueCatalogProvider
 from lineage_bridge.models.graph import (
     EdgeType,
@@ -115,6 +117,11 @@ class TestBuildUrl:
         assert provider.build_url(node) is None
 
 
+_has_boto3 = __import__("importlib").util.find_spec("boto3") is not None
+_skip_no_boto3 = pytest.mark.skipif(not _has_boto3, reason="boto3 not installed")
+
+
+@_skip_no_boto3
 class TestEnrich:
     async def test_enrich_no_region_skips(self):
         """enrich() returns early when no region is configured."""
@@ -243,6 +250,7 @@ class TestEnrich:
         assert mock_client.get_table.call_count == 2
 
 
+@_skip_no_boto3
 class TestPushLineage:
     def _make_graph_with_upstream(self):
         """Create a graph with a Glue table that has upstream lineage."""

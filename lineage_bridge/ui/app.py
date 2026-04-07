@@ -548,9 +548,7 @@ def _render_graph_content(graph: LineageGraph):
         detail_col = None
 
     with graph_col:
-        st.caption(
-            f"Showing {len(vis_nodes)} of {graph.node_count} nodes, {len(vis_edges)} edges"
-        )
+        st.caption(f"Showing {len(vis_nodes)} of {graph.node_count} nodes, {len(vis_edges)} edges")
 
         # Compute DAG layout positions (JS may override with saved positions)
         edge_pairs = [(e["from"], e["to"]) for e in vis_edges]

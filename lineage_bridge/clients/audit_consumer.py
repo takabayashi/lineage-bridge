@@ -48,13 +48,9 @@ class AuditLogConsumer:
         topic: str = "confluent-audit-log-events",
     ) -> None:
         self.topic = topic
-        self._consumer = self._create_consumer(
-            bootstrap_servers, api_key, api_secret, group_id
-        )
+        self._consumer = self._create_consumer(bootstrap_servers, api_key, api_secret, group_id)
         self._consumer.subscribe([self.topic])
-        logger.info(
-            "Audit log consumer subscribed to %s (group=%s)", topic, group_id
-        )
+        logger.info("Audit log consumer subscribed to %s (group=%s)", topic, group_id)
 
     @staticmethod
     def _create_consumer(
@@ -156,9 +152,7 @@ class _Snapshot:
 
 def _hash_json(data: Any) -> str:
     """Produce a stable hash of JSON-serializable data."""
-    return hashlib.md5(
-        json.dumps(data, sort_keys=True, default=str).encode()
-    ).hexdigest()
+    return hashlib.md5(json.dumps(data, sort_keys=True, default=str).encode()).hexdigest()
 
 
 @dataclass
@@ -223,9 +217,7 @@ class ChangePoller:
                 resource_name=resource,
                 principal="lineage-bridge-poller",
                 environment_id=self.environment_id,
-                cluster_id=(
-                    self.cluster_ids[0] if self.cluster_ids else None
-                ),
+                cluster_id=(self.cluster_ids[0] if self.cluster_ids else None),
                 raw={"changed_resources": changes},
             )
             for resource in changes
@@ -252,12 +244,8 @@ class ChangePoller:
         return _Snapshot(
             topics=results[0] if isinstance(results[0], str) else "",
             connectors=results[1] if isinstance(results[1], str) else "",
-            ksqldb_queries=(
-                results[2] if isinstance(results[2], str) else ""
-            ),
-            flink_statements=(
-                results[3] if isinstance(results[3], str) else ""
-            ),
+            ksqldb_queries=(results[2] if isinstance(results[2], str) else ""),
+            flink_statements=(results[3] if isinstance(results[3], str) else ""),
         )
 
     async def _snapshot_topics(self) -> str:
@@ -275,16 +263,10 @@ class ChangePoller:
                     timeout=self.timeout,
                 )
                 async with client:
-                    items = await client.paginate(
-                        f"/kafka/v3/clusters/{ep.cluster_id}/topics"
-                    )
-                    all_topics.extend(
-                        sorted(t.get("topic_name", "") for t in items)
-                    )
+                    items = await client.paginate(f"/kafka/v3/clusters/{ep.cluster_id}/topics")
+                    all_topics.extend(sorted(t.get("topic_name", "") for t in items))
             except Exception:
-                logger.debug(
-                    "Topic poll failed for %s", ep.cluster_id, exc_info=True
-                )
+                logger.debug("Topic poll failed for %s", ep.cluster_id, exc_info=True)
         return _hash_json(all_topics)
 
     async def _snapshot_connectors(self, cloud: ConfluentClient) -> str:
@@ -298,12 +280,12 @@ class ChangePoller:
                     params={"expand": "status"},
                 )
                 for c in items:
-                    connectors.append({
-                        "name": c.get("info", {}).get("name", ""),
-                        "status": c.get("status", {}).get(
-                            "connector", {}
-                        ).get("state", ""),
-                    })
+                    connectors.append(
+                        {
+                            "name": c.get("info", {}).get("name", ""),
+                            "status": c.get("status", {}).get("connector", {}).get("state", ""),
+                        }
+                    )
             except Exception:
                 logger.debug(
                     "Connector poll failed for %s",
@@ -332,16 +314,13 @@ class ChangePoller:
         dp_secret = self.ksqldb_api_secret or self.cloud_api_secret
 
         for cluster in clusters:
-            endpoint = (
-                cluster.get("status", {}).get("http_endpoint")
-                or cluster.get("spec", {}).get("http_endpoint")
-            )
+            endpoint = cluster.get("status", {}).get("http_endpoint") or cluster.get(
+                "spec", {}
+            ).get("http_endpoint")
             if not endpoint:
                 continue
             try:
-                dp = ConfluentClient(
-                    endpoint, dp_key, dp_secret, timeout=self.timeout
-                )
+                dp = ConfluentClient(endpoint, dp_key, dp_secret, timeout=self.timeout)
                 async with dp:
                     resp = await dp.post(
                         "/ksql",
@@ -356,10 +335,12 @@ class ChangePoller:
                     elif isinstance(resp, dict):
                         queries = resp.get("queries", [])
                     for q in queries:
-                        all_queries.append({
-                            "id": q.get("id", ""),
-                            "state": q.get("state", ""),
-                        })
+                        all_queries.append(
+                            {
+                                "id": q.get("id", ""),
+                                "state": q.get("state", ""),
+                            }
+                        )
             except Exception:
                 logger.debug(
                     "ksqlDB query poll failed for %s",
@@ -395,18 +376,14 @@ class ChangePoller:
 
         # Get organization ID from pool metadata
         org_id = ""
-        resource_name = pools[0].get("metadata", {}).get(
-            "resource_name", ""
-        )
+        resource_name = pools[0].get("metadata", {}).get("resource_name", "")
         if "/organization=" in resource_name:
             org_id = resource_name.split("/organization=")[1].split("/")[0]
 
         if not org_id:
             # Try from environment metadata
             try:
-                env_data = await cloud.get(
-                    f"/org/v2/environments/{self.environment_id}"
-                )
+                env_data = await cloud.get(f"/org/v2/environments/{self.environment_id}")
                 rn = env_data.get("metadata", {}).get("resource_name", "")
                 if "/organization=" in rn:
                     org_id = rn.split("/organization=")[1].split("/")[0]
@@ -422,13 +399,10 @@ class ChangePoller:
 
         try:
             flink_base = f"https://flink.{region}.{flink_cloud}.confluent.cloud"
-            dp = ConfluentClient(
-                flink_base, dp_key, dp_secret, timeout=self.timeout
-            )
+            dp = ConfluentClient(flink_base, dp_key, dp_secret, timeout=self.timeout)
             async with dp:
                 path = (
-                    f"/sql/v1/organizations/{org_id}"
-                    f"/environments/{self.environment_id}/statements"
+                    f"/sql/v1/organizations/{org_id}/environments/{self.environment_id}/statements"
                 )
                 items = await dp.paginate(path, page_size=100)
                 statements = [
@@ -438,9 +412,7 @@ class ChangePoller:
                     }
                     for s in items
                 ]
-                return _hash_json(
-                    sorted(statements, key=lambda s: s["name"])
-                )
+                return _hash_json(sorted(statements, key=lambda s: s["name"]))
         except Exception:
             logger.debug("Flink statement poll failed", exc_info=True)
             return ""

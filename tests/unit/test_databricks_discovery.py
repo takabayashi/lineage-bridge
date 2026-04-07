@@ -45,9 +45,7 @@ async def test_list_warehouses_returns_sorted():
 @respx.mock
 async def test_list_warehouses_empty():
     """list_warehouses returns empty list when no warehouses exist."""
-    respx.get(WAREHOUSES_URL).mock(
-        return_value=Response(200, json={"warehouses": []})
-    )
+    respx.get(WAREHOUSES_URL).mock(return_value=Response(200, json={"warehouses": []}))
 
     result = await list_warehouses(WORKSPACE_URL, TOKEN)
     assert result == []

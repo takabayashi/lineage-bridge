@@ -21,9 +21,7 @@ def main() -> None:
 
     from lineage_bridge.config.settings import Settings
 
-    parser = argparse.ArgumentParser(
-        description="Watch Confluent Cloud for lineage changes"
-    )
+    parser = argparse.ArgumentParser(description="Watch Confluent Cloud for lineage changes")
     parser.add_argument(
         "--env",
         dest="envs",
@@ -126,10 +124,7 @@ def main() -> None:
             f"(cooldown: {args.cooldown}s)"
         )
     else:
-        print(
-            f"Polling Confluent Cloud every {args.poll_interval}s "
-            f"(cooldown: {args.cooldown}s)"
-        )
+        print(f"Polling Confluent Cloud every {args.poll_interval}s (cooldown: {args.cooldown}s)")
     print("Press Ctrl+C to stop")
 
     try:

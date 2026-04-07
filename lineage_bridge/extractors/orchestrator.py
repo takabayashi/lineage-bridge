@@ -171,9 +171,7 @@ async def run_enrichment(
                         provider.catalog_type,
                         exc_info=True,
                     )
-            _progress(
-                "Enrichment", f"Enriched with {len(active_providers)} catalog provider(s)"
-            )
+            _progress("Enrichment", f"Enriched with {len(active_providers)} catalog provider(s)")
 
     # ── Metrics enrichment ────────────────────────────────────────────
     if enable_metrics:
