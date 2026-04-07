@@ -50,6 +50,9 @@ data/
 .DS_Store
 Thumbs.db
 
+# pytest temp dirs
+pytest-of-*/
+
 # Terraform
 **/.terraform/
 *.tfstate
