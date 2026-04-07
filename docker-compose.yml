@@ -21,3 +21,17 @@ services:
       - ./data:/app/data
     profiles:
       - ui
+
+  watch:
+    build: .
+    command:
+      - lineage-bridge-watch
+      - --env
+      - ${LINEAGE_BRIDGE_WATCH_ENV:-env-change-me}
+      - --cooldown
+      - "${LINEAGE_BRIDGE_WATCH_COOLDOWN:-30}"
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+    profiles:
+      - watch

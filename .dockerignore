@@ -1,0 +1,48 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.eggs
+dist
+build
+
+# Virtual environments
+.venv
+venv
+
+# IDE
+.idea
+.vscode
+*.swp
+
+# Testing & CI
+.pytest_cache
+.coverage
+htmlcov
+.ruff_cache
+.github
+
+# Claude / AI
+.claude
+
+# Environment files (secrets)
+.env
+.env_old
+
+# Data directory (mounted as volume)
+data
+
+# Docs & scripts (not needed at runtime)
+docs
+scripts
+tests
+infra
+
+# Misc
+*.md
+LICENSE
