@@ -345,8 +345,7 @@ if 0 <= idx < len(sps):
         # Try via databricks CLI (account-level profile)
         if [ "$HAS_DB_CLI" = true ]; then
             echo "  Trying via databricks CLI..."
-            secret_output=$(databricks service-principal-secrets create "$DB_CLIENT_ID" -o json 2>&1)
-            if [ $? -eq 0 ]; then
+            if secret_output=$(databricks service-principal-secrets create "$DB_CLIENT_ID" -o json 2>&1); then
                 DB_CLIENT_SECRET=$(echo "$secret_output" | python3 -c "import json,sys; print(json.load(sys.stdin).get('secret',''))" 2>/dev/null || true)
                 if [ -n "$DB_CLIENT_SECRET" ]; then
                     echo "  OAuth secret created (save this — it won't be shown again)"
