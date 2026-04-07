@@ -19,6 +19,7 @@ from lineage_bridge.ui.discovery import (
     _try_load_settings,
 )
 from lineage_bridge.ui.extraction import (
+    _run_enrichment_on_graph,
     _run_extraction_with_params,
     _save_selections_to_cache,
 )
@@ -503,9 +504,9 @@ def _render_sidebar_actions():
             ui_flink_creds[eid] = {"api_key": k, "api_secret": s}
 
     has_graph = st.session_state.graph is not None
-    extract_label = "Re-extract" if has_graph else "Extract Lineage"
+    extract_label = "Re-extract" if has_graph else "Extract"
 
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     with c1:
         if st.button(
             extract_label,
@@ -513,6 +514,7 @@ def _render_sidebar_actions():
             type="primary",
             disabled=not selected_cluster_ids,
             use_container_width=True,
+            help="Extract lineage (without catalog enrichment)",
         ):
             params = {
                 "env_ids": [e.id for e in selected_envs],
@@ -528,6 +530,7 @@ def _render_sidebar_actions():
                 "enable_tableflow": st.session_state.get("ext_tf", True),
                 "enable_metrics": st.session_state.get("ext_metrics", False),
                 "metrics_lookback_hours": st.session_state.get("metrics_lookback", 1),
+                "enable_enrichment": False,
             }
             st.session_state.extraction_log = []
             with st.status("Extracting lineage...", expanded=True) as status:
@@ -542,7 +545,6 @@ def _render_sidebar_actions():
                     st.session_state.last_extraction_time = datetime.now(UTC).strftime(
                         "%H:%M:%S UTC"
                     )
-                    # Persist selections to local cache
                     _save_selections_to_cache(params)
                     status.update(
                         label=(f"Done — {result.node_count} nodes, {result.edge_count} edges"),
@@ -556,15 +558,48 @@ def _render_sidebar_actions():
                     )
 
     with c2:
+        if st.button(
+            "Enrich",
+            key="enrich_btn",
+            disabled=not has_graph,
+            use_container_width=True,
+            help="Enrich current graph with catalog metadata (UC, Glue) and metrics",
+        ):
+            params = st.session_state.last_extraction_params or {}
+            st.session_state.extraction_log = []
+            with st.status("Enriching graph...", expanded=True) as status:
+                try:
+                    result = _run_enrichment_on_graph(
+                        settings, st.session_state.graph, params
+                    )
+                    st.session_state.graph = result
+                    st.session_state.last_extraction_time = datetime.now(UTC).strftime(
+                        "%H:%M:%S UTC"
+                    )
+                    status.update(
+                        label=(
+                            f"Enriched — {result.node_count} nodes, {result.edge_count} edges"
+                        ),
+                        state="complete",
+                    )
+                    st.rerun()
+                except Exception as exc:
+                    status.update(
+                        label=f"Failed: {exc}",
+                        state="error",
+                    )
+
+    with c3:
         has_params = st.session_state.last_extraction_params is not None
         if st.button(
             "Refresh",
             key="refresh_extract_btn",
             disabled=not has_params,
             use_container_width=True,
-            help="Re-run last extraction with same parameters",
+            help="Re-run last extraction + enrichment with same parameters",
         ):
-            params = st.session_state.last_extraction_params
+            params = dict(st.session_state.last_extraction_params)
+            params["enable_enrichment"] = True  # Full pipeline on refresh
             st.session_state.extraction_log = []
             with st.status("Refreshing...", expanded=True) as status:
                 try:

@@ -2,13 +2,20 @@
 # Licensed under the Apache License, Version 2.0
 """Orchestrator that runs all extractors and builds the unified lineage graph.
 
-Execution order:
+Three entry points:
+  - run_extraction()  — extract + optionally enrich (full pipeline)
+  - run_enrichment()  — enrich an existing graph (catalog + metrics)
+  - main()            — CLI with --no-enrich / --enrich-only flags
+
+Extraction phases (run_extraction / _extract_environment):
   1. KafkaAdmin — establish the topic inventory.
   2. Connect, ksqlDB, Flink — transformation / processing edges (parallel).
-  3. SchemaRegistry, StreamCatalog — enrichment (parallel).
+  3. SchemaRegistry, StreamCatalog — schema enrichment (parallel).
   4. Tableflow — bridge to UC/Glue (depends on topic nodes).
-  4b. Catalog enrichment — providers enrich their own nodes (parallel).
-  5. Merge everything into a single LineageGraph.
+
+Enrichment phases (run_enrichment):
+  4b. Catalog enrichment — providers enrich their own nodes.
+  5. Metrics enrichment — live throughput data (optional).
 """
 
 from __future__ import annotations
@@ -112,6 +119,85 @@ ProgressCallback = Any  # typing: Callable[[str, str], None] | None
 # ── main orchestration ──────────────────────────────────────────────────
 
 
+async def run_enrichment(
+    settings: Settings,
+    graph: LineageGraph,
+    *,
+    enable_catalog: bool = True,
+    enable_metrics: bool = False,
+    metrics_lookback_hours: int = 1,
+    on_progress: ProgressCallback = None,
+) -> LineageGraph:
+    """Enrich an existing graph with catalog metadata and/or metrics.
+
+    Runs catalog provider enrichment (UC, Glue) and optionally metrics
+    enrichment on an already-extracted graph. Mutates the graph in-place
+    and returns it.
+
+    Args:
+        settings: Credentials (from .env).
+        graph: The lineage graph to enrich.
+        enable_catalog: Run catalog provider enrichment (Phase 4b).
+        enable_metrics: Run metrics enrichment (Phase 5).
+        metrics_lookback_hours: Lookback window for metrics.
+        on_progress: Optional callback for UI progress updates.
+    """
+
+    def _progress(phase: str, detail: str = "") -> None:
+        logger.info("%s %s", phase, detail)
+        if on_progress:
+            on_progress(phase, detail)
+
+    # ── Catalog enrichment ────────────────────────────────────────────
+    if enable_catalog:
+        active_providers = get_active_providers(graph)
+        if active_providers:
+            _progress("Enrichment", "Enriching catalog nodes")
+            for provider in active_providers:
+                if provider.catalog_type == "UNITY_CATALOG":
+                    provider = DatabricksUCProvider(
+                        workspace_url=settings.databricks_workspace_url,
+                        token=settings.databricks_token,
+                    )
+                try:
+                    await provider.enrich(graph)
+                except Exception:
+                    logger.warning(
+                        "Catalog enrichment failed for %s",
+                        provider.catalog_type,
+                        exc_info=True,
+                    )
+            _progress(
+                "Enrichment", f"Enriched with {len(active_providers)} catalog provider(s)"
+            )
+
+    # ── Metrics enrichment ────────────────────────────────────────────
+    if enable_metrics:
+        _progress("Metrics", "Enriching nodes with real-time metrics")
+        metrics_client = MetricsClient(
+            api_key=settings.confluent_cloud_api_key,
+            api_secret=settings.confluent_cloud_api_secret,
+            lookback_hours=metrics_lookback_hours,
+        )
+        cluster_ids = {n.cluster_id for n in graph.nodes if n.cluster_id}
+        async with metrics_client:
+            total_enriched = 0
+            for cluster_id in cluster_ids:
+                try:
+                    enriched = await metrics_client.enrich(graph, cluster_id)
+                    total_enriched += enriched
+                except Exception as exc:
+                    logger.warning(
+                        "Metrics enrichment failed for %s: %s",
+                        cluster_id,
+                        exc,
+                    )
+            _progress("Metrics", f"Enriched {total_enriched} nodes with metrics")
+
+    _progress("Enrichment done", f"{graph.node_count} nodes, {graph.edge_count} edges")
+    return graph
+
+
 async def run_extraction(
     settings: Settings,
     *,
@@ -123,6 +209,7 @@ async def run_extraction(
     enable_schema_registry: bool = True,
     enable_stream_catalog: bool = True,
     enable_tableflow: bool = True,
+    enable_enrichment: bool = True,
     enable_metrics: bool = False,
     metrics_lookback_hours: int = 1,
     sr_endpoints: dict[str, str] | None = None,
@@ -137,6 +224,7 @@ async def run_extraction(
         environment_ids: Which environments to scan.
         cluster_ids: Optional filter — specific cluster IDs. If None, scan all.
         enable_*: Toggle individual extractors on/off.
+        enable_enrichment: Run catalog + metrics enrichment after extraction.
         on_progress: Optional callback for UI progress updates.
     """
     graph = LineageGraph()
@@ -166,8 +254,6 @@ async def run_extraction(
                 enable_schema_registry=enable_schema_registry,
                 enable_stream_catalog=enable_stream_catalog,
                 enable_tableflow=enable_tableflow,
-                enable_metrics=enable_metrics,
-                metrics_lookback_hours=metrics_lookback_hours,
                 sr_endpoints=sr_endpoints,
                 sr_credentials=sr_credentials,
                 flink_credentials=flink_credentials,
@@ -175,6 +261,16 @@ async def run_extraction(
             )
     finally:
         await cloud.close()
+
+    # ── Enrichment (catalog + metrics) ─────────────────────────────────
+    if enable_enrichment:
+        await run_enrichment(
+            settings,
+            graph,
+            enable_metrics=enable_metrics,
+            metrics_lookback_hours=metrics_lookback_hours,
+            on_progress=on_progress,
+        )
 
     # ── Validation ─────────────────────────────────────────────────────
     warnings = graph.validate()
@@ -200,8 +296,6 @@ async def _extract_environment(
     enable_schema_registry: bool,
     enable_stream_catalog: bool,
     enable_tableflow: bool,
-    enable_metrics: bool,
-    metrics_lookback_hours: int,
     sr_endpoints: dict[str, str] | None,
     sr_credentials: dict[str, dict[str, str]] | None,
     flink_credentials: dict[str, dict[str, str]] | None,
@@ -460,49 +554,6 @@ async def _extract_environment(
             nodes, edges = await _safe_extract("Tableflow", tf_client.extract(), on_progress)
             _merge_into(graph, nodes, edges)
 
-    # ── Phase 4b: Catalog enrichment ─────────────────────────────────────
-    active_providers = get_active_providers(graph)
-    if active_providers:
-        on_progress("Phase 4b", "Enriching catalog nodes")
-        for provider in active_providers:
-            if provider.catalog_type == "UNITY_CATALOG":
-                provider = DatabricksUCProvider(
-                    workspace_url=settings.databricks_workspace_url,
-                    token=settings.databricks_token,
-                )
-            try:
-                await provider.enrich(graph)
-            except Exception:
-                logger.warning(
-                    "Catalog enrichment failed for %s",
-                    provider.catalog_type,
-                    exc_info=True,
-                )
-        on_progress("Phase 4b", f"Enriched with {len(active_providers)} catalog provider(s)")
-
-    # ── Phase 5 (optional): Metrics enrichment ──────────────────────────
-    if enable_metrics:
-        on_progress("Metrics", "Enriching nodes with real-time metrics")
-        metrics_client = MetricsClient(
-            api_key=settings.confluent_cloud_api_key,
-            api_secret=settings.confluent_cloud_api_secret,
-            lookback_hours=metrics_lookback_hours,
-        )
-        async with metrics_client:
-            total_enriched = 0
-            for cluster in all_clusters:
-                cluster_id = cluster.get("id", "")
-                try:
-                    enriched = await metrics_client.enrich(graph, cluster_id)
-                    total_enriched += enriched
-                except Exception as exc:
-                    logger.warning(
-                        "Metrics enrichment failed for %s: %s",
-                        cluster_id,
-                        exc,
-                    )
-            on_progress("Metrics", f"Enriched {total_enriched} nodes with metrics")
-
     # ── Stamp environment / cluster display names on all nodes ──────────
     env_name: str | None = None
     try:
@@ -561,6 +612,16 @@ def main() -> None:
         default="./lineage_graph.json",
         help="Output JSON path (default: ./lineage_graph.json)",
     )
+    parser.add_argument(
+        "--no-enrich",
+        action="store_true",
+        help="Extract only, skip catalog and metrics enrichment",
+    )
+    parser.add_argument(
+        "--enrich-only",
+        action="store_true",
+        help="Enrich an existing graph file (reads from --output path)",
+    )
     args = parser.parse_args()
 
     settings = Settings()  # type: ignore[call-arg]
@@ -571,13 +632,19 @@ def main() -> None:
     )
 
     try:
-        graph = asyncio.run(
-            run_extraction(
-                settings,
-                environment_ids=args.envs,
-                cluster_ids=args.clusters,
+        if args.enrich_only:
+            graph = LineageGraph.from_json_file(args.output)
+            print(f"Loaded graph: {graph.node_count} nodes, {graph.edge_count} edges")
+            graph = asyncio.run(run_enrichment(settings, graph))
+        else:
+            graph = asyncio.run(
+                run_extraction(
+                    settings,
+                    environment_ids=args.envs,
+                    cluster_ids=args.clusters,
+                    enable_enrichment=not args.no_enrich,
+                )
             )
-        )
     except KeyboardInterrupt:
         logger.info("Extraction interrupted")
         sys.exit(1)
@@ -586,5 +653,5 @@ def main() -> None:
         sys.exit(2)
 
     graph.to_json_file(args.output)
-    print(f"Extraction complete: {graph.node_count} nodes, {graph.edge_count} edges")
+    print(f"Complete: {graph.node_count} nodes, {graph.edge_count} edges")
     print(f"Output: {args.output}")

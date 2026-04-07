@@ -19,6 +19,7 @@ from lineage_bridge.extractors.orchestrator import (
     _merge_into,
     _safe_extract,
     main,
+    run_enrichment,
     run_extraction,
 )
 from lineage_bridge.models.graph import (
@@ -459,8 +460,7 @@ async def test_extract_environment_no_clusters(no_sleep):
         enable_schema_registry=False,
         enable_stream_catalog=False,
         enable_tableflow=False,
-        enable_metrics=False,
-        metrics_lookback_hours=1,
+
         sr_endpoints=None,
         sr_credentials=None,
         flink_credentials=None,
@@ -523,8 +523,6 @@ async def test_extract_environment_phase_ordering(no_sleep):
             enable_schema_registry=False,
             enable_stream_catalog=False,
             enable_tableflow=False,
-            enable_metrics=False,
-            metrics_lookback_hours=1,
             sr_endpoints=None,
             sr_credentials=None,
             flink_credentials=None,
@@ -577,8 +575,6 @@ async def test_extract_environment_sr_discovery(no_sleep):
             enable_schema_registry=True,
             enable_stream_catalog=False,
             enable_tableflow=False,
-            enable_metrics=False,
-            metrics_lookback_hours=1,
             sr_endpoints=None,
             sr_credentials=None,
             flink_credentials=None,
@@ -630,8 +626,6 @@ async def test_extract_environment_sr_endpoint_from_settings(no_sleep):
             enable_schema_registry=True,
             enable_stream_catalog=False,
             enable_tableflow=False,
-            enable_metrics=False,
-            metrics_lookback_hours=1,
             sr_endpoints=None,
             sr_credentials=None,
             flink_credentials=None,
@@ -696,8 +690,6 @@ async def test_extract_environment_sr_credentials_per_env(no_sleep):
             enable_schema_registry=True,
             enable_stream_catalog=False,
             enable_tableflow=False,
-            enable_metrics=False,
-            metrics_lookback_hours=1,
             sr_endpoints={"env-test1": "https://psrc-test.confluent.cloud"},
             sr_credentials=sr_creds,
             flink_credentials=None,
@@ -749,8 +741,6 @@ async def test_extract_environment_flink_org_from_spec(no_sleep):
             enable_schema_registry=False,
             enable_stream_catalog=False,
             enable_tableflow=False,
-            enable_metrics=False,
-            metrics_lookback_hours=1,
             sr_endpoints=None,
             sr_credentials=None,
             flink_credentials=None,
@@ -805,8 +795,6 @@ async def test_extract_environment_flink_org_from_resource_name(no_sleep):
             enable_schema_registry=False,
             enable_stream_catalog=False,
             enable_tableflow=False,
-            enable_metrics=False,
-            metrics_lookback_hours=1,
             sr_endpoints=None,
             sr_credentials=None,
             flink_credentials=None,
@@ -871,8 +859,6 @@ async def test_extract_environment_flink_org_from_api_fallback(no_sleep):
             enable_schema_registry=False,
             enable_stream_catalog=False,
             enable_tableflow=False,
-            enable_metrics=False,
-            metrics_lookback_hours=1,
             sr_endpoints=None,
             sr_credentials=None,
             flink_credentials=None,
@@ -916,8 +902,6 @@ async def test_extract_environment_flink_org_not_found_skips(no_sleep):
             enable_schema_registry=False,
             enable_stream_catalog=False,
             enable_tableflow=False,
-            enable_metrics=False,
-            metrics_lookback_hours=1,
             sr_endpoints=None,
             sr_credentials=None,
             flink_credentials=None,
@@ -928,52 +912,39 @@ async def test_extract_environment_flink_org_not_found_skips(no_sleep):
     assert len(flink_warnings) == 1
 
 
-async def test_extract_environment_metrics_enrichment(no_sleep):
-    """Metrics enrichment runs when enable_metrics=True."""
+async def test_run_enrichment_metrics(no_sleep):
+    """Metrics enrichment runs via run_enrichment when enable_metrics=True."""
     settings = _make_settings()
     graph = LineageGraph()
-    cluster = _cluster_payload()
-    mock_cloud = AsyncMock()
-    mock_cloud.paginate = AsyncMock(return_value=[cluster])
-    mock_cloud.get = AsyncMock(return_value={"display_name": "test"})
+    # Add a node with a cluster_id so metrics has something to enrich
+    graph.add_node(
+        LineageNode(
+            node_id="confluent:kafka_topic:env-test1:test-topic",
+            system=SystemType.CONFLUENT,
+            node_type=NodeType.KAFKA_TOPIC,
+            qualified_name="test-topic",
+            display_name="test-topic",
+            environment_id="env-test1",
+            cluster_id="lkc-test1",
+        )
+    )
     messages: list[tuple[str, str]] = []
 
     def _progress(phase: str, detail: str = "") -> None:
         messages.append((phase, detail))
 
-    with (
-        patch("lineage_bridge.extractors.orchestrator.KafkaAdminClient") as MockKafka,
-        patch("lineage_bridge.extractors.orchestrator.MetricsClient") as MockMetrics,
-    ):
-        kafka_inst = AsyncMock()
-        kafka_inst.extract = AsyncMock(return_value=([], []))
-        kafka_inst.__aenter__ = AsyncMock(return_value=kafka_inst)
-        kafka_inst.__aexit__ = AsyncMock(return_value=False)
-        MockKafka.return_value = kafka_inst
-
+    with patch("lineage_bridge.extractors.orchestrator.MetricsClient") as MockMetrics:
         metrics_inst = AsyncMock()
         metrics_inst.enrich = AsyncMock(return_value=5)
         metrics_inst.__aenter__ = AsyncMock(return_value=metrics_inst)
         metrics_inst.__aexit__ = AsyncMock(return_value=False)
         MockMetrics.return_value = metrics_inst
 
-        await _extract_environment(
+        await run_enrichment(
             settings,
-            mock_cloud,
-            "env-test1",
             graph,
-            cluster_ids=None,
-            enable_connect=False,
-            enable_ksqldb=False,
-            enable_flink=False,
-            enable_schema_registry=False,
-            enable_stream_catalog=False,
-            enable_tableflow=False,
             enable_metrics=True,
             metrics_lookback_hours=1,
-            sr_endpoints=None,
-            sr_credentials=None,
-            flink_credentials=None,
             on_progress=_progress,
         )
 
@@ -982,28 +953,23 @@ async def test_extract_environment_metrics_enrichment(no_sleep):
     assert any("Enriched 5 nodes" in m[1] for m in metrics_msgs)
 
 
-async def test_extract_environment_metrics_error_handled(no_sleep):
+async def test_run_enrichment_metrics_error_handled(no_sleep):
     """Metrics enrichment failure is logged but does not abort."""
     settings = _make_settings()
     graph = LineageGraph()
-    cluster = _cluster_payload()
-    mock_cloud = AsyncMock()
-    mock_cloud.paginate = AsyncMock(return_value=[cluster])
-    mock_cloud.get = AsyncMock(return_value={"display_name": "test"})
+    graph.add_node(
+        LineageNode(
+            node_id="confluent:kafka_topic:env-test1:test-topic",
+            system=SystemType.CONFLUENT,
+            node_type=NodeType.KAFKA_TOPIC,
+            qualified_name="test-topic",
+            display_name="test-topic",
+            environment_id="env-test1",
+            cluster_id="lkc-test1",
+        )
+    )
 
-    def _progress(phase: str, detail: str = "") -> None:
-        pass
-
-    with (
-        patch("lineage_bridge.extractors.orchestrator.KafkaAdminClient") as MockKafka,
-        patch("lineage_bridge.extractors.orchestrator.MetricsClient") as MockMetrics,
-    ):
-        kafka_inst = AsyncMock()
-        kafka_inst.extract = AsyncMock(return_value=([], []))
-        kafka_inst.__aenter__ = AsyncMock(return_value=kafka_inst)
-        kafka_inst.__aexit__ = AsyncMock(return_value=False)
-        MockKafka.return_value = kafka_inst
-
+    with patch("lineage_bridge.extractors.orchestrator.MetricsClient") as MockMetrics:
         metrics_inst = AsyncMock()
         metrics_inst.enrich = AsyncMock(side_effect=RuntimeError("metrics fail"))
         metrics_inst.__aenter__ = AsyncMock(return_value=metrics_inst)
@@ -1011,24 +977,11 @@ async def test_extract_environment_metrics_error_handled(no_sleep):
         MockMetrics.return_value = metrics_inst
 
         # Should not raise
-        await _extract_environment(
+        await run_enrichment(
             settings,
-            mock_cloud,
-            "env-test1",
             graph,
-            cluster_ids=None,
-            enable_connect=False,
-            enable_ksqldb=False,
-            enable_flink=False,
-            enable_schema_registry=False,
-            enable_stream_catalog=False,
-            enable_tableflow=False,
             enable_metrics=True,
             metrics_lookback_hours=1,
-            sr_endpoints=None,
-            sr_credentials=None,
-            flink_credentials=None,
-            on_progress=_progress,
         )
 
 
@@ -1075,8 +1028,6 @@ async def test_extract_environment_stamps_names(no_sleep):
             enable_schema_registry=False,
             enable_stream_catalog=False,
             enable_tableflow=False,
-            enable_metrics=False,
-            metrics_lookback_hours=1,
             sr_endpoints=None,
             sr_credentials=None,
             flink_credentials=None,
@@ -1127,8 +1078,6 @@ async def test_extract_environment_cluster_filter(no_sleep):
             enable_schema_registry=False,
             enable_stream_catalog=False,
             enable_tableflow=False,
-            enable_metrics=False,
-            metrics_lookback_hours=1,
             sr_endpoints=None,
             sr_credentials=None,
             flink_credentials=None,
@@ -1166,8 +1115,7 @@ async def test_extract_environment_cluster_no_rest_endpoint(no_sleep):
         enable_schema_registry=False,
         enable_stream_catalog=False,
         enable_tableflow=False,
-        enable_metrics=False,
-        metrics_lookback_hours=1,
+
         sr_endpoints=None,
         sr_credentials=None,
         flink_credentials=None,
@@ -1218,8 +1166,6 @@ async def test_extract_environment_bootstrap_sasl_prefix_stripped(
             enable_schema_registry=False,
             enable_stream_catalog=False,
             enable_tableflow=False,
-            enable_metrics=False,
-            metrics_lookback_hours=1,
             sr_endpoints=None,
             sr_credentials=None,
             flink_credentials=None,
@@ -1280,8 +1226,6 @@ async def test_extract_environment_flink_per_env_credentials(no_sleep):
             enable_schema_registry=False,
             enable_stream_catalog=False,
             enable_tableflow=False,
-            enable_metrics=False,
-            metrics_lookback_hours=1,
             sr_endpoints=None,
             sr_credentials=None,
             flink_credentials=flink_creds,
@@ -1333,8 +1277,6 @@ async def test_extract_environment_tableflow_runs(no_sleep):
             enable_schema_registry=False,
             enable_stream_catalog=False,
             enable_tableflow=True,
-            enable_metrics=False,
-            metrics_lookback_hours=1,
             sr_endpoints=None,
             sr_credentials=None,
             flink_credentials=None,
@@ -1385,8 +1327,6 @@ async def test_extract_environment_stream_catalog_skipped_no_sr(
             enable_schema_registry=False,
             enable_stream_catalog=True,
             enable_tableflow=False,
-            enable_metrics=False,
-            metrics_lookback_hours=1,
             sr_endpoints=None,
             sr_credentials=None,
             flink_credentials=None,
@@ -1401,16 +1341,12 @@ async def test_extract_environment_stream_catalog_skipped_no_sr(
 
 
 async def test_catalog_enrichment_calls_provider_enrich(no_sleep):
-    """Phase 4b calls provider.enrich() for active catalog providers."""
+    """run_enrichment calls provider.enrich() for active catalog providers."""
     settings = _make_settings(
         databricks_workspace_url="https://myworkspace.databricks.com",
         databricks_token="dapi-test-token",
     )
     graph = LineageGraph()
-    cluster = _cluster_payload()
-    mock_cloud = AsyncMock()
-    mock_cloud.paginate = AsyncMock(return_value=[cluster])
-    mock_cloud.get = AsyncMock(return_value={"display_name": "test"})
 
     # Pre-populate graph with a UC_TABLE node so get_active_providers finds it
     uc_node = LineageNode(
@@ -1432,106 +1368,46 @@ async def test_catalog_enrichment_calls_provider_enrich(no_sleep):
     def _progress(phase: str, detail: str = "") -> None:
         messages.append((phase, detail))
 
-    with (
-        patch("lineage_bridge.extractors.orchestrator.KafkaAdminClient") as MockKafka,
-        patch("lineage_bridge.extractors.orchestrator.DatabricksUCProvider") as MockUCProvider,
-    ):
-        kafka_inst = AsyncMock()
-        kafka_inst.extract = AsyncMock(return_value=([], []))
-        kafka_inst.__aenter__ = AsyncMock(return_value=kafka_inst)
-        kafka_inst.__aexit__ = AsyncMock(return_value=False)
-        MockKafka.return_value = kafka_inst
-
+    with patch("lineage_bridge.extractors.orchestrator.DatabricksUCProvider") as MockUCProvider:
         mock_provider = AsyncMock()
         mock_provider.catalog_type = "UNITY_CATALOG"
         mock_provider.enrich = AsyncMock()
         MockUCProvider.return_value = mock_provider
 
-        await _extract_environment(
-            settings,
-            mock_cloud,
-            "env-test1",
-            graph,
-            cluster_ids=None,
-            enable_connect=False,
-            enable_ksqldb=False,
-            enable_flink=False,
-            enable_schema_registry=False,
-            enable_stream_catalog=False,
-            enable_tableflow=False,
-            enable_metrics=False,
-            metrics_lookback_hours=1,
-            sr_endpoints=None,
-            sr_credentials=None,
-            flink_credentials=None,
-            on_progress=_progress,
-        )
+        await run_enrichment(settings, graph, on_progress=_progress)
 
     MockUCProvider.assert_called_once_with(
         workspace_url="https://myworkspace.databricks.com",
         token="dapi-test-token",
     )
     mock_provider.enrich.assert_awaited_once_with(graph)
-    phase4b_msgs = [m for m in messages if "Phase 4b" in m[0]]
-    assert len(phase4b_msgs) >= 1
+    enrichment_msgs = [m for m in messages if "Enrichment" in m[0] or "Enriched" in m[1]]
+    assert len(enrichment_msgs) >= 1
 
 
 async def test_catalog_enrichment_skipped_when_no_catalog_nodes(no_sleep):
-    """Phase 4b is skipped when no catalog nodes exist in the graph."""
+    """run_enrichment skips catalog enrichment when no catalog nodes exist."""
     settings = _make_settings()
     graph = LineageGraph()
-    cluster = _cluster_payload()
-    mock_cloud = AsyncMock()
-    mock_cloud.paginate = AsyncMock(return_value=[cluster])
-    mock_cloud.get = AsyncMock(return_value={"display_name": "test"})
 
     messages: list[tuple[str, str]] = []
 
     def _progress(phase: str, detail: str = "") -> None:
         messages.append((phase, detail))
 
-    with patch("lineage_bridge.extractors.orchestrator.KafkaAdminClient") as MockKafka:
-        kafka_inst = AsyncMock()
-        kafka_inst.extract = AsyncMock(return_value=([], []))
-        kafka_inst.__aenter__ = AsyncMock(return_value=kafka_inst)
-        kafka_inst.__aexit__ = AsyncMock(return_value=False)
-        MockKafka.return_value = kafka_inst
+    await run_enrichment(settings, graph, on_progress=_progress)
 
-        await _extract_environment(
-            settings,
-            mock_cloud,
-            "env-test1",
-            graph,
-            cluster_ids=None,
-            enable_connect=False,
-            enable_ksqldb=False,
-            enable_flink=False,
-            enable_schema_registry=False,
-            enable_stream_catalog=False,
-            enable_tableflow=False,
-            enable_metrics=False,
-            metrics_lookback_hours=1,
-            sr_endpoints=None,
-            sr_credentials=None,
-            flink_credentials=None,
-            on_progress=_progress,
-        )
-
-    phase4b_msgs = [m for m in messages if "Phase 4b" in m[0]]
-    assert len(phase4b_msgs) == 0
+    enrichment_msgs = [m for m in messages if "Enriching catalog" in m[1]]
+    assert len(enrichment_msgs) == 0
 
 
 async def test_catalog_enrichment_failure_is_not_fatal(no_sleep):
-    """Phase 4b catches exceptions from provider.enrich() and continues."""
+    """run_enrichment catches exceptions from provider.enrich() and continues."""
     settings = _make_settings(
         databricks_workspace_url="https://myworkspace.databricks.com",
         databricks_token="dapi-test-token",
     )
     graph = LineageGraph()
-    cluster = _cluster_payload()
-    mock_cloud = AsyncMock()
-    mock_cloud.paginate = AsyncMock(return_value=[cluster])
-    mock_cloud.get = AsyncMock(return_value={"display_name": "test"})
 
     uc_node = LineageNode(
         node_id="databricks:uc_table:env-test1:cat.schema.tbl",
@@ -1544,44 +1420,14 @@ async def test_catalog_enrichment_failure_is_not_fatal(no_sleep):
     )
     graph.add_node(uc_node)
 
-    def _progress(phase: str, detail: str = "") -> None:
-        pass
-
-    with (
-        patch("lineage_bridge.extractors.orchestrator.KafkaAdminClient") as MockKafka,
-        patch("lineage_bridge.extractors.orchestrator.DatabricksUCProvider") as MockUCProvider,
-    ):
-        kafka_inst = AsyncMock()
-        kafka_inst.extract = AsyncMock(return_value=([], []))
-        kafka_inst.__aenter__ = AsyncMock(return_value=kafka_inst)
-        kafka_inst.__aexit__ = AsyncMock(return_value=False)
-        MockKafka.return_value = kafka_inst
-
+    with patch("lineage_bridge.extractors.orchestrator.DatabricksUCProvider") as MockUCProvider:
         mock_provider = AsyncMock()
         mock_provider.catalog_type = "UNITY_CATALOG"
         mock_provider.enrich = AsyncMock(side_effect=RuntimeError("API down"))
         MockUCProvider.return_value = mock_provider
 
         # Should not raise — enrichment failure is caught and logged
-        await _extract_environment(
-            settings,
-            mock_cloud,
-            "env-test1",
-            graph,
-            cluster_ids=None,
-            enable_connect=False,
-            enable_ksqldb=False,
-            enable_flink=False,
-            enable_schema_registry=False,
-            enable_stream_catalog=False,
-            enable_tableflow=False,
-            enable_metrics=False,
-            metrics_lookback_hours=1,
-            sr_endpoints=None,
-            sr_credentials=None,
-            flink_credentials=None,
-            on_progress=_progress,
-        )
+        await run_enrichment(settings, graph)
 
     mock_provider.enrich.assert_awaited_once()
 

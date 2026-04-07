@@ -94,6 +94,29 @@ Committed in 3 commits. 304 tests, all passing.
 
 ---
 
+## Post-v0.2.0: UC Integration Fixes (2026-04-06)
+
+**Problem:** Live testing against Confluent Tableflow API revealed format mismatches:
+1. API returns `spec.config.kind: "Unity"` (not `spec.catalog_type: "UNITY_CATALOG"`)
+2. Config is flat (not nested under `unity_catalog`)
+3. Confluent replaces dots with underscores in UC table names
+
+**Fixes:**
+- `tableflow.py`: Added `_KIND_TO_CATALOG_TYPE` mapping, read config from `spec.config`
+- `databricks_uc.py`: Handle flat config format, `topic_name.replace(".", "_")`
+- Test fixtures updated to match real API format
+
+**Test coverage improvements:**
+- Added tests for flat API config format, dot-to-underscore mapping
+- Added retry/error path tests (429 retry, 503 exhaust, HTTP errors, unexpected status)
+- `databricks_uc.py` coverage: 84% → 99%
+
+**Commits:**
+1. `1f48e50` — Fix UC integration: handle real API format and dot-to-underscore mapping
+2. `0f30364` — Add Flink API key outputs and fix postgres sink connector topic reference
+
+---
+
 ## Dependency Graph
 
 ```

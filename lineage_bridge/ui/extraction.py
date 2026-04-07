@@ -50,6 +50,28 @@ def _build_sr_endpoints(params: dict) -> dict[str, str]:
     return sr_endpoints
 
 
+def _run_enrichment_on_graph(settings, graph, params: dict):
+    """Run enrichment on an existing graph. Returns the enriched graph."""
+    from lineage_bridge.extractors.orchestrator import run_enrichment
+
+    log = st.session_state.extraction_log
+
+    def on_progress(phase: str, detail: str = "") -> None:
+        log.append(f"**{phase}** {detail}")
+
+    async def _do_enrich():
+        return await run_enrichment(
+            settings,
+            graph,
+            enable_catalog=True,
+            enable_metrics=params.get("enable_metrics", False),
+            metrics_lookback_hours=params.get("metrics_lookback_hours", 1),
+            on_progress=on_progress,
+        )
+
+    return _run_async(_do_enrich())
+
+
 def _run_extraction_with_params(settings, params: dict):
     """Run extraction with a params dict. Returns the graph or raises."""
     from lineage_bridge.extractors.orchestrator import run_extraction
@@ -96,8 +118,9 @@ def _run_extraction_with_params(settings, params: dict):
             enable_schema_registry=params["enable_schema_registry"],
             enable_stream_catalog=params["enable_stream_catalog"],
             enable_tableflow=params["enable_tableflow"],
-            enable_metrics=params["enable_metrics"],
-            metrics_lookback_hours=params["metrics_lookback_hours"],
+            enable_enrichment=params.get("enable_enrichment", True),
+            enable_metrics=params.get("enable_metrics", False),
+            metrics_lookback_hours=params.get("metrics_lookback_hours", 1),
             sr_endpoints=_build_sr_endpoints(params),
             sr_credentials=params.get("sr_credentials"),
             flink_credentials=params.get("flink_credentials"),
