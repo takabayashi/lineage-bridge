@@ -94,15 +94,13 @@ Living document. Every significant design or implementation decision made by the
 - **Tradeoff:** Separation allows Tableflow to remain a pure Confluent API client (no external catalog credentials needed). Enrichment is independently retryable and can fail without losing the node structure. Cost: two-phase adds orchestration complexity.
 - **Files:** `clients/tableflow.py`, `extractors/orchestrator.py`
 
-## ADR-009: Glue enrich() as no-op stub
+## ADR-009: Glue enrich() implementation
 
-- **Status:** Accepted (temporary)
-- **Date:** 2026-04-04
+- **Status:** Superseded (implemented 2026-04-06)
+- **Date:** 2026-04-04 (original), 2026-04-06 (implemented)
 - **Decided by:** Weaver, Blueprint
-- **Context:** AWS Glue provider needs an `enrich()` method per the protocol, but Glue API enrichment isn't built yet.
-- **Decision:** Implement as `async def enrich(self, graph): pass` — satisfies the protocol, does nothing.
-- **Alternatives:** Make `enrich()` optional in the protocol; raise `NotImplementedError`.
-- **Tradeoff:** No-op keeps the interface uniform — orchestrator calls all providers the same way without type checking. `NotImplementedError` would force try/except in the orchestrator. Revisit when Glue enrichment is implemented (boto3 `get_table` calls).
+- **Context:** AWS Glue provider initially had a no-op `enrich()` stub. Full implementation was added in commit `7ebaed6` using boto3 `get_table` calls with `asyncio.to_thread()` (see ADR-013).
+- **Decision:** `enrich()` now fetches table metadata from Glue (location, input format, serde, parameters) and updates graph nodes. `push_lineage()` writes lineage metadata back via `update_table`.
 - **Files:** `catalogs/aws_glue.py`
 
 ## ADR-012: Lineage push via SQL Statement Execution API
