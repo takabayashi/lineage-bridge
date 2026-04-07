@@ -74,6 +74,12 @@ class Settings(BaseSettings):
         description="Databricks SQL Warehouse ID for statement execution",
     )
 
+    # ── AWS ──────────────────────────────────────────────────────────────
+    aws_region: str = Field(
+        default="us-east-1",
+        description="AWS region for Glue Data Catalog",
+    )
+
     # ── Per-cluster credentials ─────────────────────────────────────────
     # JSON map: {"lkc-abc123": {"api_key": "...", "api_secret": "..."}, ...}
     # Set via env: LINEAGE_BRIDGE_CLUSTER_CREDENTIALS='{"lkc-abc":{"api_key":".."}}'

@@ -1456,17 +1456,60 @@ async def test_run_lineage_push_no_credentials():
     assert "workspace URL" in result.errors[0]
 
 
-async def test_run_lineage_push_no_warehouse_id():
-    """run_lineage_push returns error when warehouse ID is missing."""
+async def test_run_lineage_push_auto_discovers_warehouse():
+    """run_lineage_push auto-discovers a warehouse when ID is not configured."""
     settings = _make_settings(
         databricks_workspace_url="https://myworkspace.databricks.com",
         databricks_token="dapi-test-token",
     )
     graph = LineageGraph()
 
-    result = await run_lineage_push(settings, graph)
+    from lineage_bridge.clients.databricks_discovery import WarehouseInfo
+    from lineage_bridge.models.graph import PushResult
+
+    mock_warehouses = [
+        WarehouseInfo(id="wh-auto", name="Auto WH", state="RUNNING"),
+    ]
+    mock_result = PushResult(tables_updated=1)
+
+    with (
+        patch(
+            "lineage_bridge.clients.databricks_discovery.list_warehouses",
+            new=AsyncMock(return_value=mock_warehouses),
+        ),
+        patch(
+            "lineage_bridge.extractors.orchestrator.DatabricksUCProvider"
+        ) as MockProvider,
+        patch("lineage_bridge.clients.databricks_sql.DatabricksSQLClient") as MockSQL,
+    ):
+        mock_provider = AsyncMock()
+        mock_provider.push_lineage = AsyncMock(return_value=mock_result)
+        MockProvider.return_value = mock_provider
+
+        result = await run_lineage_push(settings, graph)
+
+    assert result.tables_updated == 1
+    # Verify the SQL client was created with the auto-discovered warehouse ID
+    MockSQL.assert_called_once()
+    assert MockSQL.call_args[1]["warehouse_id"] == "wh-auto"
+
+
+async def test_run_lineage_push_no_warehouses_found():
+    """run_lineage_push returns error when no warehouses are discovered."""
+    settings = _make_settings(
+        databricks_workspace_url="https://myworkspace.databricks.com",
+        databricks_token="dapi-test-token",
+    )
+    graph = LineageGraph()
+
+    with patch(
+        "lineage_bridge.clients.databricks_discovery.list_warehouses",
+        new=AsyncMock(return_value=[]),
+    ):
+        result = await run_lineage_push(settings, graph)
+
     assert len(result.errors) == 1
-    assert "warehouse ID" in result.errors[0]
+    assert "No SQL warehouses" in result.errors[0]
 
 
 async def test_run_lineage_push_delegates_to_provider():

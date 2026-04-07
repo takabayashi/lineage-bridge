@@ -94,6 +94,27 @@ def _run_lineage_push(settings, graph, params: dict):
     return _run_async(_do_push())
 
 
+def _run_glue_push(settings, graph, params: dict):
+    """Push lineage metadata to AWS Glue tables. Returns PushResult."""
+    from lineage_bridge.extractors.orchestrator import run_glue_push
+
+    log = st.session_state.extraction_log
+
+    def on_progress(phase: str, detail: str = "") -> None:
+        log.append(f"**{phase}** {detail}")
+
+    async def _do_push():
+        return await run_glue_push(
+            settings,
+            graph,
+            set_parameters=params.get("push_parameters", True),
+            set_description=params.get("push_description", True),
+            on_progress=on_progress,
+        )
+
+    return _run_async(_do_push())
+
+
 def _run_extraction_with_params(settings, params: dict):
     """Run extraction with a params dict. Returns the graph or raises."""
     from lineage_bridge.extractors.orchestrator import run_extraction

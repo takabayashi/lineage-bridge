@@ -95,7 +95,8 @@ class TestTableflowExtract:
         nodes, edges = await tf_client.extract()
 
         uc_nodes = [n for n in nodes if n.node_type == NodeType.UC_TABLE]
-        assert len(uc_nodes) == 2  # one per tableflow topic on that cluster
+        # Only orders-tableflow has DELTA format; customers-tableflow is ICEBERG-only
+        assert len(uc_nodes) == 1
         assert all(n.system == SystemType.DATABRICKS for n in uc_nodes)
 
         # Check qualified name format: catalog.schema(cluster).table
@@ -106,7 +107,7 @@ class TestTableflowExtract:
         uc_edges = [
             e for e in edges if e.edge_type == EdgeType.MATERIALIZES and "uc_table" in e.dst_id
         ]
-        assert len(uc_edges) == 2
+        assert len(uc_edges) == 1
 
     @respx.mock
     async def test_aws_glue_integration(self, tf_client):

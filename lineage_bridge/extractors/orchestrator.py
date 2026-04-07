@@ -159,6 +159,10 @@ async def run_enrichment(
                         workspace_url=settings.databricks_workspace_url,
                         token=settings.databricks_token,
                     )
+                elif provider.catalog_type == "AWS_GLUE":
+                    from lineage_bridge.catalogs.aws_glue import GlueCatalogProvider
+
+                    provider = GlueCatalogProvider(region=settings.aws_region)
                 try:
                     await provider.enrich(graph)
                 except Exception:
@@ -205,7 +209,7 @@ async def run_lineage_push(
     set_properties: bool = True,
     set_comments: bool = True,
     create_bridge_table: bool = False,
-    bridge_table_name: str = "lineage_bridge.default.confluent_lineage",
+    bridge_table_name: str | None = None,
     on_progress: ProgressCallback = None,
 ) -> PushResult:
     """Push lineage metadata to Databricks UC tables in the graph.
@@ -277,6 +281,39 @@ async def run_lineage_push(
         "Push done",
         f"{result.tables_updated} tables updated, "
         f"{result.properties_set} properties, {result.comments_set} comments"
+        + (f", {len(result.errors)} error(s)" if result.errors else ""),
+    )
+    return result
+
+
+async def run_glue_push(
+    settings: Settings,
+    graph: LineageGraph,
+    *,
+    set_parameters: bool = True,
+    set_description: bool = True,
+    on_progress: ProgressCallback = None,
+) -> PushResult:
+    """Push lineage metadata to AWS Glue tables in the graph."""
+    from lineage_bridge.catalogs.aws_glue import GlueCatalogProvider
+
+    def _progress(phase: str, detail: str = "") -> None:
+        logger.info("%s %s", phase, detail)
+        if on_progress:
+            on_progress(phase, detail)
+
+    provider = GlueCatalogProvider(region=settings.aws_region)
+    result = await provider.push_lineage(
+        graph,
+        set_parameters=set_parameters,
+        set_description=set_description,
+        on_progress=on_progress,
+    )
+
+    _progress(
+        "Glue push done",
+        f"{result.tables_updated} tables updated, "
+        f"{result.properties_set} parameters, {result.comments_set} descriptions"
         + (f", {len(result.errors)} error(s)" if result.errors else ""),
     )
     return result

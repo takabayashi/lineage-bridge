@@ -17,7 +17,7 @@ NODE_COLORS: dict[NodeType, str] = {
     NodeType.FLINK_JOB: "#D32F2F",  # Flink red
     NodeType.TABLEFLOW_TABLE: "#1565C0",  # Confluent medium blue
     NodeType.UC_TABLE: "#F9A825",  # Databricks amber/yellow
-    NodeType.GLUE_TABLE: "#0D47A1",  # AWS dark blue
+    NodeType.GLUE_TABLE: "#E65100",  # AWS orange
     NodeType.SCHEMA: "#90CAF9",  # Confluent pale blue
     NodeType.EXTERNAL_DATASET: "#757575",  # neutral gray
     NodeType.CONSUMER_GROUP: "#2196F3",  # Confluent mid blue

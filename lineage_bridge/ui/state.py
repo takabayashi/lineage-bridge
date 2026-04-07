@@ -20,6 +20,7 @@ _DEFAULTS = {
     "environments": [],
     "env_cache": {},
     "extraction_log": [],
+    "_log_source": None,
     "last_extraction_params": None,
     "last_extraction_time": None,
     "_cache_loaded": False,

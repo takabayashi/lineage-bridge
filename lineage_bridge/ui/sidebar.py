@@ -21,12 +21,27 @@ from lineage_bridge.ui.discovery import (
 from lineage_bridge.ui.extraction import (
     _run_enrichment_on_graph,
     _run_extraction_with_params,
+    _run_glue_push,
     _run_lineage_push,
     _save_selections_to_cache,
 )
 from lineage_bridge.ui.sample_data import generate_sample_graph
 from lineage_bridge.ui.state import _GRAPH_VERSION
-from lineage_bridge.ui.styles import NODE_ICONS, NODE_TYPE_LABELS
+from lineage_bridge.ui.styles import (
+    EDGE_COLORS,
+    EDGE_DASHES,
+    EDGE_TYPE_LABELS,
+    NODE_ICONS,
+    NODE_TYPE_LABELS,
+)
+
+
+def _sidebar_section(label: str):
+    """Render a styled section header with divider."""
+    st.markdown(
+        f"<hr class='sidebar-divider'/><div class='sidebar-section'>{label}</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def _render_sidebar():
@@ -34,14 +49,28 @@ def _render_sidebar():
     with st.sidebar:
         st.markdown("### \U0001f310 LineageBridge")
 
-        # ── Section 1: Connection ────────────────────────────────────
+        # ══════════════════════════════════════════════════════════════
+        #  SETUP
+        # ══════════════════════════════════════════════════════════════
+        _sidebar_section("Setup")
+
+        # Connection status at sidebar root level (full width)
+        if st.session_state.connected:
+            envs = st.session_state.environments
+            st.markdown(
+                f"<div class='status-badge status-connected'>"
+                f"<span class='status-dot' style='background:#4CAF50'></span>"
+                f"Connected &mdash; {len(envs)} environment(s)"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
         with st.expander(
             "Connection",
             expanded=not st.session_state.connected,
         ):
             _render_sidebar_connection()
 
-        # ── Section 2: Infrastructure Scope ──────────────────────────
         if st.session_state.connected:
             with st.expander(
                 "Infrastructure",
@@ -49,32 +78,80 @@ def _render_sidebar():
             ):
                 _render_sidebar_scope()
 
-            # ── Section 3: Extractors ────────────────────────────────
+            # ══════════════════════════════════════════════════════════
+            #  EXTRACTION
+            # ══════════════════════════════════════════════════════════
+            _sidebar_section("Extraction")
+
             with st.expander("Extractors", expanded=False):
                 _render_sidebar_extractors()
 
-            # ── Section 3b: Auto-Provisioning ────────────────────────
-            with st.expander("Key Provisioning", expanded=False):
-                _render_sidebar_provisioning()
-
-            # ── Section 3c: Databricks ──────────────────────────────
-            with st.expander("Databricks", expanded=False):
-                _render_sidebar_databricks()
-
-            # ── Extract / Refresh buttons ────────────────────────────
             _render_sidebar_actions()
 
-        st.markdown("---")
+            # ══════════════════════════════════════════════════════════
+            #  PUBLISH
+            # ══════════════════════════════════════════════════════════
+            has_graph = st.session_state.graph is not None
+            if has_graph:
+                _sidebar_section("Publish")
 
-        # ── Section 4: Graph Filters (only when graph exists) ────────
+                with st.expander("Databricks", expanded=False):
+                    _render_sidebar_databricks()
+
+                with st.expander("AWS Glue", expanded=False):
+                    _render_sidebar_aws_glue()
+
+                _render_sidebar_publish()
+
+        # ══════════════════════════════════════════════════════════════
+        #  GRAPH
+        # ══════════════════════════════════════════════════════════════
         graph = st.session_state.graph
         if graph is not None:
-            with st.expander("Graph Filters", expanded=True):
-                _render_sidebar_graph_filters(graph)
+            _sidebar_section("Graph")
 
-        # ── Section 5: Load Data ─────────────────────────────────────
+            # Focus indicator at sidebar root level (full width)
+            focus_active = st.session_state.focus_node is not None
+            if focus_active:
+                focus_obj = graph.get_node(st.session_state.focus_node)
+                fname = focus_obj.display_name if focus_obj else st.session_state.focus_node
+                st.markdown(
+                    f"<div class='status-badge' style='background:rgba(33,150,243,0.1);"
+                    f"color:#1565C0;border:1px solid rgba(33,150,243,0.2);'>"
+                    f"<span class='status-dot' style='background:#1976D2'></span>"
+                    f"Focused: {fname}"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+                if st.button(
+                    "Clear focus",
+                    key="clear_focus_btn",
+                    use_container_width=True,
+                ):
+                    st.session_state.focus_node = None
+                    st.rerun()
+
+            with st.expander("Filters", expanded=True):
+                _render_sidebar_graph_filters(graph)
+            with st.expander("Legend", expanded=False):
+                _render_sidebar_legend(graph)
+
+        # ══════════════════════════════════════════════════════════════
+        #  DATA
+        # ══════════════════════════════════════════════════════════════
+        _sidebar_section("Data")
+
         with st.expander("Load Data", expanded=False):
             _render_sidebar_load_data()
+
+        # ══════════════════════════════════════════════════════════════
+        #  ADMIN
+        # ══════════════════════════════════════════════════════════════
+        if st.session_state.connected:
+            _sidebar_section("Admin")
+
+            with st.expander("Key Provisioning", expanded=False):
+                _render_sidebar_provisioning()
 
 
 def _render_sidebar_connection():
@@ -82,8 +159,7 @@ def _render_sidebar_connection():
     settings = _try_load_settings()
 
     if st.session_state.connected:
-        envs = st.session_state.environments
-        st.success(f"Connected — {len(envs)} environment(s)")
+        st.caption("Connection active. Expand to view credentials.")
         return
 
     if settings:
@@ -506,16 +582,41 @@ def _render_sidebar_databricks():
     st.checkbox("Create bridge table", value=False, key="push_bridge_table")
 
 
-def _render_sidebar_actions():
-    """Extract and Refresh buttons."""
+def _render_sidebar_aws_glue():
+    """AWS Glue metadata display and push settings."""
     settings = _try_load_settings()
     if not settings:
+        st.caption("Configure `.env` to enable.")
         return
+
+    st.caption(f"Region: `{settings.aws_region}`")
+    st.caption("Credentials: AWS default credential chain")
+
+    graph = st.session_state.get("graph")
+    if graph is not None:
+        from lineage_bridge.models.graph import NodeType
+
+        glue_tables = graph.filter_by_type(NodeType.GLUE_TABLE)
+        if glue_tables:
+            enriched = sum(1 for n in glue_tables if n.attributes.get("columns"))
+            st.info(f"{len(glue_tables)} Glue table(s), {enriched} enriched")
+        else:
+            st.caption("No Glue tables in current graph.")
+
+    # Push options
+    st.checkbox("Set table parameters", value=True, key="glue_push_parameters")
+    st.checkbox("Set table description", value=True, key="glue_push_description")
+
+
+def _resolve_extraction_context():
+    """Resolve selected environments, clusters, and credentials from UI state."""
+    settings = _try_load_settings()
+    if not settings:
+        return None
 
     cache = st.session_state.env_cache
     all_envs = st.session_state.environments
 
-    # Resolve selected clusters
     selected_env_labels = st.session_state.get("env_multi_select", [])
     discovered_envs = [env for env in all_envs if env.id in cache and cache[env.id].get("services")]
     env_labels = {f"{e.display_name} ({e.id})": e for e in discovered_envs}
@@ -533,7 +634,7 @@ def _render_sidebar_actions():
         all_cluster_options[lbl].id for lbl in selected_cluster_labels if lbl in all_cluster_options
     ]
 
-    # Collect per-cluster credentials from UI inputs
+    # Collect per-cluster credentials
     ui_cluster_creds: dict[str, dict[str, str]] = {}
     for lbl in selected_cluster_labels:
         if lbl not in all_cluster_options:
@@ -569,14 +670,33 @@ def _render_sidebar_actions():
         if k and s:
             ui_flink_creds[eid] = {"api_key": k, "api_secret": s}
 
+    return {
+        "settings": settings,
+        "selected_envs": selected_envs,
+        "selected_cluster_ids": selected_cluster_ids,
+        "ui_cluster_creds": ui_cluster_creds,
+        "ui_sr_creds": ui_sr_creds,
+        "ui_flink_creds": ui_flink_creds,
+    }
+
+
+def _render_sidebar_actions():
+    """Extract, Enrich, and Refresh buttons with full-width status widgets."""
+    ctx = _resolve_extraction_context()
+    if not ctx:
+        return
+
+    settings = ctx["settings"]
+    selected_envs = ctx["selected_envs"]
+    selected_cluster_ids = ctx["selected_cluster_ids"]
+
     has_graph = st.session_state.graph is not None
-    has_uc_tables = (
-        has_graph
-        and len(st.session_state.graph.filter_by_type(NodeType.UC_TABLE)) > 0
-    )
     extract_label = "Re-extract" if has_graph else "Extract"
 
-    c1, c2, c3, c4 = st.columns(4)
+    # Track which action was triggered
+    action = None
+
+    c1, c2, c3 = st.columns(3)
     with c1:
         if st.button(
             extract_label,
@@ -584,81 +704,18 @@ def _render_sidebar_actions():
             type="primary",
             disabled=not selected_cluster_ids,
             use_container_width=True,
-            help="Extract lineage (without catalog enrichment)",
+            help="Extract lineage from Confluent Cloud",
         ):
-            params = {
-                "env_ids": [e.id for e in selected_envs],
-                "cluster_ids": selected_cluster_ids,
-                "cluster_credentials": ui_cluster_creds,
-                "sr_credentials": ui_sr_creds,
-                "flink_credentials": ui_flink_creds,
-                "enable_connect": st.session_state.get("ext_connect", True),
-                "enable_ksqldb": st.session_state.get("ext_ksqldb", False),
-                "enable_flink": st.session_state.get("ext_flink", False),
-                "enable_schema_registry": st.session_state.get("ext_sr", False),
-                "enable_stream_catalog": st.session_state.get("ext_catalog", False),
-                "enable_tableflow": st.session_state.get("ext_tf", True),
-                "enable_metrics": st.session_state.get("ext_metrics", False),
-                "metrics_lookback_hours": st.session_state.get("metrics_lookback", 1),
-                "enable_enrichment": True,
-            }
-            st.session_state.extraction_log = []
-            with st.status("Extracting lineage...", expanded=True) as status:
-                try:
-                    result = _run_extraction_with_params(settings, params)
-                    st.session_state.graph = result
-                    st.session_state.graph_version = _GRAPH_VERSION
-                    st.session_state._clear_positions = True
-                    st.session_state.selected_node = None
-                    st.session_state.focus_node = None
-                    st.session_state.last_extraction_params = params
-                    st.session_state.last_extraction_time = datetime.now(UTC).strftime(
-                        "%H:%M:%S UTC"
-                    )
-                    _save_selections_to_cache(params)
-                    status.update(
-                        label=(f"Done — {result.node_count} nodes, {result.edge_count} edges"),
-                        state="complete",
-                    )
-                    st.rerun()
-                except Exception as exc:
-                    status.update(
-                        label=f"Failed: {exc}",
-                        state="error",
-                    )
-
+            action = "extract"
     with c2:
         if st.button(
             "Enrich",
             key="enrich_btn",
             disabled=not has_graph,
             use_container_width=True,
-            help="Enrich current graph with catalog metadata (UC, Glue) and metrics",
+            help="Enrich graph with catalog metadata and metrics",
         ):
-            params = st.session_state.last_extraction_params or {}
-            st.session_state.extraction_log = []
-            with st.status("Enriching graph...", expanded=True) as status:
-                try:
-                    result = _run_enrichment_on_graph(
-                        settings, st.session_state.graph, params
-                    )
-                    st.session_state.graph = result
-                    st.session_state.last_extraction_time = datetime.now(UTC).strftime(
-                        "%H:%M:%S UTC"
-                    )
-                    status.update(
-                        label=(
-                            f"Enriched — {result.node_count} nodes, {result.edge_count} edges"
-                        ),
-                        state="complete",
-                    )
-                    st.rerun()
-                except Exception as exc:
-                    status.update(
-                        label=f"Failed: {exc}",
-                        state="error",
-                    )
-
+            action = "enrich"
     with c3:
         has_params = st.session_state.last_extraction_params is not None
         if st.button(
@@ -666,88 +723,256 @@ def _render_sidebar_actions():
             key="refresh_extract_btn",
             disabled=not has_params,
             use_container_width=True,
-            help="Re-run last extraction + enrichment with same parameters",
+            help="Re-run last extraction with same parameters",
         ):
-            params = dict(st.session_state.last_extraction_params)
-            params["enable_enrichment"] = True  # Full pipeline on refresh
-            st.session_state.extraction_log = []
-            with st.status("Refreshing...", expanded=True) as status:
-                try:
-                    result = _run_extraction_with_params(settings, params)
-                    st.session_state.graph = result
-                    st.session_state.graph_version = _GRAPH_VERSION
-                    st.session_state._clear_positions = True
-                    st.session_state.selected_node = None
-                    st.session_state.focus_node = None
-                    st.session_state.last_extraction_time = datetime.now(UTC).strftime(
-                        "%H:%M:%S UTC"
-                    )
-                    status.update(
-                        label=(f"Refreshed — {result.node_count} nodes, {result.edge_count} edges"),
-                        state="complete",
-                    )
-                    st.rerun()
-                except Exception as exc:
-                    status.update(
-                        label=f"Failed: {exc}",
-                        state="error",
-                    )
+            action = "refresh"
 
-    with c4:
-        if st.button(
-            "Push",
-            key="push_btn",
-            disabled=not has_uc_tables,
-            use_container_width=True,
-            help="Push lineage metadata to Databricks UC tables",
-        ):
-            params = st.session_state.last_extraction_params or {}
-            st.session_state.extraction_log = []
-            with st.status("Pushing lineage...", expanded=True) as status:
-                try:
-                    push_result = _run_lineage_push(
-                        settings, st.session_state.graph, params
-                    )
-                    msg = (
-                        f"Pushed — {push_result.tables_updated} tables, "
-                        f"{push_result.properties_set} properties, "
-                        f"{push_result.comments_set} comments"
-                    )
-                    if push_result.errors:
-                        msg += f" ({len(push_result.errors)} error(s))"
-                    status.update(label=msg, state="complete")
-                    st.rerun()
-                except Exception as exc:
-                    status.update(
-                        label=f"Failed: {exc}",
-                        state="error",
-                    )
+    # Render status widget at full sidebar width (outside columns)
+    if action == "extract":
+        params = {
+            "env_ids": [e.id for e in selected_envs],
+            "cluster_ids": selected_cluster_ids,
+            "cluster_credentials": ctx["ui_cluster_creds"],
+            "sr_credentials": ctx["ui_sr_creds"],
+            "flink_credentials": ctx["ui_flink_creds"],
+            "enable_connect": st.session_state.get("ext_connect", True),
+            "enable_ksqldb": st.session_state.get("ext_ksqldb", False),
+            "enable_flink": st.session_state.get("ext_flink", False),
+            "enable_schema_registry": st.session_state.get("ext_sr", False),
+            "enable_stream_catalog": st.session_state.get("ext_catalog", False),
+            "enable_tableflow": st.session_state.get("ext_tf", True),
+            "enable_metrics": st.session_state.get("ext_metrics", False),
+            "metrics_lookback_hours": st.session_state.get("metrics_lookback", 1),
+            "enable_enrichment": True,
+        }
+        st.session_state.extraction_log = []
+        st.session_state._log_source = "extraction"
+        with st.status("Extracting lineage...", expanded=True) as status:
+            try:
+                result = _run_extraction_with_params(settings, params)
+                st.session_state.graph = result
+                st.session_state.graph_version = _GRAPH_VERSION
+                st.session_state._clear_positions = True
+                st.session_state.selected_node = None
+                st.session_state.focus_node = None
+                st.session_state.last_extraction_params = params
+                st.session_state.last_extraction_time = datetime.now(UTC).strftime("%H:%M:%S UTC")
+                _save_selections_to_cache(params)
+                status.update(
+                    label=f"Done — {result.node_count} nodes, {result.edge_count} edges",
+                    state="complete",
+                )
+                st.rerun()
+            except Exception as exc:
+                status.update(label=f"Failed: {exc}", state="error")
 
-    # Show extraction log
-    if st.session_state.extraction_log:
-        with st.expander("Extraction log", expanded=False):
-            for line in st.session_state.extraction_log:
-                st.markdown(line)
+    elif action == "enrich":
+        params = st.session_state.last_extraction_params or {}
+        st.session_state.extraction_log = []
+        st.session_state._log_source = "extraction"
+        with st.status("Enriching graph...", expanded=True) as status:
+            try:
+                result = _run_enrichment_on_graph(settings, st.session_state.graph, params)
+                st.session_state.graph = result
+                st.session_state.last_extraction_time = datetime.now(UTC).strftime("%H:%M:%S UTC")
+                status.update(
+                    label=f"Enriched — {result.node_count} nodes, {result.edge_count} edges",
+                    state="complete",
+                )
+                st.rerun()
+            except Exception as exc:
+                status.update(label=f"Failed: {exc}", state="error")
+
+    elif action == "refresh":
+        params = dict(st.session_state.last_extraction_params)
+        params["enable_enrichment"] = True
+        st.session_state.extraction_log = []
+        st.session_state._log_source = "extraction"
+        with st.status("Refreshing...", expanded=True) as status:
+            try:
+                result = _run_extraction_with_params(settings, params)
+                st.session_state.graph = result
+                st.session_state.graph_version = _GRAPH_VERSION
+                st.session_state._clear_positions = True
+                st.session_state.selected_node = None
+                st.session_state.focus_node = None
+                st.session_state.last_extraction_time = datetime.now(UTC).strftime("%H:%M:%S UTC")
+                status.update(
+                    label=f"Refreshed — {result.node_count} nodes, {result.edge_count} edges",
+                    state="complete",
+                )
+                st.rerun()
+            except Exception as exc:
+                status.update(label=f"Failed: {exc}", state="error")
+
+    # Show extraction log (only if this section produced it)
+    if st.session_state.extraction_log and st.session_state.get("_log_source") == "extraction":
+        with st.expander("Extraction Log", expanded=False):
+            _render_extraction_log()
+
+
+def _render_sidebar_publish():
+    """Push lineage metadata to external catalogs."""
+    settings = _try_load_settings()
+    if not settings:
+        return
+
+    graph = st.session_state.graph
+    if graph is None:
+        return
+
+    has_uc_tables = len(graph.filter_by_type(NodeType.UC_TABLE)) > 0
+    has_glue_tables = len(graph.filter_by_type(NodeType.GLUE_TABLE)) > 0
+
+    if not has_uc_tables and not has_glue_tables:
+        st.caption("No catalog tables to publish to. Run extraction with Tableflow enabled.")
+        return
+
+    action = None
+    cols = st.columns(2) if has_uc_tables and has_glue_tables else [st.columns(1)[0]]
+    col_idx = 0
+
+    if has_uc_tables:
+        with cols[col_idx]:
+            if st.button(
+                "\u2934 Push to UC",
+                key="push_btn",
+                type="secondary",
+                use_container_width=True,
+                help="Push lineage metadata to Databricks Unity Catalog",
+            ):
+                action = "push_uc"
+        col_idx += 1
+
+    if has_glue_tables:
+        with cols[min(col_idx, len(cols) - 1)]:
+            if st.button(
+                "\u2934 Push to Glue",
+                key="glue_push_btn",
+                type="secondary",
+                use_container_width=True,
+                help="Push lineage metadata to AWS Glue",
+            ):
+                action = "push_glue"
+
+    # Full-width status widgets
+    if action == "push_uc":
+        params = dict(st.session_state.last_extraction_params or {})
+        params["push_properties"] = st.session_state.get("push_properties", True)
+        params["push_comments"] = st.session_state.get("push_comments", True)
+        params["push_bridge_table"] = st.session_state.get("push_bridge_table", False)
+        wh_id = st.session_state.get("databricks_selected_warehouse_id")
+        if wh_id:
+            settings = settings.model_copy(update={"databricks_warehouse_id": wh_id})
+        st.session_state.extraction_log = []
+        st.session_state._log_source = "publish"
+        with st.status("Pushing lineage to UC...", expanded=True) as status:
+            try:
+                push_result = _run_lineage_push(settings, st.session_state.graph, params)
+                msg = (
+                    f"Pushed — {push_result.tables_updated} tables, "
+                    f"{push_result.properties_set} properties, "
+                    f"{push_result.comments_set} comments"
+                )
+                if push_result.errors:
+                    msg += f" ({len(push_result.errors)} error(s))"
+                status.update(label=msg, state="complete")
+                st.rerun()
+            except Exception as exc:
+                status.update(label=f"Failed: {exc}", state="error")
+
+    elif action == "push_glue":
+        params = {
+            "push_parameters": st.session_state.get("glue_push_parameters", True),
+            "push_description": st.session_state.get("glue_push_description", True),
+        }
+        st.session_state.extraction_log = []
+        st.session_state._log_source = "publish"
+        with st.status("Pushing lineage to Glue...", expanded=True) as status:
+            try:
+                push_result = _run_glue_push(settings, st.session_state.graph, params)
+                msg = (
+                    f"Pushed — {push_result.tables_updated} Glue tables, "
+                    f"{push_result.properties_set} parameters, "
+                    f"{push_result.comments_set} descriptions"
+                )
+                if push_result.errors:
+                    msg += f" ({len(push_result.errors)} error(s))"
+                status.update(label=msg, state="complete")
+                st.rerun()
+            except Exception as exc:
+                status.update(label=f"Failed: {exc}", state="error")
+
+    # Show push log (only if this section produced it)
+    if st.session_state.extraction_log and st.session_state.get("_log_source") == "publish":
+        with st.expander("Push Log", expanded=False):
+            _render_extraction_log()
+
+
+def _classify_log_entry(line: str) -> tuple[str, str, str]:
+    """Classify a log line into (css_class, icon, label).
+
+    Returns (css_class, icon_char, cleaned_text).
+    """
+    text = line
+    # Extract bold label if present: **Label** rest
+    label = ""
+    if text.startswith("**"):
+        end = text.find("**", 2)
+        if end > 2:
+            label = text[2:end]
+            text = text[end + 2 :].strip()
+
+    label_lower = label.lower()
+    if "warning" in label_lower:
+        return "log-warning", "\u26a0", text
+    if "skip" in label_lower:
+        return "log-skip", "\u23ed", text
+    if "phase" in label_lower:
+        return "log-phase", "\u25b6", text
+    if "discover" in label_lower:
+        return "log-discovery", "\U0001f50d", text
+    if "provision" in label_lower:
+        return "log-provision", "\U0001f511", text
+    # Default
+    return "log-phase", "\u2022", text
+
+
+def _render_extraction_log():
+    """Render extraction log with severity-based styling."""
+    lines = st.session_state.extraction_log
+    html_parts = []
+    for line in lines:
+        css_class, icon, text = _classify_log_entry(line)
+        # Re-extract label for display
+        label = ""
+        raw = line
+        if raw.startswith("**"):
+            end = raw.find("**", 2)
+            if end > 2:
+                label = raw[2:end]
+        label_html = f"<span class='log-label'>{label}</span>" if label else ""
+        html_parts.append(
+            f"<div class='log-entry {css_class}'>"
+            f"<span class='log-icon'>{icon}</span>"
+            f"<span class='log-text'>{label_html}{text}</span>"
+            f"</div>"
+        )
+    st.markdown("".join(html_parts), unsafe_allow_html=True)
 
 
 def _render_sidebar_graph_filters(graph: LineageGraph):
-    """Type, env, cluster, search, hop filters."""
-    # Node-type filters
-    st.markdown("**Filter by type**")
-    for ntype in NodeType:
-        label = NODE_TYPE_LABELS.get(ntype, ntype.value)
-        count = len(graph.filter_by_type(ntype))
-        if count > 0:
-            st.checkbox(
-                f"{label} ({count})",
-                value=True,
-                key=f"filter_{ntype.value}",
-            )
+    """Graph filters organized into logical groups."""
+    # ── Search ───────────────────────────────────────────────────
+    st.text_input(
+        "Search nodes",
+        placeholder="Type to filter by name...",
+        key="search_input",
+        label_visibility="collapsed",
+    )
 
-    st.markdown("---")
-
-    # Environment filter
-    env_map: dict[str, str] = {}  # display_label -> env_id
+    # ── Scope: Environment & Cluster ─────────────────────────────
+    env_map: dict[str, str] = {}
     for n in graph.nodes:
         if n.environment_id and n.environment_id not in env_map.values():
             label = (
@@ -756,40 +981,58 @@ def _render_sidebar_graph_filters(graph: LineageGraph):
                 else n.environment_id
             )
             env_map[label] = n.environment_id
-    if len(env_map) > 1:
-        env_options = ["All", *sorted(env_map.keys())]
-        env_sel = st.selectbox(
-            "Environment",
-            env_options,
-            key="graph_env_filter_display",
-        )
-        st.session_state["graph_env_filter"] = env_map.get(env_sel) if env_sel != "All" else "All"
 
-    # Cluster filter
-    cluster_map: dict[str, str] = {}  # display_label -> cluster_id
+    cluster_map: dict[str, str] = {}
     for n in graph.nodes:
         if n.cluster_id and n.cluster_id not in cluster_map.values():
             label = f"{n.cluster_name} ({n.cluster_id})" if n.cluster_name else n.cluster_id
             cluster_map[label] = n.cluster_id
-    if len(cluster_map) > 1:
-        cluster_options = ["All", *sorted(cluster_map.keys())]
-        cluster_sel = st.selectbox(
-            "Cluster",
-            cluster_options,
-            key="graph_cluster_filter_display",
-        )
-        st.session_state["graph_cluster_filter"] = (
-            cluster_map.get(cluster_sel) if cluster_sel != "All" else "All"
-        )
 
-    # Search
-    st.text_input(
-        "Search nodes",
-        placeholder="Type to filter by name...",
-        key="search_input",
-    )
+    if len(env_map) > 1 or len(cluster_map) > 1:
+        if len(env_map) > 1:
+            env_options = ["All", *sorted(env_map.keys())]
+            env_sel = st.selectbox(
+                "Environment",
+                env_options,
+                key="graph_env_filter_display",
+            )
+            st.session_state["graph_env_filter"] = (
+                env_map.get(env_sel) if env_sel != "All" else "All"
+            )
+        if len(cluster_map) > 1:
+            cluster_options = ["All", *sorted(cluster_map.keys())]
+            cluster_sel = st.selectbox(
+                "Cluster",
+                cluster_options,
+                key="graph_cluster_filter_display",
+            )
+            st.session_state["graph_cluster_filter"] = (
+                cluster_map.get(cluster_sel) if cluster_sel != "All" else "All"
+            )
 
-    # Hide disconnected
+    # ── Node type filters (compact two-column) ───────────────────
+    st.caption("Node Types")
+    type_items = [
+        (ntype, NODE_TYPE_LABELS.get(ntype, ntype.value), len(graph.filter_by_type(ntype)))
+        for ntype in NodeType
+    ]
+    visible_types = [(nt, lbl, cnt) for nt, lbl, cnt in type_items if cnt > 0]
+
+    # Render in two-column pairs
+    for i in range(0, len(visible_types), 2):
+        cols = st.columns(2)
+        for j, col in enumerate(cols):
+            idx = i + j
+            if idx < len(visible_types):
+                nt, lbl, cnt = visible_types[idx]
+                with col:
+                    st.checkbox(
+                        f"{lbl} ({cnt})",
+                        value=True,
+                        key=f"filter_{nt.value}",
+                    )
+
+    # ── Display options ──────────────────────────────────────────
     st.checkbox(
         "Hide disconnected nodes",
         value=True,
@@ -797,40 +1040,59 @@ def _render_sidebar_graph_filters(graph: LineageGraph):
         help="Hide nodes that have no edges.",
     )
 
-    st.markdown("---")
-
-    # Focus / hop controls
+    # ── Focus / hop controls ─────────────────────────────────────
     focus_active = st.session_state.focus_node is not None
     has_search = bool(st.session_state.get("search_input", "").strip())
-    st.slider(
-        "Neighborhood hops",
-        min_value=1,
-        max_value=100,
-        value=5,
-        disabled=not (focus_active or has_search),
-        key="hop_slider",
-        help="Controls how many hops from the focused/searched node to show.",
-    )
-    if focus_active:
-        focus_obj = graph.get_node(st.session_state.focus_node)
-        fname = focus_obj.display_name if focus_obj else st.session_state.focus_node
-        st.info(f"Focused on: **{fname}**")
-        if st.button("Clear focus", key="clear_focus_btn"):
-            st.session_state.focus_node = None
-            st.rerun()
+    if focus_active or has_search:
+        st.slider(
+            "Neighborhood hops",
+            min_value=1,
+            max_value=100,
+            value=5,
+            key="hop_slider",
+            help="How many hops from the focused/searched node to show.",
+        )
 
-    st.markdown("---")
 
-    # Legend
-    st.markdown("**Legend**")
+def _render_sidebar_legend(graph: LineageGraph):
+    """Compact legend with node types and edge types."""
+    # ── Node types (two-column grid) ─────────────────────────────
+    st.caption("Nodes")
+    node_html_parts = []
     for ntype in NodeType:
+        count = len(graph.filter_by_type(ntype))
+        if count == 0:
+            continue
         icon_uri = NODE_ICONS.get(ntype, "")
         label = NODE_TYPE_LABELS.get(ntype, ntype.value)
+        node_html_parts.append(
+            f"<div class='legend-entry'>"
+            f"<img src='{icon_uri}' width='16' height='16' "
+            f"style='vertical-align:middle;'/>"
+            f"{label}"
+            f"</div>"
+        )
+    if node_html_parts:
         st.markdown(
-            f"<span class='legend-item'>"
-            f"<img src='{icon_uri}' width='18' height='18' "
-            f"style='vertical-align:middle; margin-right:4px;'/>"
-            f"{label}</span>",
+            f"<div class='legend-grid'>{''.join(node_html_parts)}</div>",
+            unsafe_allow_html=True,
+        )
+
+    # ── Edge types ───────────────────────────────────────────────
+    st.caption("Edges")
+    edge_html_parts = []
+    for etype in EDGE_TYPE_LABELS:
+        color = EDGE_COLORS.get(etype, "#757575")
+        label = EDGE_TYPE_LABELS[etype]
+        dashes = EDGE_DASHES.get(etype, False)
+        if dashes:
+            swatch = f"<span class='edge-swatch-dashed' style='border-color:{color}'></span>"
+        else:
+            swatch = f"<span class='edge-swatch' style='background:{color}'></span>"
+        edge_html_parts.append(f"<div class='edge-legend-entry'>{swatch}{label}</div>")
+    if edge_html_parts:
+        st.markdown(
+            f"<div class='legend-grid'>{''.join(edge_html_parts)}</div>",
             unsafe_allow_html=True,
         )
 

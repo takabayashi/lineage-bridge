@@ -116,6 +116,17 @@ Living document. Every significant design or implementation decision made by the
 - **Tradeoff:** SQL via Statement Execution API uses the same SQL Warehouse already configured for Tableflow, requires only `CAN_USE` warehouse + table permissions, and matches how users interact with Databricks. The approach is immediately visible in the Databricks UI with zero additional setup. Limitation: metadata is stored as properties/comments, not in the native lineage graph — users see provenance info on table pages but not in the lineage visualization. Revisit if Databricks adds a write API for external lineage.
 - **Files:** `clients/databricks_sql.py`, `catalogs/databricks_uc.py`, `extractors/orchestrator.py`
 
+## ADR-013: boto3 for AWS Glue API
+
+- **Status:** Accepted
+- **Date:** 2026-04-06
+- **Decided by:** Blueprint, Weaver
+- **Context:** AWS Glue enrichment needs to call `glue:GetTable` to fetch table metadata. Two options: (1) boto3, the canonical AWS SDK, or (2) httpx with manual AWS SigV4 signing.
+- **Decision:** Use boto3 with `asyncio.to_thread()` to bridge its synchronous API into our async pipeline. Import lazily inside `enrich()` to avoid import errors when boto3 is not installed.
+- **Alternatives:** httpx + botocore SigV4 signer; httpx + `aws-requests-auth`; manual SigV4 with httpx.
+- **Tradeoff:** boto3 handles credentials (env, `~/.aws/credentials`, IAM roles, IRSA) automatically with zero configuration. SigV4 signing is correct by default. The sync overhead is negligible for metadata calls (one per table). `asyncio.to_thread()` keeps the event loop unblocked. Cost: ~70MB dependency. Acceptable for an optional enrichment feature. Revisit if we add more AWS service calls (could justify aioboto3).
+- **Files:** `catalogs/aws_glue.py`, `pyproject.toml`
+
 ## ADR-010: Fixed per-extractor timeout (120s)
 
 - **Status:** Accepted

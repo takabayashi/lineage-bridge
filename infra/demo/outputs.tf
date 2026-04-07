@@ -57,6 +57,27 @@ output "flink_api_secret" {
   sensitive   = true
 }
 
+output "ksqldb_cluster_id" {
+  description = "ksqlDB cluster ID"
+  value       = confluent_ksql_cluster.demo.id
+}
+
+output "ksqldb_endpoint" {
+  description = "ksqlDB REST endpoint"
+  value       = confluent_ksql_cluster.demo.rest_endpoint
+}
+
+output "ksqldb_api_key" {
+  description = "ksqlDB API key ID"
+  value       = confluent_api_key.ksqldb.id
+}
+
+output "ksqldb_api_secret" {
+  description = "ksqlDB API key secret"
+  value       = confluent_api_key.ksqldb.secret
+  sensitive   = true
+}
+
 output "demo_env_file" {
   description = "Suggested .env contents for LineageBridge"
   value       = <<-EOT
@@ -71,8 +92,11 @@ output "demo_env_file" {
     LINEAGE_BRIDGE_TABLEFLOW_API_SECRET=${var.confluent_tableflow_api_secret}
     LINEAGE_BRIDGE_FLINK_API_KEY=${confluent_api_key.flink.id}
     LINEAGE_BRIDGE_FLINK_API_SECRET=${confluent_api_key.flink.secret}
+    LINEAGE_BRIDGE_KSQLDB_API_KEY=${confluent_api_key.ksqldb.id}
+    LINEAGE_BRIDGE_KSQLDB_API_SECRET=${confluent_api_key.ksqldb.secret}
     LINEAGE_BRIDGE_DATABRICKS_WORKSPACE_URL=${var.databricks_workspace_url}
     LINEAGE_BRIDGE_DATABRICKS_TOKEN=${var.databricks_token}
+    LINEAGE_BRIDGE_AWS_REGION=${var.aws_region}
   EOT
   sensitive   = true
 }

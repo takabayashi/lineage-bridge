@@ -28,6 +28,18 @@ _MAX_RETRIES = 3
 _BACKOFF_BASE = 1.0
 
 
+def _quote_sql_name(qualified_name: str) -> str:
+    """Quote a catalog.schema.table name for SQL, backticking parts with special chars."""
+    parts = qualified_name.split(".")
+    quoted = []
+    for part in parts:
+        if not part.replace("_", "").isalnum() or part[0:1].isdigit():
+            quoted.append(f"`{part}`")
+        else:
+            quoted.append(part)
+    return ".".join(quoted)
+
+
 class DatabricksUCProvider:
     """CatalogProvider implementation for Databricks Unity Catalog."""
 
@@ -251,7 +263,7 @@ class DatabricksUCProvider:
         set_properties: bool = True,
         set_comments: bool = True,
         create_bridge_table: bool = False,
-        bridge_table_name: str = "lineage_bridge.default.confluent_lineage",
+        bridge_table_name: str | None = None,
         on_progress: Callable[[str, str], None] | None = None,
     ) -> PushResult:
         """Push Confluent lineage metadata to UC tables via SQL.
@@ -275,8 +287,14 @@ class DatabricksUCProvider:
         if on_progress:
             on_progress("Push", f"Found {len(uc_nodes)} UC tables to update")
 
-        # Create bridge table if requested
+        # Derive bridge table name from the first UC node's catalog
         if create_bridge_table:
+            if not bridge_table_name:
+                catalog_name = uc_nodes[0].attributes.get("catalog_name", "")
+                if catalog_name:
+                    bridge_table_name = f"{catalog_name}.default.confluent_lineage"
+                else:
+                    bridge_table_name = "default.confluent_lineage"
             await self._create_bridge_table(sql_client, bridge_table_name, result)
 
         now = datetime.now(UTC).isoformat()
@@ -343,7 +361,8 @@ class DatabricksUCProvider:
         if not prop_pairs:
             return
 
-        sql = f"ALTER TABLE {node.qualified_name} SET TBLPROPERTIES ({prop_pairs})"
+        table_ref = _quote_sql_name(node.qualified_name)
+        sql = f"ALTER TABLE {table_ref} SET TBLPROPERTIES ({prop_pairs})"
         try:
             resp = await sql_client.execute(sql)
             if resp.get("status", {}).get("state") == "SUCCEEDED":
@@ -384,7 +403,8 @@ class DatabricksUCProvider:
         lines.append("Managed by LineageBridge")
 
         comment_text = "\\n".join(lines).replace("'", "\\'")
-        sql = f"COMMENT ON TABLE {node.qualified_name} IS '{comment_text}'"
+        table_ref = _quote_sql_name(node.qualified_name)
+        sql = f"COMMENT ON TABLE {table_ref} IS '{comment_text}'"
 
         try:
             resp = await sql_client.execute(sql)
@@ -432,6 +452,7 @@ class DatabricksUCProvider:
         """Insert lineage rows into the bridge table."""
         values = []
         for up_node, edge, hop in upstream:
+            # Use raw qualified_name in VALUES (string literal, no quoting needed)
             values.append(
                 f"('{node.qualified_name}', '{up_node.node_type.value}', "
                 f"'{up_node.qualified_name}', '{up_node.system.value}', "
@@ -442,7 +463,8 @@ class DatabricksUCProvider:
             return
 
         values_str = ",\n".join(values)
-        sql = f"INSERT INTO {bridge_table_name} VALUES {values_str}"
+        bridge_ref = _quote_sql_name(bridge_table_name)
+        sql = f"INSERT INTO {bridge_ref} VALUES {values_str}"
         try:
             resp = await sql_client.execute(sql)
             if resp.get("status", {}).get("state") == "SUCCEEDED":

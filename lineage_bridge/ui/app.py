@@ -95,16 +95,67 @@ st.markdown(
         max-height: 100vh;
     }
 
-    /* Empty state */
+    /* Empty state — hero */
     .hero-card {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0d2137 100%);
         border-radius: 12px;
         padding: 2.5rem 3rem;
         color: #e0e0e0;
         margin-bottom: 1.5rem;
     }
     .hero-card h1 { color: #ffffff; font-size: 2.2rem; margin-bottom: 0.3rem; }
+    .hero-card .hero-subtitle {
+        color: #64B5F6; font-size: 1rem; font-weight: 500;
+        margin-bottom: 0.8rem;
+    }
     .hero-card p { color: #b0bec5; font-size: 1.05rem; line-height: 1.6; }
+
+    /* Feature cards */
+    .feature-grid {
+        display: grid; grid-template-columns: 1fr 1fr;
+        gap: 12px; margin: 1rem 0;
+    }
+    .feature-card {
+        background: rgba(128,128,128,0.06);
+        border: 1px solid rgba(128,128,128,0.12);
+        border-radius: 10px; padding: 16px 18px;
+    }
+    .feature-card .fc-icon {
+        font-size: 1.5rem; margin-bottom: 6px;
+    }
+    .feature-card .fc-title {
+        font-size: 0.95rem; font-weight: 600;
+        margin-bottom: 4px;
+    }
+    .feature-card .fc-desc {
+        font-size: 0.82rem; color: #999; line-height: 1.5;
+    }
+
+    /* Architecture flow */
+    .arch-flow {
+        display: flex; align-items: center; justify-content: center;
+        gap: 6px; flex-wrap: wrap;
+        padding: 16px; margin: 1rem 0;
+        background: rgba(128,128,128,0.04);
+        border: 1px solid rgba(128,128,128,0.1);
+        border-radius: 10px;
+    }
+    .arch-node {
+        padding: 6px 14px; border-radius: 6px;
+        font-size: 0.82rem; font-weight: 500;
+        white-space: nowrap;
+    }
+    .arch-arrow { color: #888; font-size: 1.1rem; }
+
+    /* POC badge */
+    .poc-badge {
+        display: inline-block;
+        background: rgba(255,152,0,0.15); color: #E65100;
+        font-size: 0.7rem; font-weight: 700;
+        text-transform: uppercase; letter-spacing: 1px;
+        padding: 2px 8px; border-radius: 4px;
+        margin-left: 8px; vertical-align: middle;
+    }
 
     /* Step tracker */
     .step-tracker {
@@ -125,6 +176,89 @@ st.markdown(
         font-size: 0.8rem; color: #999;
         background: rgba(128,128,128,0.1); padding: 2px 8px; border-radius: 4px;
     }
+
+    /* Extraction log entries */
+    .log-entry {
+        display: flex; align-items: flex-start; gap: 6px;
+        padding: 4px 8px; margin: 2px 0; border-radius: 4px;
+        font-size: 0.8rem; line-height: 1.4;
+    }
+    .log-phase { background: rgba(33,150,243,0.08); color: #1976D2; }
+    .log-discovery { background: rgba(76,175,80,0.08); color: #388E3C; }
+    .log-warning { background: rgba(255,152,0,0.1); color: #E65100; }
+    .log-skip { background: rgba(158,158,158,0.1); color: #757575; }
+    .log-provision { background: rgba(156,39,176,0.08); color: #7B1FA2; }
+    .log-icon { flex-shrink: 0; font-size: 0.85rem; }
+    .log-text { flex: 1; }
+    .log-label { font-weight: 600; margin-right: 4px; }
+
+    /* Compact legend grid */
+    .legend-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px 8px;
+    }
+    .legend-entry {
+        display: flex; align-items: center; gap: 5px;
+        font-size: 0.8rem; white-space: nowrap;
+        padding: 2px 0;
+    }
+    .edge-legend-entry {
+        display: flex; align-items: center; gap: 6px;
+        font-size: 0.8rem; padding: 2px 0;
+    }
+    .edge-swatch {
+        width: 24px; height: 3px; border-radius: 2px; flex-shrink: 0;
+    }
+    .edge-swatch-dashed {
+        width: 24px; height: 0; flex-shrink: 0;
+        border-top: 3px dashed;
+    }
+
+    /* Status badge — full-width, fixed height, centered */
+    .status-badge {
+        display: flex; align-items: center; justify-content: center;
+        gap: 6px; width: 100%; box-sizing: border-box;
+        padding: 6px 12px; border-radius: 6px;
+        font-size: 0.82rem; font-weight: 500;
+        line-height: 1.3;
+    }
+    .status-connected {
+        background: rgba(76,175,80,0.12); color: #2E7D32;
+        border: 1px solid rgba(76,175,80,0.2);
+    }
+    .status-disconnected {
+        background: rgba(158,158,158,0.12); color: #757575;
+        border: 1px solid rgba(158,158,158,0.15);
+    }
+    .status-dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        flex-shrink: 0;
+    }
+
+    /* Sidebar section headers */
+    .sidebar-section {
+        font-size: 0.7rem; font-weight: 700;
+        text-transform: uppercase; letter-spacing: 1.2px;
+        color: #888; padding: 8px 0 4px 2px;
+        margin-top: 4px;
+    }
+    .sidebar-divider {
+        border: none; border-top: 1px solid rgba(128,128,128,0.15);
+        margin: 6px 0 2px 0;
+    }
+
+    /* Footer */
+    .app-footer {
+        text-align: center; padding: 1.5rem 1rem 1rem;
+        border-top: 1px solid rgba(128,128,128,0.15);
+        margin-top: 2rem; font-size: 0.75rem;
+        color: #999; line-height: 1.6;
+    }
+    .app-footer a {
+        color: #1976D2; text-decoration: none;
+    }
+    .app-footer a:hover { text-decoration: underline; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -146,23 +280,108 @@ def _render_main_area():
 
 
 def _render_empty_state():
-    """Welcome/empty state with step tracker."""
+    """Welcome/empty state with project overview."""
+    # ── Hero ──────────────────────────────────────────────────────
     st.markdown(
         """
         <div class="hero-card">
-            <h1>\U0001f310 LineageBridge</h1>
+            <h1>\U0001f310 LineageBridge <span class="poc-badge">POC</span></h1>
+            <div class="hero-subtitle">
+                Stream Lineage Discovery &amp; Visualization
+            </div>
             <p>
-                Discover and visualize stream lineage across
-                Confluent Cloud &mdash; Kafka topics, connectors,
-                Flink jobs, ksqlDB queries, Tableflow, and Unity
-                Catalog in one interactive directed graph.
+                LineageBridge automatically discovers how data flows through
+                your Confluent Cloud infrastructure and renders it as an
+                interactive directed graph &mdash; giving you end-to-end
+                visibility from Kafka topics through transformation layers
+                all the way to external data catalogs.
             </p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    # Step tracker
+    # ── What it does ──────────────────────────────────────────────
+    st.markdown("#### What does LineageBridge do?")
+    st.markdown(
+        """
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="fc-icon">\U0001f50d</div>
+                <div class="fc-title">Auto-Discovery</div>
+                <div class="fc-desc">
+                    Connects to Confluent Cloud APIs to automatically inventory
+                    topics, connectors, Flink jobs, ksqlDB queries, and Tableflow
+                    tables &mdash; no manual mapping required.
+                </div>
+            </div>
+            <div class="feature-card">
+                <div class="fc-icon">\U0001f4ca</div>
+                <div class="fc-title">Lineage Visualization</div>
+                <div class="fc-desc">
+                    Renders a DAG-based interactive graph showing how data
+                    flows between resources, with filtering by type,
+                    environment, cluster, and search.
+                </div>
+            </div>
+            <div class="feature-card">
+                <div class="fc-icon">\U0001f517</div>
+                <div class="fc-title">Catalog Integration</div>
+                <div class="fc-desc">
+                    Extends lineage beyond Confluent Cloud into Databricks
+                    Unity Catalog and AWS Glue via Tableflow, bridging
+                    streaming and lakehouse worlds.
+                </div>
+            </div>
+            <div class="feature-card">
+                <div class="fc-icon">\U0001f4dd</div>
+                <div class="fc-title">Metadata Enrichment</div>
+                <div class="fc-desc">
+                    Enriches nodes with schemas, tags, business metadata,
+                    live throughput metrics, and deep links back to the
+                    Confluent Cloud and Databricks consoles.
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # ── Architecture flow ─────────────────────────────────────────
+    st.markdown("#### How it works")
+    st.markdown(
+        """
+        <div class="arch-flow">
+            <span class="arch-node" style="background:rgba(25,118,210,0.12);
+                color:#1976D2;">Confluent Cloud APIs</span>
+            <span class="arch-arrow">\u2192</span>
+            <span class="arch-node" style="background:rgba(25,118,210,0.08);
+                color:#1565C0;">Async Clients</span>
+            <span class="arch-arrow">\u2192</span>
+            <span class="arch-node" style="background:rgba(123,31,162,0.1);
+                color:#7B1FA2;">4-Phase Orchestrator</span>
+            <span class="arch-arrow">\u2192</span>
+            <span class="arch-node" style="background:rgba(56,142,60,0.1);
+                color:#388E3C;">Lineage Graph</span>
+            <span class="arch-arrow">\u2192</span>
+            <span class="arch-node" style="background:rgba(249,168,37,0.12);
+                color:#F57F17;">Interactive UI</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        "The extraction pipeline runs in **four phases**: "
+        "topic & consumer group inventory, transformation edge discovery "
+        "(connectors, ksqlDB, Flink), schema & metadata enrichment, "
+        "and Tableflow-to-catalog mapping. All phases run asynchronously "
+        "for maximum throughput."
+    )
+
+    # ── Step tracker ──────────────────────────────────────────────
+    st.markdown("#### Get started")
+
     connected = st.session_state.connected
     has_envs = bool(st.session_state.get("env_multi_select"))
 
@@ -184,7 +403,7 @@ def _render_empty_state():
             </div>
             <span class="step-arrow">\u2192</span>
             <div class="step-item {step3_cls}">
-                <strong>3</strong> Extract
+                <strong>3</strong> Extract &amp; Explore
             </div>
         </div>
         """,
@@ -192,8 +411,9 @@ def _render_empty_state():
     )
 
     st.markdown(
-        "Use the **sidebar** to connect, select environments, "
-        "and extract lineage. Or load a demo graph to explore."
+        "Use the **sidebar** to connect your Confluent Cloud account, "
+        "select environments and clusters, then extract lineage. "
+        "Or load a demo graph to explore the interface."
     )
 
     _, center, _ = st.columns([1, 1, 1])
@@ -209,20 +429,6 @@ def _render_empty_state():
             st.session_state.selected_node = None
             st.session_state.focus_node = None
             st.rerun()
-
-    st.markdown("---")
-
-    st.markdown(
-        """
-**LineageBridge** is a proof-of-concept that discovers and
-visualizes stream lineage across Confluent Cloud — connecting
-Kafka topics, connectors, Flink jobs, ksqlDB queries,
-Tableflow tables, and Unity Catalog into a single interactive graph.
-
-**Created by:** Daniel Takabayashi
-**Built with:** Python, Streamlit, networkx, httpx
-        """
-    )
 
 
 def _render_graph_content(graph: LineageGraph):
@@ -350,6 +556,24 @@ def _render_graph_content(graph: LineageGraph):
 
 _render_sidebar()
 _render_main_area()
+
+# ── Footer ────────────────────────────────────────────────────────────
+
+st.markdown(
+    """
+    <div class="app-footer">
+        <strong>LineageBridge</strong> &copy; 2026 Daniel Takabayashi<br>
+        <a href="mailto:dtakabayashi@confluent.io">dtakabayashi@confluent.io</a><br>
+        Built with Streamlit &bull; Powered by Confluent Cloud<br>
+        <span style="font-size:0.8rem; margin-top:4px; display:inline-block;">
+            &#11088; Like this project?
+            <a href="https://github.com/dtakabayashi/lineage-bridge"
+               target="_blank">Give it a star on GitHub</a>
+        </span>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 # ── CLI entry point ───────────────────────────────────────────────────

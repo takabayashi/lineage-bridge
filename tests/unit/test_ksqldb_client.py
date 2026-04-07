@@ -62,6 +62,47 @@ def _clusters_response(clusters: list | None = None) -> dict:
     return {"data": clusters, "metadata": {}}
 
 
+# ksqlDB SHOW STREAMS / SHOW TABLES responses mapping stream names → topics
+_STREAMS_RESPONSE = [
+    {
+        "@type": "streams",
+        "streams": [
+            {"name": "ORDERS", "topic": "orders", "keyFormat": "KAFKA", "valueFormat": "AVRO"},
+            {
+                "name": "CUSTOMERS",
+                "topic": "customers",
+                "keyFormat": "KAFKA",
+                "valueFormat": "AVRO",
+            },
+            {
+                "name": "ENRICHED_ORDERS",
+                "topic": "enriched_orders",
+                "keyFormat": "KAFKA",
+                "valueFormat": "AVRO",
+            },
+        ],
+    }
+]
+
+_TABLES_RESPONSE = [{"@type": "tables", "tables": []}]
+
+
+def _ksql_side_effect(queries_payload):
+    """Return a side_effect that routes based on the ksql command."""
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        body = request.content.decode()
+        if "SHOW STREAMS" in body:
+            return httpx.Response(200, json=_STREAMS_RESPONSE)
+        if "SHOW TABLES" in body:
+            return httpx.Response(200, json=_TABLES_RESPONSE)
+        if "SHOW QUERIES" in body:
+            return httpx.Response(200, json=queries_payload)
+        return httpx.Response(400, json={"error_code": 40000})
+
+    return _handler
+
+
 # ── _parse_source_names ────────────────────────────────────────────────
 
 
@@ -148,18 +189,13 @@ class TestStripQuotes:
 class TestExtract:
     @respx.mock
     async def test_extract_creates_query_nodes_and_edges(self, ksql_client, queries_payload):
-        # Mock cluster discovery.
         respx.get(f"{CLOUD_URL}/ksqldbcm/v2/clusters").mock(
             return_value=httpx.Response(200, json=_clusters_response())
         )
-        # Mock SHOW QUERIES on data-plane endpoint.
-        respx.post(f"{KSQL_ENDPOINT}/ksql").mock(
-            return_value=httpx.Response(200, json=queries_payload)
-        )
+        respx.post(f"{KSQL_ENDPOINT}/ksql").mock(side_effect=_ksql_side_effect(queries_payload))
 
         nodes, _edges = await ksql_client.extract()
 
-        # Nodes: 1 query + 2 source topics (orders, customers) + 1 sink topic (enriched_orders)
         query_nodes = [n for n in nodes if n.node_type == NodeType.KSQLDB_QUERY]
         topic_nodes = [n for n in nodes if n.node_type == NodeType.KAFKA_TOPIC]
         assert len(query_nodes) == 1
@@ -178,9 +214,7 @@ class TestExtract:
         respx.get(f"{CLOUD_URL}/ksqldbcm/v2/clusters").mock(
             return_value=httpx.Response(200, json=_clusters_response())
         )
-        respx.post(f"{KSQL_ENDPOINT}/ksql").mock(
-            return_value=httpx.Response(200, json=queries_payload)
-        )
+        respx.post(f"{KSQL_ENDPOINT}/ksql").mock(side_effect=_ksql_side_effect(queries_payload))
 
         _nodes, edges = await ksql_client.extract()
 
@@ -190,20 +224,37 @@ class TestExtract:
         query_id = f"confluent:ksqldb_query:{ENV_ID}:CSAS_ENRICHED_ORDERS_0"
         for edge in consumes_edges:
             assert edge.dst_id == query_id
-            assert edge.confidence == 0.8
+            # High confidence when stream→topic mapping is resolved
+            assert edge.confidence == 0.9
 
         source_topics = sorted(e.src_id for e in consumes_edges)
         assert f"confluent:kafka_topic:{ENV_ID}:customers" in source_topics
         assert f"confluent:kafka_topic:{ENV_ID}:orders" in source_topics
 
     @respx.mock
+    async def test_consumes_edges_without_mapping(self, ksql_client, queries_payload):
+        """When SHOW STREAMS/TABLES fail, falls back to SQL-parsed names with lower confidence."""
+        respx.get(f"{CLOUD_URL}/ksqldbcm/v2/clusters").mock(
+            return_value=httpx.Response(200, json=_clusters_response())
+        )
+        # All ksql calls return the queries response (SHOW STREAMS/TABLES get no match)
+        respx.post(f"{KSQL_ENDPOINT}/ksql").mock(
+            return_value=httpx.Response(200, json=queries_payload)
+        )
+
+        _nodes, edges = await ksql_client.extract()
+
+        consumes_edges = [e for e in edges if e.edge_type == EdgeType.CONSUMES]
+        assert len(consumes_edges) == 2
+        for edge in consumes_edges:
+            assert edge.confidence == 0.7  # Unresolved fallback
+
+    @respx.mock
     async def test_produces_edges(self, ksql_client, queries_payload):
         respx.get(f"{CLOUD_URL}/ksqldbcm/v2/clusters").mock(
             return_value=httpx.Response(200, json=_clusters_response())
         )
-        respx.post(f"{KSQL_ENDPOINT}/ksql").mock(
-            return_value=httpx.Response(200, json=queries_payload)
-        )
+        respx.post(f"{KSQL_ENDPOINT}/ksql").mock(side_effect=_ksql_side_effect(queries_payload))
 
         _nodes, edges = await ksql_client.extract()
 
@@ -232,7 +283,6 @@ class TestExtract:
         respx.get(f"{CLOUD_URL}/ksqldbcm/v2/clusters").mock(
             return_value=httpx.Response(200, json=_clusters_response())
         )
-        # Data-plane returns 500 (triggers retries then exception).
         respx.post(f"{KSQL_ENDPOINT}/ksql").mock(
             return_value=httpx.Response(500, json={"error_code": 50000})
         )

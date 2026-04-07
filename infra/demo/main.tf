@@ -29,6 +29,10 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.0"
     }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.0"
+    }
   }
 
   backend "local" {
@@ -415,6 +419,93 @@ data "confluent_flink_region" "demo" {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# KSQLDB — Cluster + API Key + Queries
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── ksqlDB Cluster ──────────────────────────────────────────────────────────
+
+resource "confluent_ksql_cluster" "demo" {
+  display_name = "${local.demo_prefix}-ksqldb"
+  csu          = 4
+
+  kafka_cluster {
+    id = confluent_kafka_cluster.demo.id
+  }
+
+  credential_identity {
+    id = confluent_service_account.demo.id
+  }
+
+  environment {
+    id = confluent_environment.demo.id
+  }
+
+  depends_on = [
+    confluent_role_binding.cluster_admin,
+    confluent_role_binding.env_admin,
+    confluent_api_key.schema_registry,
+  ]
+}
+
+# ── ksqlDB API Key ──────────────────────────────────────────────────────────
+
+resource "confluent_api_key" "ksqldb" {
+  display_name = "${local.demo_prefix}-ksqldb-key"
+  description  = "ksqlDB API key for demo"
+
+  owner {
+    id          = confluent_service_account.demo.id
+    api_version = confluent_service_account.demo.api_version
+    kind        = confluent_service_account.demo.kind
+  }
+
+  managed_resource {
+    id          = confluent_ksql_cluster.demo.id
+    api_version = confluent_ksql_cluster.demo.api_version
+    kind        = confluent_ksql_cluster.demo.kind
+
+    environment {
+      id = confluent_environment.demo.id
+    }
+  }
+
+  depends_on = [confluent_role_binding.env_admin]
+}
+
+# ── ksqlDB Queries ─────────────────────────────────────────────────────────
+
+resource "null_resource" "ksqldb_high_value_orders" {
+  triggers = {
+    ksql_cluster_id = confluent_ksql_cluster.demo.id
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      curl -s -u "${confluent_api_key.ksqldb.id}:${confluent_api_key.ksqldb.secret}" \
+        -X POST "${confluent_ksql_cluster.demo.rest_endpoint}/ksql" \
+        -H "Content-Type: application/vnd.ksql.v1+json" \
+        -d '{
+          "ksql": "CREATE STREAM IF NOT EXISTS orders_stream (order_id STRING, customer_id STRING, product_name STRING, quantity INT, price DOUBLE, order_status STRING, created_at STRING) WITH (KAFKA_TOPIC='"'"'${confluent_kafka_topic.orders.topic_name}'"'"', VALUE_FORMAT='"'"'AVRO'"'"');",
+          "streamsProperties": {}
+        }'
+      sleep 5
+      curl -s -u "${confluent_api_key.ksqldb.id}:${confluent_api_key.ksqldb.secret}" \
+        -X POST "${confluent_ksql_cluster.demo.rest_endpoint}/ksql" \
+        -H "Content-Type: application/vnd.ksql.v1+json" \
+        -d '{
+          "ksql": "CREATE STREAM IF NOT EXISTS high_value_orders WITH (KAFKA_TOPIC='"'"'lineage_bridge.high_value_orders'"'"', VALUE_FORMAT='"'"'AVRO'"'"') AS SELECT order_id, customer_id, product_name, quantity, price, order_status FROM orders_stream WHERE price > 50.0 EMIT CHANGES;",
+          "streamsProperties": {}
+        }'
+    EOT
+  }
+
+  depends_on = [
+    confluent_api_key.ksqldb,
+    confluent_connector.datagen_orders,
+  ]
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # AWS — PostgreSQL RDS (sink target for enriched orders)
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -597,6 +688,38 @@ resource "aws_iam_role_policy" "tableflow_s3" {
         Effect   = "Allow"
         Action   = "s3:*"
         Resource = [aws_s3_bucket.tableflow.arn, "${aws_s3_bucket.tableflow.arn}/*"]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "tableflow_glue" {
+  name = "tableflow-glue-access"
+  role = aws_iam_role.tableflow.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "glue:GetDatabase",
+          "glue:GetDatabases",
+          "glue:CreateDatabase",
+          "glue:GetTable",
+          "glue:GetTables",
+          "glue:CreateTable",
+          "glue:UpdateTable",
+          "glue:DeleteTable",
+          "glue:GetPartitions",
+          "glue:BatchCreatePartition",
+          "glue:BatchDeletePartition",
+        ]
+        Resource = [
+          "arn:aws:glue:${var.aws_region}:${var.aws_account_id}:catalog",
+          "arn:aws:glue:${var.aws_region}:${var.aws_account_id}:database/*",
+          "arn:aws:glue:${var.aws_region}:${var.aws_account_id}:table/*/*",
+        ]
       }
     ]
   })
@@ -917,6 +1040,67 @@ resource "confluent_catalog_integration" "demo" {
     databricks_grants.schema,
     confluent_tableflow_topic.orders,
     confluent_tableflow_topic.customers,
+  ]
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CATALOG INTEGRATION — AWS Glue
+# ═══════════════════════════════════════════════════════════════════════════════
+
+resource "confluent_catalog_integration" "glue" {
+  display_name = "${local.demo_prefix}-glue"
+
+  environment {
+    id = confluent_environment.demo.id
+  }
+
+  kafka_cluster {
+    id = confluent_kafka_cluster.demo.id
+  }
+
+  aws_glue {
+    provider_integration_id = confluent_provider_integration.aws.id
+  }
+
+  credentials {
+    key    = var.confluent_tableflow_api_key
+    secret = var.confluent_tableflow_api_secret
+  }
+
+  depends_on = [
+    aws_iam_role_policy.tableflow_glue,
+    time_sleep.phase2,
+  ]
+}
+
+# ── Tableflow: order_stats → Iceberg → Glue ─────────────────────────────────
+
+resource "confluent_tableflow_topic" "order_stats" {
+  environment {
+    id = confluent_environment.demo.id
+  }
+
+  kafka_cluster {
+    id = confluent_kafka_cluster.demo.id
+  }
+
+  display_name  = "lineage_bridge.order_stats"
+  table_formats = ["ICEBERG"]
+
+  byob_aws {
+    bucket_name             = aws_s3_bucket.tableflow.bucket
+    provider_integration_id = confluent_provider_integration.aws.id
+  }
+
+  credentials {
+    key    = var.confluent_tableflow_api_key
+    secret = var.confluent_tableflow_api_secret
+  }
+
+  depends_on = [
+    confluent_flink_statement.order_stats,
+    confluent_catalog_integration.glue,
+    time_sleep.phase2,
   ]
 }
 

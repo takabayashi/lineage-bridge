@@ -28,6 +28,12 @@ _KIND_TO_CATALOG_TYPE: dict[str, str] = {
     "AWS_GLUE": "AWS_GLUE",
 }
 
+# Which table formats each catalog type supports
+_CATALOG_FORMATS: dict[str, set[str]] = {
+    "UNITY_CATALOG": {"DELTA"},
+    "AWS_GLUE": {"ICEBERG"},
+}
+
 
 class TableflowClient(ConfluentClient):
     """Extracts Tableflow lineage (topic → table → UC/Glue)."""
@@ -74,14 +80,14 @@ class TableflowClient(ConfluentClient):
             return nodes, edges
 
         # 2. Catalog integrations (UC / Glue) per cluster -----------------
-        ci_by_cluster: dict[str, dict[str, Any]] = {}
+        ci_by_cluster: dict[str, list[dict[str, Any]]] = {}
         for cluster_id in self._cluster_ids:
             integrations = await self._list_catalog_integrations(cluster_id)
             for ci in integrations:
                 ci_spec = ci.get("spec", {})
                 ci_cluster = ci_spec.get("kafka_cluster", {}).get("id", "")
                 if ci_cluster:
-                    ci_by_cluster[ci_cluster] = ci
+                    ci_by_cluster.setdefault(ci_cluster, []).append(ci)
 
         for tf in tf_topics:
             spec = tf.get("spec", {})
@@ -130,12 +136,19 @@ class TableflowClient(ConfluentClient):
                 )
             )
 
-            # 3. If a catalog integration exists, create UC/Glue node.
-            ci = ci_by_cluster.get(cluster_id)
-            if ci:
-                uc_nodes, uc_edges = self._build_catalog_nodes(ci, tf_id, topic_name, cluster_id)
-                nodes.extend(uc_nodes)
-                edges.extend(uc_edges)
+            # 3. Match catalog integrations by table format.
+            for ci in ci_by_cluster.get(cluster_id, []):
+                ci_kind = ci.get("spec", {}).get("config", {}).get("kind", "")
+                ci_type = _KIND_TO_CATALOG_TYPE.get(ci_kind, ci_kind)
+                required_formats = _CATALOG_FORMATS.get(ci_type, set())
+                # Only build catalog node if topic's formats overlap
+                if required_formats and not required_formats.intersection(table_formats):
+                    continue
+                cat_nodes, cat_edges = self._build_catalog_nodes(
+                    ci, tf_id, topic_name, cluster_id
+                )
+                nodes.extend(cat_nodes)
+                edges.extend(cat_edges)
 
         logger.info(
             "Tableflow extracted %d nodes, %d edges from environment %s",
