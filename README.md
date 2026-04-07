@@ -124,23 +124,42 @@ make docker-extract
 make docker-watch
 ```
 
+## Make Targets
+
+All common operations are available via `make`:
+
+| Target | Description |
+|--------|-------------|
+| `make install` | Install project with dev dependencies |
+| `make ui` | Start the Streamlit UI |
+| `make extract` | Run lineage extraction CLI |
+| `make watch` | Run change-detection watcher CLI |
+| `make test` | Run tests |
+| `make lint` | Run linter |
+| `make format` | Format code and auto-fix lint issues |
+| `make clean` | Remove build artifacts and caches |
+| `make docker-build` | Build Docker images |
+| `make docker-ui` | Start UI via Docker |
+| `make docker-extract` | Run extraction via Docker |
+| `make docker-watch` | Run change-detection watcher via Docker |
+| `make docker-down` | Stop all Docker services |
+| `make demo-up` | Provision demo infrastructure (Confluent + AWS + Databricks) |
+| `make demo-down` | Tear down demo infrastructure |
+
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, and code style guidelines.
 
 ```bash
 # Install dev dependencies
-uv pip install -e ".[dev]"
+make install
 
 # Run tests
-uv run pytest tests/ -v
-
-# Run tests with coverage
-uv run pytest --cov=lineage_bridge --cov-report=term-missing
+make test
 
 # Lint & format
-uv run ruff check .
-uv run ruff format .
+make lint
+make format
 ```
 
 ## Roadmap
