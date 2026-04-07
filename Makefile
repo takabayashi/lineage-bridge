@@ -3,6 +3,7 @@
 .PHONY: install extract watch ui test lint format clean docker-build docker-extract docker-watch docker-ui docker-down demo-up demo-down help
 
 install: ## Install project with dev dependencies
+	@test -x .venv/bin/python || uv venv
 	uv pip install -e ".[dev]"
 
 extract: ## Run lineage extraction CLI
