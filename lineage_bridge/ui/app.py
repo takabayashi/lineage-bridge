@@ -271,12 +271,19 @@ st.markdown(
 
 
 def _render_main_area():
-    """Main content: graph or empty state."""
+    """Main content: tabs for graph and watcher."""
     graph = st.session_state.graph
-    if graph is not None:
-        _render_graph_content(graph)
-    else:
+    if graph is None:
         _render_empty_state()
+        return
+
+    tab_graph, tab_watcher = st.tabs(["Lineage Graph", "Change Watcher"])
+
+    with tab_graph:
+        _render_graph_content(graph)
+
+    with tab_watcher:
+        _render_watcher_tab()
 
 
 def _render_empty_state():
@@ -457,6 +464,13 @@ def _render_empty_state():
             st.rerun()
 
 
+def _render_watcher_tab():
+    """Render the Change Watcher tab content."""
+    from lineage_bridge.ui.watcher import render_watcher_log
+
+    render_watcher_log()
+
+
 def _render_graph_content(graph: LineageGraph):
     """Graph visualization with stats and detail panel."""
     # Header row
@@ -482,12 +496,14 @@ def _render_graph_content(graph: LineageGraph):
 
     # Stats bar
     env_count = len({n.environment_id for n in graph.nodes if n.environment_id})
-    m1, m2, m3, m4, m5 = st.columns(5)
+    cluster_count = len({n.cluster_id for n in graph.nodes if n.cluster_id})
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
     m1.metric("Nodes", graph.node_count)
     m2.metric("Edges", graph.edge_count)
     m3.metric("Node Types", len({n.node_type for n in graph.nodes}))
     m4.metric("Environments", env_count)
-    m5.metric("Pipelines", graph.pipeline_count)
+    m5.metric("Clusters", cluster_count)
+    m6.metric("Pipelines", graph.pipeline_count)
 
     # Read filter values from sidebar widgets
     type_filters: dict[NodeType, bool] = {}
@@ -572,7 +588,7 @@ def _render_graph_content(graph: LineageGraph):
 
         # Node detail panel
         if detail_col is not None:
-            with detail_col:
+            with detail_col, st.container(border=True):
                 render_node_details(graph)
 
 
