@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: install extract watch ui test lint format clean docker-build docker-extract docker-watch docker-ui docker-down demo-up demo-down help
+.PHONY: install extract watch ui test lint format clean docker-build docker-extract docker-watch docker-ui docker-down demo-setup demo-up demo-down help
 
 install: ## Install project with dev dependencies
 	@test -x .venv/bin/python || uv venv
@@ -51,6 +51,9 @@ docker-down: ## Stop all Docker services
 	$(COMPOSE) --profile extract --profile ui --profile watch down
 
 # ── Demo Infrastructure ────────────────────────────────────────────────────
+
+demo-setup: ## Interactive credential setup for demo infrastructure
+	$(MAKE) -C infra/demo setup
 
 demo-up: ## Provision demo infrastructure (Confluent + AWS + Databricks)
 	$(MAKE) -C infra/demo demo-up
