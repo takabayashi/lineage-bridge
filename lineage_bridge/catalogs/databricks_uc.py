@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -16,6 +18,7 @@ from lineage_bridge.models.graph import (
     LineageGraph,
     LineageNode,
     NodeType,
+    PushResult,
     SystemType,
 )
 
@@ -81,7 +84,7 @@ class DatabricksUCProvider:
         return node, edge
 
     async def enrich(self, graph: LineageGraph) -> None:
-        """Fetch table metadata from the Databricks UC REST API and merge into graph."""
+        """Fetch table metadata and lineage from the Databricks UC REST API."""
         if not self._workspace_url or not self._token:
             logger.debug("Databricks UC enrichment skipped — no credentials configured")
             return
@@ -99,6 +102,9 @@ class DatabricksUCProvider:
                 if node.system != SystemType.DATABRICKS:
                     continue
                 await self._enrich_node(client, graph, node)
+
+            # Discover downstream tables via Databricks lineage API
+            await self._discover_lineage(client, graph, uc_nodes)
 
     async def _enrich_node(
         self,
@@ -154,6 +160,298 @@ class DatabricksUCProvider:
                 logger.debug("HTTP error enriching %s (attempt %d)", full_name, attempt + 1)
                 if attempt < _MAX_RETRIES - 1:
                     await asyncio.sleep(_BACKOFF_BASE * (2**attempt))
+
+    async def _discover_lineage(
+        self,
+        client: httpx.AsyncClient,
+        graph: LineageGraph,
+        seed_nodes: list[LineageNode],
+    ) -> None:
+        """Walk downstream lineage from seed UC nodes to discover derived tables."""
+        seen_qualified: set[str] = {n.qualified_name for n in seed_nodes}
+        to_visit: list[LineageNode] = list(seed_nodes)
+
+        while to_visit:
+            node = to_visit.pop()
+            full_name = node.qualified_name
+            url = "/api/2.0/lineage-tracking/table-lineage"
+
+            try:
+                resp = await client.get(url, params={"table_name": full_name})
+            except httpx.HTTPError:
+                logger.debug("Lineage API error for %s", full_name)
+                continue
+
+            if resp.status_code != 200:
+                logger.debug("Lineage API %d for %s", resp.status_code, full_name)
+                continue
+
+            data = resp.json()
+            for entry in data.get("downstreams", []):
+                ti = entry.get("tableInfo")
+                if not ti:
+                    continue
+                cat = ti.get("catalog_name", "")
+                sch = ti.get("schema_name", "")
+                tbl = ti.get("name", "")
+                if not (cat and sch and tbl):
+                    continue
+                qualified = f"{cat}.{sch}.{tbl}"
+                if qualified in seen_qualified:
+                    continue
+                seen_qualified.add(qualified)
+
+                env_id = node.environment_id
+                cluster_id = node.cluster_id
+                new_id = f"databricks:uc_table:{env_id}:{qualified}"
+
+                new_node = LineageNode(
+                    node_id=new_id,
+                    system=SystemType.DATABRICKS,
+                    node_type=NodeType.UC_TABLE,
+                    qualified_name=qualified,
+                    display_name=qualified,
+                    environment_id=env_id,
+                    cluster_id=cluster_id,
+                    attributes={
+                        "catalog_name": cat,
+                        "schema_name": sch,
+                        "table_name": tbl,
+                        "workspace_url": self._workspace_url,
+                        "derived": True,
+                    },
+                )
+                graph.add_node(new_node)
+                edge = LineageEdge(
+                    src_id=node.node_id,
+                    dst_id=new_id,
+                    edge_type=EdgeType.TRANSFORMS,
+                )
+                try:
+                    graph.add_edge(edge)
+                except ValueError:
+                    logger.debug("Skipping lineage edge %s -> %s", node.node_id, new_id)
+
+                # Enrich the new node with table metadata
+                await self._enrich_node(client, graph, new_node)
+                # Continue walking downstream
+                to_visit.append(new_node)
+
+                logger.info(
+                    "Discovered derived UC table: %s (downstream of %s)",
+                    qualified,
+                    full_name,
+                )
+
+    async def push_lineage(
+        self,
+        graph: LineageGraph,
+        sql_client: Any,
+        *,
+        set_properties: bool = True,
+        set_comments: bool = True,
+        create_bridge_table: bool = False,
+        bridge_table_name: str = "lineage_bridge.default.confluent_lineage",
+        on_progress: Callable[[str, str], None] | None = None,
+    ) -> PushResult:
+        """Push Confluent lineage metadata to UC tables via SQL.
+
+        Uses the Databricks Statement Execution API to set table properties,
+        comments, and optionally create a lineage bridge table.
+        """
+        from lineage_bridge.clients.databricks_sql import DatabricksSQLClient
+
+        assert isinstance(sql_client, DatabricksSQLClient)
+        result = PushResult()
+
+        uc_nodes = [
+            n
+            for n in graph.filter_by_type(NodeType.UC_TABLE)
+            if n.system == SystemType.DATABRICKS
+        ]
+        if not uc_nodes:
+            return result
+
+        if on_progress:
+            on_progress("Push", f"Found {len(uc_nodes)} UC tables to update")
+
+        # Create bridge table if requested
+        if create_bridge_table:
+            await self._create_bridge_table(sql_client, bridge_table_name, result)
+
+        now = datetime.now(UTC).isoformat()
+
+        for node in uc_nodes:
+            upstream = graph.get_upstream(node.node_id)
+            if not upstream:
+                continue
+
+            if set_properties:
+                await self._set_table_properties(
+                    sql_client, node, upstream, now, result
+                )
+
+            if set_comments:
+                await self._set_table_comment(
+                    sql_client, node, upstream, now, result
+                )
+
+            if create_bridge_table:
+                await self._insert_bridge_rows(
+                    sql_client, bridge_table_name, node, upstream, now, result
+                )
+
+            result.tables_updated += 1
+            if on_progress:
+                on_progress("Push", f"Updated {node.qualified_name}")
+
+        if on_progress:
+            on_progress("Push", f"Done — {result.tables_updated} tables updated")
+
+        return result
+
+    async def _set_table_properties(
+        self,
+        sql_client: Any,
+        node: LineageNode,
+        upstream: list,
+        now: str,
+        result: PushResult,
+    ) -> None:
+        """Set lineage_bridge.* table properties on a UC table."""
+        source_topics = []
+        source_connectors = []
+        for up_node, _edge, _hop in upstream:
+            if up_node.node_type == NodeType.KAFKA_TOPIC:
+                source_topics.append(up_node.qualified_name)
+            elif up_node.node_type == NodeType.CONNECTOR:
+                source_connectors.append(up_node.display_name)
+
+        props = {
+            "lineage_bridge.source_topics": ",".join(source_topics) if source_topics else "",
+            "lineage_bridge.source_connectors": (
+                ",".join(source_connectors) if source_connectors else ""
+            ),
+            "lineage_bridge.pipeline_type": "tableflow",
+            "lineage_bridge.last_synced": now,
+            "lineage_bridge.environment_id": node.environment_id or "",
+            "lineage_bridge.cluster_id": node.cluster_id or "",
+        }
+
+        # Build SET TBLPROPERTIES SQL
+        prop_pairs = ", ".join(f"'{k}' = '{v}'" for k, v in props.items() if v)
+        if not prop_pairs:
+            return
+
+        sql = f"ALTER TABLE {node.qualified_name} SET TBLPROPERTIES ({prop_pairs})"
+        try:
+            resp = await sql_client.execute(sql)
+            if resp.get("status", {}).get("state") == "SUCCEEDED":
+                result.properties_set += 1
+            else:
+                error = resp.get("status", {}).get("error", {}).get("message", "unknown")
+                result.errors.append(f"Properties failed for {node.qualified_name}: {error}")
+        except Exception as exc:
+            result.errors.append(f"Properties error for {node.qualified_name}: {exc}")
+
+    async def _set_table_comment(
+        self,
+        sql_client: Any,
+        node: LineageNode,
+        upstream: list,
+        now: str,
+        result: PushResult,
+    ) -> None:
+        """Set a human-readable lineage comment on a UC table."""
+        source_topics = []
+        source_connectors = []
+        for up_node, _edge, _hop in upstream:
+            if up_node.node_type == NodeType.KAFKA_TOPIC:
+                source_topics.append(up_node.qualified_name)
+            elif up_node.node_type == NodeType.CONNECTOR:
+                source_connectors.append(up_node.display_name)
+
+        lines = []
+        if source_topics:
+            topic_list = ", ".join(f'"{t}"' for t in source_topics)
+            lines.append(f"Materialized from Kafka topic {topic_list} via Confluent Tableflow.")
+        if source_connectors:
+            conn_list = ", ".join(source_connectors)
+            lines.append(f"Sources: {conn_list}")
+        if node.environment_id:
+            lines.append(f"Environment: {node.environment_id}")
+        lines.append(f"Last synced: {now}")
+        lines.append("Managed by LineageBridge")
+
+        comment_text = "\\n".join(lines).replace("'", "\\'")
+        sql = f"COMMENT ON TABLE {node.qualified_name} IS '{comment_text}'"
+
+        try:
+            resp = await sql_client.execute(sql)
+            if resp.get("status", {}).get("state") == "SUCCEEDED":
+                result.comments_set += 1
+            else:
+                error = resp.get("status", {}).get("error", {}).get("message", "unknown")
+                result.errors.append(f"Comment failed for {node.qualified_name}: {error}")
+        except Exception as exc:
+            result.errors.append(f"Comment error for {node.qualified_name}: {exc}")
+
+    async def _create_bridge_table(
+        self, sql_client: Any, bridge_table_name: str, result: PushResult
+    ) -> None:
+        """Create the lineage bridge table if it doesn't exist."""
+        sql = f"""CREATE TABLE IF NOT EXISTS {bridge_table_name} (
+    uc_table STRING,
+    source_type STRING,
+    source_name STRING,
+    source_system STRING,
+    edge_type STRING,
+    environment_id STRING,
+    cluster_id STRING,
+    hop_distance INT,
+    full_path STRING,
+    synced_at TIMESTAMP
+)"""
+        try:
+            resp = await sql_client.execute(sql)
+            if resp.get("status", {}).get("state") != "SUCCEEDED":
+                error = resp.get("status", {}).get("error", {}).get("message", "unknown")
+                result.errors.append(f"Bridge table creation failed: {error}")
+        except Exception as exc:
+            result.errors.append(f"Bridge table creation error: {exc}")
+
+    async def _insert_bridge_rows(
+        self,
+        sql_client: Any,
+        bridge_table_name: str,
+        node: LineageNode,
+        upstream: list,
+        now: str,
+        result: PushResult,
+    ) -> None:
+        """Insert lineage rows into the bridge table."""
+        values = []
+        for up_node, edge, hop in upstream:
+            values.append(
+                f"('{node.qualified_name}', '{up_node.node_type.value}', "
+                f"'{up_node.qualified_name}', '{up_node.system.value}', "
+                f"'{edge.edge_type.value}', '{node.environment_id or ''}', "
+                f"'{node.cluster_id or ''}', {hop}, '', TIMESTAMP '{now}')"
+            )
+        if not values:
+            return
+
+        values_str = ",\n".join(values)
+        sql = f"INSERT INTO {bridge_table_name} VALUES {values_str}"
+        try:
+            resp = await sql_client.execute(sql)
+            if resp.get("status", {}).get("state") == "SUCCEEDED":
+                result.bridge_rows_inserted += len(values)
+            else:
+                error = resp.get("status", {}).get("error", {}).get("message", "unknown")
+                result.errors.append(f"Bridge insert failed for {node.qualified_name}: {error}")
+        except Exception as exc:
+            result.errors.append(f"Bridge insert error for {node.qualified_name}: {exc}")
 
     def build_url(self, node: LineageNode) -> str | None:
         """Build a deep link to the table in the Databricks workspace UI."""

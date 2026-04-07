@@ -9,8 +9,10 @@ import pytest
 import respx
 
 from lineage_bridge.catalogs.databricks_uc import DatabricksUCProvider
+from lineage_bridge.clients.databricks_sql import DatabricksSQLClient
 from lineage_bridge.models.graph import (
     EdgeType,
+    LineageEdge,
     LineageGraph,
     LineageNode,
     NodeType,
@@ -20,6 +22,9 @@ from tests.conftest import load_fixture
 
 WORKSPACE_URL = "https://acme-prod.cloud.databricks.com"
 TOKEN = "dapi-test-token-123"
+WAREHOUSE_ID = "abc123def456"
+LINEAGE_URL = f"{WORKSPACE_URL}/api/2.0/lineage-tracking/table-lineage"
+STATEMENTS_URL = f"{WORKSPACE_URL}/api/2.0/sql/statements"
 
 
 @pytest.fixture()
@@ -168,6 +173,10 @@ class TestBuildUrl:
 
 
 class TestEnrich:
+    def _mock_lineage_empty(self):
+        """Mock the lineage API to return no downstreams."""
+        respx.get(LINEAGE_URL).mock(return_value=httpx.Response(200, json={}))
+
     @respx.mock
     async def test_enrich_merges_attributes(self, provider, uc_graph, no_sleep):
         fixture = load_fixture("databricks_table.json")
@@ -175,6 +184,7 @@ class TestEnrich:
             f"{WORKSPACE_URL}/api/2.1/unity-catalog/tables/"
             "confluent_tableflow.lkc-abc123.orders-tableflow"
         ).mock(return_value=httpx.Response(200, json=fixture))
+        self._mock_lineage_empty()
 
         await provider.enrich(uc_graph)
 
@@ -196,6 +206,7 @@ class TestEnrich:
             f"{WORKSPACE_URL}/api/2.1/unity-catalog/tables/"
             "confluent_tableflow.lkc-abc123.orders-tableflow"
         ).mock(return_value=httpx.Response(401, json={"error": "unauthorized"}))
+        self._mock_lineage_empty()
 
         # Should not raise
         await provider.enrich(uc_graph)
@@ -208,6 +219,7 @@ class TestEnrich:
             f"{WORKSPACE_URL}/api/2.1/unity-catalog/tables/"
             "confluent_tableflow.lkc-abc123.orders-tableflow"
         ).mock(return_value=httpx.Response(404, json={"error": "not found"}))
+        self._mock_lineage_empty()
 
         await provider.enrich(uc_graph)
         assert "owner" not in uc_graph.nodes[0].attributes
@@ -224,6 +236,7 @@ class TestEnrich:
             httpx.Response(429, json={"error": "rate limited"}),
             httpx.Response(200, json=fixture),
         ]
+        self._mock_lineage_empty()
 
         await provider.enrich(uc_graph)
 
@@ -238,6 +251,7 @@ class TestEnrich:
             f"{WORKSPACE_URL}/api/2.1/unity-catalog/tables/"
             "confluent_tableflow.lkc-abc123.orders-tableflow"
         ).mock(return_value=httpx.Response(503, json={"error": "unavailable"}))
+        self._mock_lineage_empty()
 
         await provider.enrich(uc_graph)
         assert "owner" not in uc_graph.nodes[0].attributes
@@ -249,6 +263,7 @@ class TestEnrich:
             f"{WORKSPACE_URL}/api/2.1/unity-catalog/tables/"
             "confluent_tableflow.lkc-abc123.orders-tableflow"
         ).mock(side_effect=httpx.ConnectError("connection refused"))
+        self._mock_lineage_empty()
 
         await provider.enrich(uc_graph)
         assert "owner" not in uc_graph.nodes[0].attributes
@@ -260,6 +275,7 @@ class TestEnrich:
             f"{WORKSPACE_URL}/api/2.1/unity-catalog/tables/"
             "confluent_tableflow.lkc-abc123.orders-tableflow"
         ).mock(return_value=httpx.Response(418, json={"error": "teapot"}))
+        self._mock_lineage_empty()
 
         await provider.enrich(uc_graph)
         assert "owner" not in uc_graph.nodes[0].attributes
@@ -269,3 +285,217 @@ class TestEnrich:
         graph = LineageGraph()
         await provider.enrich(graph)
         assert graph.node_count == 0
+
+    @respx.mock
+    async def test_lineage_discovers_downstream_tables(self, provider, uc_graph, no_sleep):
+        """Lineage API discovers derived downstream tables."""
+        fixture = load_fixture("databricks_table.json")
+        respx.get(
+            f"{WORKSPACE_URL}/api/2.1/unity-catalog/tables/"
+            "confluent_tableflow.lkc-abc123.orders-tableflow"
+        ).mock(return_value=httpx.Response(200, json=fixture))
+
+        # Lineage for seed node returns a downstream table
+        respx.get(LINEAGE_URL, params__contains={"table_name": "confluent_tableflow.lkc-abc123.orders-tableflow"}).mock(
+            return_value=httpx.Response(200, json={
+                "downstreams": [
+                    {
+                        "tableInfo": {
+                            "catalog_name": "confluent_tableflow",
+                            "schema_name": "lkc-abc123",
+                            "name": "order_summary",
+                            "table_type": "TABLE",
+                        }
+                    }
+                ]
+            })
+        )
+
+        # Metadata enrichment for the discovered table
+        respx.get(
+            f"{WORKSPACE_URL}/api/2.1/unity-catalog/tables/"
+            "confluent_tableflow.lkc-abc123.order_summary"
+        ).mock(return_value=httpx.Response(200, json={
+            "owner": "test-user",
+            "table_type": "MANAGED",
+            "columns": [],
+            "storage_location": "s3://bucket/path",
+        }))
+
+        # No further downstream from the discovered table
+        respx.get(LINEAGE_URL, params__contains={"table_name": "confluent_tableflow.lkc-abc123.order_summary"}).mock(
+            return_value=httpx.Response(200, json={})
+        )
+
+        await provider.enrich(uc_graph)
+
+        assert uc_graph.node_count == 2
+        new_node = uc_graph.get_node(
+            "databricks:uc_table:env-abc:confluent_tableflow.lkc-abc123.order_summary"
+        )
+        assert new_node is not None
+        assert new_node.attributes["derived"] is True
+        assert new_node.attributes["owner"] == "test-user"
+
+        # Check TRANSFORMS edge was created
+        assert any(
+            e.edge_type == EdgeType.TRANSFORMS
+            and e.src_id == "databricks:uc_table:env-abc:confluent_tableflow.lkc-abc123.orders-tableflow"
+            and e.dst_id == "databricks:uc_table:env-abc:confluent_tableflow.lkc-abc123.order_summary"
+            for e in uc_graph.edges
+        )
+
+
+# ── Push Lineage Tests ───────────────────────────────────────────────
+
+
+@pytest.fixture()
+def push_graph():
+    """Graph with upstream topic -> tableflow -> UC table chain."""
+    graph = LineageGraph()
+
+    topic = LineageNode(
+        node_id="confluent:kafka_topic:env-abc:orders",
+        system=SystemType.CONFLUENT,
+        node_type=NodeType.KAFKA_TOPIC,
+        qualified_name="orders",
+        display_name="orders",
+        environment_id="env-abc",
+        cluster_id="lkc-abc123",
+    )
+    tf_node = LineageNode(
+        node_id="confluent:tableflow_table:env-abc:lkc-abc123.orders",
+        system=SystemType.CONFLUENT,
+        node_type=NodeType.TABLEFLOW_TABLE,
+        qualified_name="lkc-abc123.orders",
+        display_name="lkc-abc123.orders",
+        environment_id="env-abc",
+        cluster_id="lkc-abc123",
+    )
+    uc_node = LineageNode(
+        node_id="databricks:uc_table:env-abc:confluent_tableflow.lkc-abc123.orders",
+        system=SystemType.DATABRICKS,
+        node_type=NodeType.UC_TABLE,
+        qualified_name="confluent_tableflow.lkc-abc123.orders",
+        display_name="confluent_tableflow.lkc-abc123.orders",
+        environment_id="env-abc",
+        cluster_id="lkc-abc123",
+        attributes={"workspace_url": WORKSPACE_URL},
+    )
+
+    graph.add_node(topic)
+    graph.add_node(tf_node)
+    graph.add_node(uc_node)
+    graph.add_edge(LineageEdge(
+        src_id=topic.node_id,
+        dst_id=tf_node.node_id,
+        edge_type=EdgeType.MATERIALIZES,
+    ))
+    graph.add_edge(LineageEdge(
+        src_id=tf_node.node_id,
+        dst_id=uc_node.node_id,
+        edge_type=EdgeType.MATERIALIZES,
+    ))
+    return graph
+
+
+@pytest.fixture()
+def sql_client():
+    return DatabricksSQLClient(
+        workspace_url=WORKSPACE_URL,
+        token=TOKEN,
+        warehouse_id=WAREHOUSE_ID,
+    )
+
+
+class TestPushLineage:
+    @respx.mock
+    async def test_push_lineage_sets_properties(self, provider, push_graph, sql_client):
+        """push_lineage sets TBLPROPERTIES on UC tables."""
+        respx.post(STATEMENTS_URL).mock(
+            return_value=httpx.Response(200, json={
+                "statement_id": "stmt-1",
+                "status": {"state": "SUCCEEDED"},
+            })
+        )
+
+        result = await provider.push_lineage(
+            push_graph, sql_client, set_properties=True, set_comments=False
+        )
+
+        assert result.tables_updated == 1
+        assert result.properties_set == 1
+        assert result.comments_set == 0
+        assert not result.errors
+
+    @respx.mock
+    async def test_push_lineage_sets_comments(self, provider, push_graph, sql_client):
+        """push_lineage sets COMMENT ON TABLE."""
+        respx.post(STATEMENTS_URL).mock(
+            return_value=httpx.Response(200, json={
+                "statement_id": "stmt-1",
+                "status": {"state": "SUCCEEDED"},
+            })
+        )
+
+        result = await provider.push_lineage(
+            push_graph, sql_client, set_properties=False, set_comments=True
+        )
+
+        assert result.tables_updated == 1
+        assert result.comments_set == 1
+        assert result.properties_set == 0
+
+    @respx.mock
+    async def test_push_lineage_creates_bridge_table(self, provider, push_graph, sql_client):
+        """push_lineage creates and populates bridge table when requested."""
+        respx.post(STATEMENTS_URL).mock(
+            return_value=httpx.Response(200, json={
+                "statement_id": "stmt-1",
+                "status": {"state": "SUCCEEDED"},
+            })
+        )
+
+        result = await provider.push_lineage(
+            push_graph,
+            sql_client,
+            set_properties=False,
+            set_comments=False,
+            create_bridge_table=True,
+        )
+
+        assert result.tables_updated == 1
+        assert result.bridge_rows_inserted > 0
+
+    @respx.mock
+    async def test_push_lineage_skips_non_uc_nodes(self, provider, sql_client):
+        """push_lineage returns empty result when no UC nodes exist."""
+        graph = LineageGraph()
+        graph.add_node(LineageNode(
+            node_id="confluent:kafka_topic:env-abc:orders",
+            system=SystemType.CONFLUENT,
+            node_type=NodeType.KAFKA_TOPIC,
+            qualified_name="orders",
+            display_name="orders",
+        ))
+
+        result = await provider.push_lineage(graph, sql_client)
+        assert result.tables_updated == 0
+
+    @respx.mock
+    async def test_push_lineage_handles_sql_error(self, provider, push_graph, sql_client):
+        """push_lineage records errors for failed SQL statements."""
+        respx.post(STATEMENTS_URL).mock(
+            return_value=httpx.Response(200, json={
+                "statement_id": "stmt-1",
+                "status": {
+                    "state": "FAILED",
+                    "error": {"message": "PERMISSION_DENIED"},
+                },
+            })
+        )
+
+        result = await provider.push_lineage(push_graph, sql_client)
+        assert result.tables_updated == 1
+        assert len(result.errors) > 0
+        assert any("PERMISSION_DENIED" in e for e in result.errors)

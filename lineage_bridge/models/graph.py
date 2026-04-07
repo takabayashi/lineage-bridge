@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import json
+from collections import deque
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -91,6 +93,17 @@ class LineageEdge(BaseModel):
     def edge_key(self) -> tuple[str, str, str]:
         """Unique key for this edge: (src, dst, type)."""
         return (self.src_id, self.dst_id, self.edge_type.value)
+
+
+@dataclass
+class PushResult:
+    """Result summary from pushing lineage metadata to a catalog."""
+
+    tables_updated: int = 0
+    properties_set: int = 0
+    comments_set: int = 0
+    bridge_rows_inserted: int = 0
+    errors: list[str] = field(default_factory=list)
 
 
 class LineageGraph:
@@ -203,6 +216,42 @@ class LineageGraph:
                 break
 
         return [self._nodes[nid] for nid in visited if nid in self._nodes]
+
+    def get_upstream(
+        self, node_id: str, max_hops: int = 10
+    ) -> list[tuple[LineageNode, LineageEdge, int]]:
+        """Return all upstream nodes with their connecting edges and hop distance.
+
+        Uses BFS traversal following edges in reverse (predecessors).
+        Returns: [(upstream_node, edge_to_it, hop_distance), ...]
+        """
+        if node_id not in self._graph:
+            return []
+
+        results: list[tuple[LineageNode, LineageEdge, int]] = []
+        visited: set[str] = {node_id}
+        queue: deque[tuple[str, int]] = deque([(node_id, 0)])
+
+        while queue:
+            current_id, depth = queue.popleft()
+            if depth >= max_hops:
+                continue
+            for pred_id in self._graph.predecessors(current_id):
+                if pred_id in visited:
+                    continue
+                visited.add(pred_id)
+                # Find the edge connecting pred -> current
+                edge = None
+                for key, e in self._edges.items():
+                    if key[0] == pred_id and key[1] == current_id:
+                        edge = e
+                        break
+                pred_node = self._nodes.get(pred_id)
+                if pred_node and edge:
+                    results.append((pred_node, edge, depth + 1))
+                queue.append((pred_id, depth + 1))
+
+        return results
 
     def filter_by_type(self, node_type: NodeType) -> list[LineageNode]:
         """Return all nodes matching the given type."""

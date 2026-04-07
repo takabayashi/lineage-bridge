@@ -72,6 +72,28 @@ def _run_enrichment_on_graph(settings, graph, params: dict):
     return _run_async(_do_enrich())
 
 
+def _run_lineage_push(settings, graph, params: dict):
+    """Push lineage metadata to Databricks UC tables. Returns PushResult."""
+    from lineage_bridge.extractors.orchestrator import run_lineage_push
+
+    log = st.session_state.extraction_log
+
+    def on_progress(phase: str, detail: str = "") -> None:
+        log.append(f"**{phase}** {detail}")
+
+    async def _do_push():
+        return await run_lineage_push(
+            settings,
+            graph,
+            set_properties=params.get("push_properties", True),
+            set_comments=params.get("push_comments", True),
+            create_bridge_table=params.get("push_bridge_table", False),
+            on_progress=on_progress,
+        )
+
+    return _run_async(_do_push())
+
+
 def _run_extraction_with_params(settings, params: dict):
     """Run extraction with a params dict. Returns the graph or raises."""
     from lineage_bridge.extractors.orchestrator import run_extraction

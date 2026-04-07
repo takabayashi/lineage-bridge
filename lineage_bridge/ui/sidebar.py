@@ -21,6 +21,7 @@ from lineage_bridge.ui.discovery import (
 from lineage_bridge.ui.extraction import (
     _run_enrichment_on_graph,
     _run_extraction_with_params,
+    _run_lineage_push,
     _save_selections_to_cache,
 )
 from lineage_bridge.ui.sample_data import generate_sample_graph
@@ -55,6 +56,10 @@ def _render_sidebar():
             # ── Section 3b: Auto-Provisioning ────────────────────────
             with st.expander("Key Provisioning", expanded=False):
                 _render_sidebar_provisioning()
+
+            # ── Section 3c: Databricks ──────────────────────────────
+            with st.expander("Databricks", expanded=False):
+                _render_sidebar_databricks()
 
             # ── Extract / Refresh buttons ────────────────────────────
             _render_sidebar_actions()
@@ -440,6 +445,67 @@ def _render_sidebar_provisioning():
                         )
 
 
+def _render_sidebar_databricks():
+    """Databricks warehouse discovery and push settings."""
+    settings = _try_load_settings()
+    if not settings or not settings.databricks_workspace_url:
+        st.caption("Set `LINEAGE_BRIDGE_DATABRICKS_WORKSPACE_URL` in .env to enable.")
+        return
+
+    st.caption("SQL Warehouse for pushing lineage metadata.")
+
+    # Discover warehouses button
+    warehouses = st.session_state.get("databricks_warehouses", [])
+    if st.button(
+        "Discover Warehouses",
+        key="discover_wh_btn",
+        use_container_width=True,
+    ):
+        with st.spinner("Discovering..."):
+            try:
+                from lineage_bridge.clients.databricks_discovery import list_warehouses
+
+                wh_list = _run_async(
+                    list_warehouses(
+                        settings.databricks_workspace_url,
+                        settings.databricks_token,
+                    )
+                )
+                st.session_state.databricks_warehouses = wh_list
+                warehouses = wh_list
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Discovery failed: {exc}")
+
+    if warehouses:
+        wh_options = {f"{wh.name} ({wh.id}) [{wh.state}]": wh for wh in warehouses}
+        # Pre-select the configured warehouse or the first RUNNING one
+        default_idx = 0
+        if settings.databricks_warehouse_id:
+            for i, wh in enumerate(warehouses):
+                if wh.id == settings.databricks_warehouse_id:
+                    default_idx = i
+                    break
+        selected_label = st.selectbox(
+            "Warehouse",
+            options=list(wh_options.keys()),
+            index=default_idx,
+            key="databricks_wh_select",
+        )
+        if selected_label:
+            selected_wh = wh_options[selected_label]
+            st.session_state.databricks_selected_warehouse_id = selected_wh.id
+            if selected_wh.state != "RUNNING":
+                st.warning(f"Warehouse is {selected_wh.state} — push may fail or start it.")
+    elif settings.databricks_warehouse_id:
+        st.info(f"Using configured warehouse: `{settings.databricks_warehouse_id}`")
+
+    # Push options
+    st.checkbox("Set table properties", value=True, key="push_properties")
+    st.checkbox("Set table comments", value=True, key="push_comments")
+    st.checkbox("Create bridge table", value=False, key="push_bridge_table")
+
+
 def _render_sidebar_actions():
     """Extract and Refresh buttons."""
     settings = _try_load_settings()
@@ -504,9 +570,13 @@ def _render_sidebar_actions():
             ui_flink_creds[eid] = {"api_key": k, "api_secret": s}
 
     has_graph = st.session_state.graph is not None
+    has_uc_tables = (
+        has_graph
+        and len(st.session_state.graph.filter_by_type(NodeType.UC_TABLE)) > 0
+    )
     extract_label = "Re-extract" if has_graph else "Extract"
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
         if st.button(
             extract_label,
@@ -530,7 +600,7 @@ def _render_sidebar_actions():
                 "enable_tableflow": st.session_state.get("ext_tf", True),
                 "enable_metrics": st.session_state.get("ext_metrics", False),
                 "metrics_lookback_hours": st.session_state.get("metrics_lookback", 1),
-                "enable_enrichment": False,
+                "enable_enrichment": True,
             }
             st.session_state.extraction_log = []
             with st.status("Extracting lineage...", expanded=True) as status:
@@ -616,6 +686,36 @@ def _render_sidebar_actions():
                         label=(f"Refreshed — {result.node_count} nodes, {result.edge_count} edges"),
                         state="complete",
                     )
+                    st.rerun()
+                except Exception as exc:
+                    status.update(
+                        label=f"Failed: {exc}",
+                        state="error",
+                    )
+
+    with c4:
+        if st.button(
+            "Push",
+            key="push_btn",
+            disabled=not has_uc_tables,
+            use_container_width=True,
+            help="Push lineage metadata to Databricks UC tables",
+        ):
+            params = st.session_state.last_extraction_params or {}
+            st.session_state.extraction_log = []
+            with st.status("Pushing lineage...", expanded=True) as status:
+                try:
+                    push_result = _run_lineage_push(
+                        settings, st.session_state.graph, params
+                    )
+                    msg = (
+                        f"Pushed — {push_result.tables_updated} tables, "
+                        f"{push_result.properties_set} properties, "
+                        f"{push_result.comments_set} comments"
+                    )
+                    if push_result.errors:
+                        msg += f" ({len(push_result.errors)} error(s))"
+                    status.update(label=msg, state="complete")
                     st.rerun()
                 except Exception as exc:
                     status.update(

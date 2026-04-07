@@ -105,6 +105,17 @@ Living document. Every significant design or implementation decision made by the
 - **Tradeoff:** No-op keeps the interface uniform — orchestrator calls all providers the same way without type checking. `NotImplementedError` would force try/except in the orchestrator. Revisit when Glue enrichment is implemented (boto3 `get_table` calls).
 - **Files:** `catalogs/aws_glue.py`
 
+## ADR-012: Lineage push via SQL Statement Execution API
+
+- **Status:** Accepted
+- **Date:** 2026-04-06
+- **Decided by:** Blueprint, Weaver
+- **Context:** Databricks Lineage Tracking API is read-only — no public endpoint exists to inject external lineage events. Need to make Confluent-side lineage visible within Databricks UC.
+- **Decision:** Use the Databricks Statement Execution API (`/api/2.0/sql/statements`) to write lineage metadata via SQL: `ALTER TABLE SET TBLPROPERTIES` for machine-readable metadata, `COMMENT ON TABLE` for human-readable summaries, and an optional lineage bridge table for queryable records.
+- **Alternatives:** (1) UC REST API `PATCH` for table properties — requires different permissions, less flexible property format. (2) OpenLineage integration — undocumented for external push into Databricks. (3) Databricks SDK — heavy dependency for simple SQL operations (see ADR-003).
+- **Tradeoff:** SQL via Statement Execution API uses the same SQL Warehouse already configured for Tableflow, requires only `CAN_USE` warehouse + table permissions, and matches how users interact with Databricks. The approach is immediately visible in the Databricks UI with zero additional setup. Limitation: metadata is stored as properties/comments, not in the native lineage graph — users see provenance info on table pages but not in the lineage visualization. Revisit if Databricks adds a write API for external lineage.
+- **Files:** `clients/databricks_sql.py`, `catalogs/databricks_uc.py`, `extractors/orchestrator.py`
+
 ## ADR-010: Fixed per-extractor timeout (120s)
 
 - **Status:** Accepted

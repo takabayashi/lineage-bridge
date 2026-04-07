@@ -32,6 +32,14 @@ def _trunc(text: str, max_len: int = 40) -> str:
     return text if len(text) <= max_len else text[: max_len - 1] + "\u2026"
 
 
+def _short_name(node: LineageNode) -> str:
+    """Return a short display name — last segment of qualified_name."""
+    name = node.display_name
+    if "." in name:
+        return name.rsplit(".", 1)[-1]
+    return name
+
+
 def _build_tooltip(node: LineageNode) -> str:
     """Build an HTML tooltip card for a node.
 
@@ -200,7 +208,7 @@ def _build_tooltip(node: LineageNode) -> str:
         f"color:#222;margin-top:2px;"
         f"overflow:hidden;text-overflow:ellipsis;"
         f"white-space:nowrap;max-width:300px' "
-        f"title='{node.display_name}'>{_trunc(node.display_name, 40)}</div>"
+        f"title='{node.display_name}'>{_trunc(_short_name(node), 40)}</div>"
         f"{loc_html}{tags_html}{details_html}{metrics_html}"
         f"</div>"
     )
@@ -324,7 +332,7 @@ def render_graph(
         agraph_nodes.append(
             Node(
                 id=node.node_id,
-                label=node.display_name,
+                label=_short_name(node),
                 title=_build_tooltip(node),
                 **vis_props,
             )
@@ -558,7 +566,7 @@ def render_graph_raw(
         raw_nodes.append(
             {
                 "id": node.node_id,
-                "label": _trunc(node.display_name, 30),
+                "label": _trunc(_short_name(node), 30),
                 "title": _build_tooltip(node),
                 **vis_props,
             }

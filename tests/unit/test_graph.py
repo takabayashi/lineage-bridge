@@ -11,6 +11,7 @@ from lineage_bridge.models.graph import (
     LineageEdge,
     LineageGraph,
     NodeType,
+    PushResult,
 )
 
 # ── test_add_node ──────────────────────────────────────────────────────
@@ -317,3 +318,77 @@ def test_edge_dedup(sample_node, sample_edge):
     assert result is not None
     assert result.first_seen == original_first_seen
     assert graph.edge_count == 1
+
+
+# ── test_get_upstream ─────────────────────────────────────────────────
+
+
+def test_get_upstream_single_hop(sample_node, sample_edge):
+    """get_upstream returns immediate predecessors with hop distance 1."""
+    graph = LineageGraph()
+    topic = sample_node("orders", NodeType.KAFKA_TOPIC)
+    connector = sample_node("pg-source", NodeType.CONNECTOR)
+    graph.add_node(topic)
+    graph.add_node(connector)
+    edge = sample_edge(connector.node_id, topic.node_id, EdgeType.PRODUCES)
+    graph.add_edge(edge)
+
+    result = graph.get_upstream(topic.node_id)
+    assert len(result) == 1
+    up_node, up_edge, hop = result[0]
+    assert up_node.node_id == connector.node_id
+    assert up_edge.edge_type == EdgeType.PRODUCES
+    assert hop == 1
+
+
+def test_get_upstream_multi_hop(sample_node, sample_edge):
+    """get_upstream traverses multiple hops."""
+    graph = LineageGraph()
+    ext = sample_node("pg-db", NodeType.EXTERNAL_DATASET)
+    connector = sample_node("pg-source", NodeType.CONNECTOR)
+    topic = sample_node("orders", NodeType.KAFKA_TOPIC)
+    graph.add_node(ext)
+    graph.add_node(connector)
+    graph.add_node(topic)
+    graph.add_edge(sample_edge(ext.node_id, connector.node_id, EdgeType.PRODUCES))
+    graph.add_edge(sample_edge(connector.node_id, topic.node_id, EdgeType.PRODUCES))
+
+    result = graph.get_upstream(topic.node_id)
+    assert len(result) == 2
+    hops = {r[0].node_id: r[2] for r in result}
+    assert hops[connector.node_id] == 1
+    assert hops[ext.node_id] == 2
+
+
+def test_get_upstream_cycle_safe(sample_node, sample_edge):
+    """get_upstream doesn't loop on cycles."""
+    graph = LineageGraph()
+    a = sample_node("a", NodeType.KAFKA_TOPIC)
+    b = sample_node("b", NodeType.KAFKA_TOPIC)
+    graph.add_node(a)
+    graph.add_node(b)
+    graph.add_edge(sample_edge(a.node_id, b.node_id, EdgeType.PRODUCES))
+    graph.add_edge(sample_edge(b.node_id, a.node_id, EdgeType.CONSUMES))
+
+    result = graph.get_upstream(a.node_id)
+    assert len(result) == 1
+    assert result[0][0].node_id == b.node_id
+
+
+def test_get_upstream_empty_graph(sample_node):
+    """get_upstream returns empty list for unknown node."""
+    graph = LineageGraph()
+    assert graph.get_upstream("nonexistent") == []
+
+
+# ── test_push_result ──────────────────────────────────────────────────
+
+
+def test_push_result_defaults():
+    """PushResult has sensible defaults."""
+    result = PushResult()
+    assert result.tables_updated == 0
+    assert result.properties_set == 0
+    assert result.comments_set == 0
+    assert result.bridge_rows_inserted == 0
+    assert result.errors == []

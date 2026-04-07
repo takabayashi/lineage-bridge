@@ -37,7 +37,7 @@ from lineage_bridge.clients.schema_registry import SchemaRegistryClient
 from lineage_bridge.clients.stream_catalog import StreamCatalogClient
 from lineage_bridge.clients.tableflow import TableflowClient
 from lineage_bridge.config.settings import Settings
-from lineage_bridge.models.graph import LineageEdge, LineageGraph, LineageNode
+from lineage_bridge.models.graph import LineageEdge, LineageGraph, LineageNode, PushResult
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +198,90 @@ async def run_enrichment(
     return graph
 
 
+async def run_lineage_push(
+    settings: Settings,
+    graph: LineageGraph,
+    *,
+    set_properties: bool = True,
+    set_comments: bool = True,
+    create_bridge_table: bool = False,
+    bridge_table_name: str = "lineage_bridge.default.confluent_lineage",
+    on_progress: ProgressCallback = None,
+) -> PushResult:
+    """Push lineage metadata to Databricks UC tables in the graph.
+
+    Uses the Databricks Statement Execution API to write table properties,
+    comments, and optionally a lineage bridge table.
+    """
+    from lineage_bridge.clients.databricks_sql import DatabricksSQLClient
+
+    def _progress(phase: str, detail: str = "") -> None:
+        logger.info("%s %s", phase, detail)
+        if on_progress:
+            on_progress(phase, detail)
+
+    if not settings.databricks_workspace_url:
+        _progress("Push skipped", "No Databricks workspace URL configured")
+        return PushResult(errors=["No Databricks workspace URL configured"])
+    if not settings.databricks_token:
+        _progress("Push skipped", "No Databricks token configured")
+        return PushResult(errors=["No Databricks token configured"])
+
+    # Resolve warehouse ID: setting > auto-discovery
+    warehouse_id = settings.databricks_warehouse_id
+    if not warehouse_id:
+        from lineage_bridge.clients.databricks_discovery import (
+            list_warehouses,
+            pick_running_warehouse,
+        )
+
+        _progress("Push", "No warehouse ID configured — discovering warehouses...")
+        try:
+            warehouses = await list_warehouses(
+                settings.databricks_workspace_url,
+                settings.databricks_token,
+            )
+            selected = pick_running_warehouse(warehouses)
+            if selected:
+                warehouse_id = selected.id
+                _progress("Push", f"Auto-selected warehouse: {selected.name} ({selected.id})")
+            else:
+                _progress("Push skipped", "No SQL warehouses found in workspace")
+                return PushResult(errors=["No SQL warehouses found in workspace"])
+        except Exception as exc:
+            _progress("Push skipped", f"Warehouse discovery failed: {exc}")
+            return PushResult(errors=[f"Warehouse discovery failed: {exc}"])
+
+    _progress("Push", "Starting lineage push to Databricks")
+
+    sql_client = DatabricksSQLClient(
+        workspace_url=settings.databricks_workspace_url,
+        token=settings.databricks_token,
+        warehouse_id=warehouse_id,
+    )
+    provider = DatabricksUCProvider(
+        workspace_url=settings.databricks_workspace_url,
+        token=settings.databricks_token,
+    )
+    result = await provider.push_lineage(
+        graph,
+        sql_client,
+        set_properties=set_properties,
+        set_comments=set_comments,
+        create_bridge_table=create_bridge_table,
+        bridge_table_name=bridge_table_name,
+        on_progress=on_progress,
+    )
+
+    _progress(
+        "Push done",
+        f"{result.tables_updated} tables updated, "
+        f"{result.properties_set} properties, {result.comments_set} comments"
+        + (f", {len(result.errors)} error(s)" if result.errors else ""),
+    )
+    return result
+
+
 async def run_extraction(
     settings: Settings,
     *,
@@ -279,7 +363,12 @@ async def run_extraction(
     if warnings:
         _progress("Validation", f"{len(warnings)} warning(s) — check logs")
 
-    _progress("Done", f"{graph.node_count} nodes, {graph.edge_count} edges")
+    # ── Summary by system ────────────────────────────────────────────────
+    from collections import Counter
+
+    system_counts = Counter(n.system.value for n in graph.nodes)
+    breakdown = ", ".join(f"{system}: {count}" for system, count in sorted(system_counts.items()))
+    _progress("Done", f"{graph.node_count} nodes, {graph.edge_count} edges ({breakdown})")
     return graph
 
 
@@ -622,6 +711,11 @@ def main() -> None:
         action="store_true",
         help="Enrich an existing graph file (reads from --output path)",
     )
+    parser.add_argument(
+        "--push-lineage",
+        action="store_true",
+        help="Push lineage metadata to Databricks UC tables after extraction",
+    )
     args = parser.parse_args()
 
     settings = Settings()  # type: ignore[call-arg]
@@ -645,6 +739,16 @@ def main() -> None:
                     enable_enrichment=not args.no_enrich,
                 )
             )
+
+        if args.push_lineage:
+            result = asyncio.run(run_lineage_push(settings, graph))
+            print(
+                f"Push: {result.tables_updated} tables, "
+                f"{result.properties_set} properties, {result.comments_set} comments"
+            )
+            if result.errors:
+                for err in result.errors:
+                    print(f"  Error: {err}")
     except KeyboardInterrupt:
         logger.info("Extraction interrupted")
         sys.exit(1)

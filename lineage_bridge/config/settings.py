@@ -69,6 +69,10 @@ class Settings(BaseSettings):
         default=None,
         description="Databricks personal access token or service principal token",
     )
+    databricks_warehouse_id: str | None = Field(
+        default=None,
+        description="Databricks SQL Warehouse ID for statement execution",
+    )
 
     # ── Per-cluster credentials ─────────────────────────────────────────
     # JSON map: {"lkc-abc123": {"api_key": "...", "api_secret": "..."}, ...}

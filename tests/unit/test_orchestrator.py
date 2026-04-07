@@ -21,6 +21,7 @@ from lineage_bridge.extractors.orchestrator import (
     main,
     run_enrichment,
     run_extraction,
+    run_lineage_push,
 )
 from lineage_bridge.models.graph import (
     EdgeType,
@@ -286,6 +287,7 @@ def _make_settings(**overrides: Any) -> MagicMock:
     s.tableflow_api_secret = None
     s.databricks_workspace_url = None
     s.databricks_token = None
+    s.databricks_warehouse_id = None
     s.log_level = "INFO"
     s.get_cluster_credentials.return_value = ("kafka-key", "kafka-secret")
     for k, v in overrides.items():
@@ -1439,3 +1441,56 @@ def test_main_requires_env_arg():
     """main() exits with error when --env is not provided."""
     with pytest.raises(SystemExit), patch("sys.argv", ["lineage-bridge-extract"]):
         main()
+
+
+# ── run_lineage_push tests ────────────────────────────────────────────
+
+
+async def test_run_lineage_push_no_credentials():
+    """run_lineage_push returns error when credentials are missing."""
+    settings = _make_settings()
+    graph = LineageGraph()
+
+    result = await run_lineage_push(settings, graph)
+    assert len(result.errors) == 1
+    assert "workspace URL" in result.errors[0]
+
+
+async def test_run_lineage_push_no_warehouse_id():
+    """run_lineage_push returns error when warehouse ID is missing."""
+    settings = _make_settings(
+        databricks_workspace_url="https://myworkspace.databricks.com",
+        databricks_token="dapi-test-token",
+    )
+    graph = LineageGraph()
+
+    result = await run_lineage_push(settings, graph)
+    assert len(result.errors) == 1
+    assert "warehouse ID" in result.errors[0]
+
+
+async def test_run_lineage_push_delegates_to_provider():
+    """run_lineage_push creates provider and calls push_lineage."""
+    settings = _make_settings(
+        databricks_workspace_url="https://myworkspace.databricks.com",
+        databricks_token="dapi-test-token",
+        databricks_warehouse_id="wh-123",
+    )
+    graph = LineageGraph()
+
+    from lineage_bridge.models.graph import PushResult
+
+    mock_result = PushResult(tables_updated=2, properties_set=2, comments_set=2)
+
+    with (
+        patch("lineage_bridge.extractors.orchestrator.DatabricksUCProvider") as MockProvider,
+        patch("lineage_bridge.clients.databricks_sql.DatabricksSQLClient"),
+    ):
+        mock_provider = AsyncMock()
+        mock_provider.push_lineage = AsyncMock(return_value=mock_result)
+        MockProvider.return_value = mock_provider
+
+        result = await run_lineage_push(settings, graph)
+
+    assert result.tables_updated == 2
+    mock_provider.push_lineage.assert_awaited_once()
