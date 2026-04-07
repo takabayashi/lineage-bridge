@@ -1,12 +1,15 @@
 .DEFAULT_GOAL := help
 
-.PHONY: install extract ui test lint format clean docker-build docker-extract docker-ui docker-down demo-up demo-down help
+.PHONY: install extract watch ui test lint format clean docker-build docker-extract docker-watch docker-ui docker-down demo-up demo-down help
 
 install: ## Install project with dev dependencies
 	uv pip install -e ".[dev]"
 
 extract: ## Run lineage extraction CLI
 	uv run lineage-bridge-extract
+
+watch: ## Run change-detection watcher CLI
+	uv run lineage-bridge-watch
 
 ui: ## Start the Streamlit UI
 	uv run streamlit run lineage_bridge/ui/app.py
@@ -34,11 +37,14 @@ docker-build: ## Build Docker images
 docker-extract: ## Run extraction via Docker
 	docker compose --profile extract run --rm extract
 
+docker-watch: ## Run change-detection watcher via Docker
+	docker compose --profile watch up watch
+
 docker-ui: ## Start UI via Docker
 	docker compose --profile ui up ui
 
 docker-down: ## Stop all Docker services
-	docker compose --profile extract --profile ui down
+	docker compose --profile extract --profile ui --profile watch down
 
 # ── Demo Infrastructure ────────────────────────────────────────────────────
 
