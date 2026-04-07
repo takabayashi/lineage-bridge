@@ -176,8 +176,8 @@ if [ -z "$DB_URL" ]; then
 import json,sys
 try:
     d=json.load(sys.stdin)
-    h=d.get('DATABRICKS_HOST','')
-    print(h)
+    env=d.get('env',d)
+    print(env.get('DATABRICKS_HOST',''))
 except: pass
 " 2>/dev/null || true)
     fi
@@ -212,7 +212,8 @@ if [ -z "$DB_TOKEN" ] && [ "$HAS_DB_CLI" = true ]; then
 import json,sys
 try:
     d=json.load(sys.stdin)
-    print(d.get('DATABRICKS_TOKEN',''))
+    env=d.get('env',d)
+    print(env.get('DATABRICKS_TOKEN',''))
 except: pass
 " 2>/dev/null || true)
     if [ -n "$DB_TOKEN" ]; then
