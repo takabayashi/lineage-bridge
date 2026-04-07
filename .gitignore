@@ -24,6 +24,7 @@ ENV/
 
 # Environment / secrets
 .env
+.env_*
 
 # Project output
 lineage_graph.json
