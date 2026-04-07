@@ -251,9 +251,29 @@ fi
 echo ""
 echo "  Service principal (for Confluent <-> UC catalog integration):"
 
-if [ -z "$DB_CLIENT_ID" ] && [ "$HAS_DB_CLI" = true ]; then
-    # List existing service principals
-    sp_list=$(databricks service-principals list -o json 2>/dev/null || echo "[]")
+if [ -z "$DB_CLIENT_ID" ] && [ -n "$DB_URL" ] && [ -n "$DB_TOKEN" ]; then
+    # List service principals via workspace SCIM API (works with any workspace PAT)
+    sp_list=$(curl -s "${DB_URL}/api/2.0/preview/scim/v2/ServicePrincipals" \
+        -H "Authorization: Bearer ${DB_TOKEN}" 2>/dev/null \
+        | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    sps = d.get('Resources', [])
+    # Output as JSON array with just what we need
+    out = []
+    for sp in sps:
+        out.append({
+            'display_name': sp.get('displayName', 'unnamed'),
+            'application_id': sp.get('applicationId', ''),
+            'active': sp.get('active', True),
+            'id': sp.get('id', ''),
+        })
+    json.dump(out, sys.stdout)
+except:
+    print('[]')
+" 2>/dev/null || echo "[]")
+
     sp_count=$(echo "$sp_list" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
 
     if [ "$sp_count" -gt 0 ]; then
@@ -264,7 +284,7 @@ import json, sys
 sps = json.load(sys.stdin)
 for i, sp in enumerate(sps):
     name = sp.get('display_name', 'unnamed')
-    app_id = sp.get('application_id', sp.get('id', ''))
+    app_id = sp.get('application_id', '')
     active = sp.get('active', True)
     status = '' if active else ' (inactive)'
     print(f'    [{i+1}] {name} — {app_id}{status}')
@@ -274,17 +294,7 @@ print(f'    [0] Create new service principal')
         read -rp "  Select [1-${sp_count}, or 0 to create new]: " sp_choice
 
         if [ "${sp_choice:-0}" = "0" ]; then
-            # Create new
-            read -rp "  Service principal name [lineage-bridge]: " sp_name
-            sp_name="${sp_name:-lineage-bridge}"
-            echo "  Creating service principal '$sp_name'..."
-            sp_output=$(databricks service-principals create --display-name "$sp_name" -o json 2>&1)
-            if [ $? -eq 0 ]; then
-                DB_CLIENT_ID=$(echo "$sp_output" | python3 -c "import json,sys; print(json.load(sys.stdin).get('application_id',''))")
-                echo "  Created: $DB_CLIENT_ID"
-            else
-                echo "  Warning: creation failed — $sp_output"
-            fi
+            _create_sp=true
         else
             # Select existing
             DB_CLIENT_ID=$(echo "$sp_list" | python3 -c "
@@ -292,42 +302,70 @@ import json, sys
 sps = json.load(sys.stdin)
 idx = int(sys.argv[1]) - 1
 if 0 <= idx < len(sps):
-    print(sps[idx].get('application_id', sps[idx].get('id', '')))
+    print(sps[idx].get('application_id', ''))
 " "$sp_choice" 2>/dev/null || true)
             if [ -n "$DB_CLIENT_ID" ]; then
                 echo "  Selected: $DB_CLIENT_ID"
+            else
+                _create_sp=true
             fi
         fi
     else
-        read -rp "  No service principals found. Create one? [Y/n]: " create_sp
-        if [ "${create_sp:-Y}" != "n" ] && [ "${create_sp:-Y}" != "N" ]; then
+        echo "  No service principals found in workspace."
+        _create_sp=true
+    fi
+
+    # Create new service principal via workspace SCIM API
+    if [ "${_create_sp:-false}" = "true" ]; then
+        read -rp "  Create a new service principal? [Y/n]: " confirm_create
+        if [ "${confirm_create:-Y}" != "n" ] && [ "${confirm_create:-Y}" != "N" ]; then
             read -rp "  Service principal name [lineage-bridge]: " sp_name
             sp_name="${sp_name:-lineage-bridge}"
             echo "  Creating service principal '$sp_name'..."
-            sp_output=$(databricks service-principals create --display-name "$sp_name" -o json 2>&1)
-            if [ $? -eq 0 ]; then
-                DB_CLIENT_ID=$(echo "$sp_output" | python3 -c "import json,sys; print(json.load(sys.stdin).get('application_id',''))")
+            sp_output=$(curl -s -X POST "${DB_URL}/api/2.0/preview/scim/v2/ServicePrincipals" \
+                -H "Authorization: Bearer ${DB_TOKEN}" \
+                -H "Content-Type: application/json" \
+                -d "{\"displayName\": \"${sp_name}\", \"active\": true}" 2>&1)
+            DB_CLIENT_ID=$(echo "$sp_output" | python3 -c "import json,sys; print(json.load(sys.stdin).get('applicationId',''))" 2>/dev/null || true)
+            if [ -n "$DB_CLIENT_ID" ]; then
                 echo "  Created: $DB_CLIENT_ID"
             else
-                echo "  Warning: creation failed — $sp_output"
+                echo "  Warning: creation failed"
+                echo "  $sp_output" | head -5
             fi
         fi
     fi
 
     # Create OAuth secret for the service principal
+    # This requires account-level access (accounts.cloud.databricks.com)
     if [ -n "$DB_CLIENT_ID" ] && [ -z "$DB_CLIENT_SECRET" ]; then
-        echo "  Creating OAuth secret for service principal..."
-        secret_output=$(databricks service-principal-secrets create "$DB_CLIENT_ID" -o json 2>&1)
-        if [ $? -eq 0 ]; then
-            DB_CLIENT_SECRET=$(echo "$secret_output" | python3 -c "import json,sys; print(json.load(sys.stdin).get('secret',''))")
-            if [ -n "$DB_CLIENT_SECRET" ]; then
-                echo "  OAuth secret created (save this — it won't be shown again)"
-            else
-                echo "  Warning: could not parse secret from output"
+        echo ""
+        echo "  OAuth secret creation requires account-level access."
+
+        # Try via databricks CLI (account-level profile)
+        if [ "$HAS_DB_CLI" = true ]; then
+            echo "  Trying via databricks CLI..."
+            secret_output=$(databricks service-principal-secrets create "$DB_CLIENT_ID" -o json 2>&1)
+            if [ $? -eq 0 ]; then
+                DB_CLIENT_SECRET=$(echo "$secret_output" | python3 -c "import json,sys; print(json.load(sys.stdin).get('secret',''))" 2>/dev/null || true)
+                if [ -n "$DB_CLIENT_SECRET" ]; then
+                    echo "  OAuth secret created (save this — it won't be shown again)"
+                fi
             fi
-        else
-            echo "  Warning: secret creation failed — $secret_output"
-            echo "  You can create one manually at: https://accounts.cloud.databricks.com"
+        fi
+
+        # Try via account console API if CLI failed
+        if [ -z "$DB_CLIENT_SECRET" ]; then
+            # Extract account ID from workspace URL or ask
+            ACCOUNT_ID=""
+            # Try to get from workspace API
+            account_info=$(curl -s "${DB_URL}/api/2.0/preview/scim/v2/Me" \
+                -H "Authorization: Bearer ${DB_TOKEN}" 2>/dev/null || true)
+            # The workspace doesn't directly expose account ID, so we ask
+            echo ""
+            echo "  Could not auto-create OAuth secret."
+            echo "  Create one manually at: https://accounts.cloud.databricks.com"
+            echo "    -> Service Principals -> ${DB_CLIENT_ID} -> Generate OAuth Secret"
         fi
     fi
 fi
