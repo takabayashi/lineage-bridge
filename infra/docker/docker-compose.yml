@@ -1,37 +1,43 @@
 services:
   extract:
-    build: .
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
     command: ["lineage-bridge-extract"]
-    env_file: .env
+    env_file: ../../.env
     environment:
       - LINEAGE_BRIDGE_EXTRACT_OUTPUT_PATH=/app/data/lineage_graph.json
     volumes:
-      - ./data:/app/data
+      - ../../data:/app/data
     profiles:
       - extract
 
   ui:
-    build: .
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
     ports:
       - "8501:8501"
-    env_file: .env
+    env_file: ../../.env
     environment:
       - LINEAGE_BRIDGE_EXTRACT_OUTPUT_PATH=/app/data/lineage_graph.json
     volumes:
-      - ./data:/app/data
+      - ../../data:/app/data
     profiles:
       - ui
 
   watch:
-    build: .
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
     command:
       - lineage-bridge-watch
       - --env
       - ${LINEAGE_BRIDGE_WATCH_ENV:-env-change-me}
       - --cooldown
       - "${LINEAGE_BRIDGE_WATCH_COOLDOWN:-30}"
-    env_file: .env
+    env_file: ../../.env
     volumes:
-      - ./data:/app/data
+      - ../../data:/app/data
     profiles:
       - watch

@@ -29,10 +29,10 @@ uv run lineage-bridge-extract
 # Run change-detection watcher
 uv run lineage-bridge-watch
 
-# Docker
-docker compose --profile ui up
-docker compose --profile extract up
-docker compose --profile watch up
+# Docker (files in infra/docker/)
+make docker-ui
+make docker-extract
+make docker-watch
 ```
 
 ## Architecture

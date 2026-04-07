@@ -31,20 +31,22 @@ clean: ## Remove build artifacts and caches
 
 # ── Docker ──────────────────────────────────────────────────────────────────
 
+COMPOSE := docker compose -f infra/docker/docker-compose.yml
+
 docker-build: ## Build Docker images
-	docker compose build
+	$(COMPOSE) build
 
 docker-extract: ## Run extraction via Docker
-	docker compose --profile extract run --rm extract
+	$(COMPOSE) --profile extract run --rm extract
 
 docker-watch: ## Run change-detection watcher via Docker
-	docker compose --profile watch up watch
+	$(COMPOSE) --profile watch up watch
 
 docker-ui: ## Start UI via Docker
-	docker compose --profile ui up ui
+	$(COMPOSE) --profile ui up ui
 
 docker-down: ## Stop all Docker services
-	docker compose --profile extract --profile ui --profile watch down
+	$(COMPOSE) --profile extract --profile ui --profile watch down
 
 # ── Demo Infrastructure ────────────────────────────────────────────────────
 

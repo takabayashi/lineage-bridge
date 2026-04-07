@@ -110,13 +110,18 @@ Open http://localhost:8501, select an environment and cluster, and click **Extra
 
 ```bash
 # Run the UI
-docker compose --profile ui up
+docker compose -f infra/docker/docker-compose.yml --profile ui up
 
 # Run extraction
-docker compose --profile extract up
+docker compose -f infra/docker/docker-compose.yml --profile extract up
 
 # Run the watcher
-docker compose --profile watch up
+docker compose -f infra/docker/docker-compose.yml --profile watch up
+
+# Or use Make shortcuts
+make docker-ui
+make docker-extract
+make docker-watch
 ```
 
 ## Development
