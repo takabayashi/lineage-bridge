@@ -920,6 +920,95 @@ resource "confluent_catalog_integration" "demo" {
   ]
 }
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# DATABRICKS — Processing Jobs
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Notebook: Build customer order summary from materialized tables ────────
+
+resource "databricks_notebook" "customer_order_summary" {
+  path     = "/Shared/${local.demo_prefix}/customer_order_summary"
+  language = "PYTHON"
+
+  content_base64 = base64encode(<<-PYTHON
+    # Databricks notebook: Customer Order Summary
+    # Reads from Tableflow-materialized tables and produces an analytics table.
+
+    catalog = "${databricks_catalog.demo.name}"
+    schema  = "${confluent_kafka_cluster.demo.id}"
+
+    spark.sql(f"USE CATALOG `{catalog}`")
+    spark.sql(f"USE SCHEMA `{schema}`")
+
+    # ── Read materialized tables (from Confluent Tableflow) ──────────────
+    orders    = spark.table("lineage_bridge_orders_v2")
+    customers = spark.table("lineage_bridge_customers_v2")
+
+    # ── Process: join + aggregate ────────────────────────────────────────
+    from pyspark.sql import functions as F
+
+    summary = (
+        orders.alias("o")
+        .join(customers.alias("c"), F.col("o.customer_id") == F.col("c.customer_id"), "inner")
+        .groupBy(
+            F.col("c.name").alias("customer_name"),
+            F.col("c.country").alias("customer_country"),
+        )
+        .agg(
+            F.count("*").alias("total_orders"),
+            F.sum("o.quantity").alias("total_quantity"),
+            F.sum("o.price").alias("total_revenue"),
+            F.avg("o.price").alias("avg_order_value"),
+            F.max("o.created_at").alias("last_order_at"),
+        )
+    )
+
+    # ── Write to a new managed UC table ──────────────────────────────────
+    (
+        summary.write
+        .mode("overwrite")
+        .option("overwriteSchema", "true")
+        .saveAsTable("customer_order_summary")
+    )
+
+    print(f"Wrote {summary.count()} rows to {catalog}.{schema}.customer_order_summary")
+  PYTHON
+  )
+}
+
+resource "databricks_job" "customer_order_summary" {
+  name = "${local.demo_prefix}-customer-order-summary"
+
+  task {
+    task_key = "summarize"
+
+    notebook_task {
+      notebook_path = databricks_notebook.customer_order_summary.path
+    }
+
+    environment_key = "Default"
+  }
+
+  environment {
+    environment_key = "Default"
+
+    spec {
+      client = "1"
+    }
+  }
+
+  schedule {
+    quartz_cron_expression = "0 0/5 * ? * * *"
+    timezone_id            = "UTC"
+  }
+
+  depends_on = [
+    databricks_grants.catalog,
+    databricks_grants.schema,
+    confluent_catalog_integration.demo,
+  ]
+}
+
 # ── Pre-Destroy Cleanup ──────────────────────────────────────────────────────
 #
 # The catalog integration auto-creates a schema (e.g. lkc-d2y617) with tables
