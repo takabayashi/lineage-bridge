@@ -55,8 +55,9 @@ docker-down: ## Stop all Docker services
 demo-setup: ## Interactive credential setup for demo infrastructure
 	$(MAKE) -C infra/demo setup
 
-demo-up: ## Provision demo infrastructure (Confluent + AWS + Databricks)
+demo-up: ## Provision demo infrastructure and start UI
 	$(MAKE) -C infra/demo demo-up
+	$(MAKE) ui
 
 demo-down: ## Tear down demo infrastructure
 	$(MAKE) -C infra/demo demo-down
