@@ -43,6 +43,18 @@ def sample_ci_config():
 
 
 @pytest.fixture()
+def flat_ci_config():
+    """Config as returned by the real Confluent Tableflow API."""
+    return {
+        "kind": "Unity",
+        "workspace_endpoint": WORKSPACE_URL,
+        "catalog_name": "confluent_tableflow",
+        "client_id": "sp-abc123",
+        "client_secret": "********",
+    }
+
+
+@pytest.fixture()
 def uc_graph():
     """Graph with a single UC_TABLE node."""
     graph = LineageGraph()
@@ -98,6 +110,25 @@ class TestBuildNode:
             {"unity_catalog": {}}, "tf-id", "orders", "lkc-abc123", "env-abc"
         )
         assert node.attributes["catalog_name"] == "confluent_tableflow"
+
+    def test_flat_api_config_format(self, provider, flat_ci_config):
+        """Flat config from real Confluent API (no 'unity_catalog' nesting)."""
+        node, edge = provider.build_node(
+            flat_ci_config, "tf-id", "orders", "lkc-abc123", "env-abc"
+        )
+        assert node.node_id == "databricks:uc_table:env-abc:confluent_tableflow.lkc-abc123.orders"
+        assert node.attributes["catalog_name"] == "confluent_tableflow"
+        assert node.attributes["workspace_url"] == WORKSPACE_URL
+        assert edge.edge_type == EdgeType.MATERIALIZES
+
+    def test_dot_to_underscore_in_topic_name(self, provider, flat_ci_config):
+        """Confluent replaces dots with underscores in UC table names."""
+        node, _ = provider.build_node(
+            flat_ci_config, "tf-id", "lineage_bridge.orders_v2", "lkc-abc123", "env-abc"
+        )
+        assert node.attributes["table_name"] == "lineage_bridge_orders_v2"
+        assert node.qualified_name == "confluent_tableflow.lkc-abc123.lineage_bridge_orders_v2"
+        assert "lineage_bridge_orders_v2" in node.node_id
 
 
 class TestBuildUrl:
@@ -177,6 +208,58 @@ class TestEnrich:
             f"{WORKSPACE_URL}/api/2.1/unity-catalog/tables/"
             "confluent_tableflow.lkc-abc123.orders-tableflow"
         ).mock(return_value=httpx.Response(404, json={"error": "not found"}))
+
+        await provider.enrich(uc_graph)
+        assert "owner" not in uc_graph.nodes[0].attributes
+
+    @respx.mock
+    async def test_enrich_retries_on_429(self, provider, uc_graph, no_sleep):
+        """429 triggers retry; succeeds on second attempt."""
+        fixture = load_fixture("databricks_table.json")
+        route = respx.get(
+            f"{WORKSPACE_URL}/api/2.1/unity-catalog/tables/"
+            "confluent_tableflow.lkc-abc123.orders-tableflow"
+        )
+        route.side_effect = [
+            httpx.Response(429, json={"error": "rate limited"}),
+            httpx.Response(200, json=fixture),
+        ]
+
+        await provider.enrich(uc_graph)
+
+        node = uc_graph.nodes[0]
+        assert node.attributes["owner"] == "confluent-tableflow-sp"
+        assert route.call_count == 2
+
+    @respx.mock
+    async def test_enrich_exhausts_retries_on_503(self, provider, uc_graph, no_sleep):
+        """503 three times exhausts retries without raising."""
+        respx.get(
+            f"{WORKSPACE_URL}/api/2.1/unity-catalog/tables/"
+            "confluent_tableflow.lkc-abc123.orders-tableflow"
+        ).mock(return_value=httpx.Response(503, json={"error": "unavailable"}))
+
+        await provider.enrich(uc_graph)
+        assert "owner" not in uc_graph.nodes[0].attributes
+
+    @respx.mock
+    async def test_enrich_handles_http_error(self, provider, uc_graph, no_sleep):
+        """Network-level errors are handled gracefully."""
+        respx.get(
+            f"{WORKSPACE_URL}/api/2.1/unity-catalog/tables/"
+            "confluent_tableflow.lkc-abc123.orders-tableflow"
+        ).mock(side_effect=httpx.ConnectError("connection refused"))
+
+        await provider.enrich(uc_graph)
+        assert "owner" not in uc_graph.nodes[0].attributes
+
+    @respx.mock
+    async def test_enrich_handles_unexpected_status(self, provider, uc_graph, no_sleep):
+        """Unexpected status codes (e.g. 418) are logged and skipped."""
+        respx.get(
+            f"{WORKSPACE_URL}/api/2.1/unity-catalog/tables/"
+            "confluent_tableflow.lkc-abc123.orders-tableflow"
+        ).mock(return_value=httpx.Response(418, json={"error": "teapot"}))
 
         await provider.enrich(uc_graph)
         assert "owner" not in uc_graph.nodes[0].attributes
