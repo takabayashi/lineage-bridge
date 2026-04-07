@@ -10,7 +10,6 @@ from pathlib import Path
 
 import streamlit as st
 
-from lineage_bridge.config.provisioner import KeyProvisioner
 from lineage_bridge.models.graph import LineageGraph, NodeType
 from lineage_bridge.ui.discovery import (
     _discover_one,
@@ -34,6 +33,7 @@ from lineage_bridge.ui.styles import (
     NODE_ICONS,
     NODE_TYPE_LABELS,
 )
+from lineage_bridge.ui.watcher import render_watcher_section
 
 
 def _sidebar_section(label: str):
@@ -103,6 +103,15 @@ def _render_sidebar():
 
                 _render_sidebar_publish()
 
+            # ══════════════════════════════════════════════════════════
+            #  WATCHER
+            # ══════════════════════════════════════════════════════════
+            if st.session_state.connected:
+                _sidebar_section("Watcher")
+
+                with st.expander("Audit Log Watcher", expanded=False):
+                    render_watcher_section()
+
         # ══════════════════════════════════════════════════════════════
         #  GRAPH
         # ══════════════════════════════════════════════════════════════
@@ -143,15 +152,6 @@ def _render_sidebar():
 
         with st.expander("Load Data", expanded=False):
             _render_sidebar_load_data()
-
-        # ══════════════════════════════════════════════════════════════
-        #  ADMIN
-        # ══════════════════════════════════════════════════════════════
-        if st.session_state.connected:
-            _sidebar_section("Admin")
-
-            with st.expander("Key Provisioning", expanded=False):
-                _render_sidebar_provisioning()
 
 
 def _render_sidebar_connection():
@@ -256,16 +256,17 @@ def _render_sidebar_scope():
         st.caption("Click **Discover** to find services.")
         return
 
-    # Environment multiselect
+    # Environment selector
     env_labels = {f"{e.display_name} ({e.id})": e for e in discovered_envs}
-    selected_env_labels = st.multiselect(
-        "Environments",
-        options=list(env_labels.keys()),
-        default=[],
-        key="env_multi_select",
-        placeholder="Select environments...",
+    env_options = ["", *list(env_labels.keys())]
+    selected_env_label = st.selectbox(
+        "Environment",
+        options=env_options,
+        index=0,
+        key="env_select",
+        placeholder="Select an environment...",
     )
-    selected_envs = [env_labels[lbl] for lbl in selected_env_labels]
+    selected_envs = [env_labels[selected_env_label]] if selected_env_label else []
 
     # Per-environment service keys (optional)
     if selected_envs:
@@ -390,10 +391,10 @@ def _render_sidebar_extractors():
     all_envs = st.session_state.environments
 
     # Check service availability
-    selected_env_labels = st.session_state.get("env_multi_select", [])
+    selected_env_label = st.session_state.get("env_select", "")
     discovered_envs = [env for env in all_envs if env.id in cache and cache[env.id].get("services")]
     env_labels = {f"{e.display_name} ({e.id})": e for e in discovered_envs}
-    selected_envs = [env_labels[lbl] for lbl in selected_env_labels if lbl in env_labels]
+    selected_envs = [env_labels[selected_env_label]] if selected_env_label in env_labels else []
 
     any_sr = any(
         cache[e.id]["services"].has_schema_registry
@@ -451,74 +452,6 @@ def _render_sidebar_extractors():
             value=1,
             key="metrics_lookback",
         )
-
-
-def _render_sidebar_provisioning():
-    """Auto-provision API keys via Confluent Cloud IAM APIs."""
-    st.caption(
-        "Automatically create scoped API keys for extraction. "
-        "Keys are cached locally (encrypted) for reuse."
-    )
-
-    st.checkbox(
-        "Auto-provision missing keys",
-        value=False,
-        key="auto_provision",
-        help="When enabled, missing cluster/SR/Flink API keys will be "
-        "automatically provisioned before extraction starts.",
-    )
-
-    st.text_input(
-        "Key prefix",
-        value="lineage-bridge",
-        key="provision_prefix",
-        help="All provisioned keys will be named with this prefix.",
-    )
-
-    st.checkbox(
-        "Use dedicated service account",
-        value=False,
-        key="provision_sa",
-        help="Create a dedicated service account for provisioned keys. "
-        "If unchecked, keys are owned by the authenticated user.",
-    )
-
-    # Show provisioned keys count
-    provisioned = KeyProvisioner.get_all_cached_keys()
-    if provisioned:
-        st.info(f"{len(provisioned)} provisioned key(s) cached")
-        if st.button(
-            "Revoke all provisioned keys",
-            key="revoke_keys_btn",
-            type="secondary",
-            use_container_width=True,
-        ):
-            settings = _try_load_settings()
-            if settings:
-                with st.status("Revoking keys...", expanded=True) as status:
-                    try:
-
-                        async def _revoke():
-                            async with _make_cloud_client(settings) as cloud:
-                                provisioner = KeyProvisioner(
-                                    cloud,
-                                    prefix=st.session_state.get(
-                                        "provision_prefix", "lineage-bridge"
-                                    ),
-                                )
-                                await provisioner.revoke_all()
-
-                        _run_async(_revoke())
-                        status.update(
-                            label=f"Revoked {len(provisioned)} key(s)",
-                            state="complete",
-                        )
-                        st.rerun()
-                    except Exception as exc:
-                        status.update(
-                            label=f"Failed: {exc}",
-                            state="error",
-                        )
 
 
 def _render_sidebar_databricks():
@@ -617,10 +550,10 @@ def _resolve_extraction_context():
     cache = st.session_state.env_cache
     all_envs = st.session_state.environments
 
-    selected_env_labels = st.session_state.get("env_multi_select", [])
+    selected_env_label = st.session_state.get("env_select", "")
     discovered_envs = [env for env in all_envs if env.id in cache and cache[env.id].get("services")]
     env_labels = {f"{e.display_name} ({e.id})": e for e in discovered_envs}
-    selected_envs = [env_labels[lbl] for lbl in selected_env_labels if lbl in env_labels]
+    selected_envs = [env_labels[selected_env_label]] if selected_env_label in env_labels else []
 
     all_cluster_options = {}
     for env in selected_envs:

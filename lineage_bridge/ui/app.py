@@ -347,43 +347,69 @@ def _render_empty_state():
         unsafe_allow_html=True,
     )
 
-    # ── Architecture flow ─────────────────────────────────────────
+    # ── How it works ─────────────────────────────────────────────
     st.markdown("#### How it works")
     st.markdown(
         """
-        <div class="arch-flow">
-            <span class="arch-node" style="background:rgba(25,118,210,0.12);
-                color:#1976D2;">Confluent Cloud APIs</span>
-            <span class="arch-arrow">\u2192</span>
-            <span class="arch-node" style="background:rgba(25,118,210,0.08);
-                color:#1565C0;">Async Clients</span>
-            <span class="arch-arrow">\u2192</span>
-            <span class="arch-node" style="background:rgba(123,31,162,0.1);
-                color:#7B1FA2;">4-Phase Orchestrator</span>
-            <span class="arch-arrow">\u2192</span>
-            <span class="arch-node" style="background:rgba(56,142,60,0.1);
-                color:#388E3C;">Lineage Graph</span>
-            <span class="arch-arrow">\u2192</span>
-            <span class="arch-node" style="background:rgba(249,168,37,0.12);
-                color:#F57F17;">Interactive UI</span>
+        <div class="arch-flow" style="flex-direction:column; align-items:stretch; gap:0;">
+            <div style="display:flex; align-items:center; justify-content:center;
+                        gap:6px; flex-wrap:wrap; padding:8px 0;">
+                <span class="arch-node" style="background:rgba(25,118,210,0.12);
+                    color:#1976D2;">Confluent Cloud APIs</span>
+                <span class="arch-arrow">\u2192</span>
+                <span class="arch-node" style="background:rgba(25,118,210,0.08);
+                    color:#1565C0;">Async Clients</span>
+                <span class="arch-arrow">\u2192</span>
+                <span class="arch-node" style="background:rgba(123,31,162,0.1);
+                    color:#7B1FA2;">Orchestrator</span>
+                <span class="arch-arrow">\u2192</span>
+                <span class="arch-node" style="background:rgba(56,142,60,0.1);
+                    color:#388E3C;">Lineage Graph</span>
+                <span class="arch-arrow">\u2192</span>
+                <span class="arch-node" style="background:rgba(249,168,37,0.12);
+                    color:#F57F17;">Interactive UI</span>
+            </div>
+            <hr style="border:none; border-top:1px solid rgba(128,128,128,0.12);
+                       margin:4px 0;">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;
+                        padding:10px 4px 6px;">
+                <div style="font-size:0.82rem;">
+                    <span style="color:#7B1FA2; font-weight:600;">Phase 1</span>
+                    <span style="color:#999;">&mdash;</span>
+                    Kafka topics &amp; consumer groups
+                </div>
+                <div style="font-size:0.82rem;">
+                    <span style="color:#7B1FA2; font-weight:600;">Phase 2</span>
+                    <span style="color:#999;">&mdash;</span>
+                    Connectors, ksqlDB &amp; Flink edges
+                </div>
+                <div style="font-size:0.82rem;">
+                    <span style="color:#7B1FA2; font-weight:600;">Phase 3</span>
+                    <span style="color:#999;">&mdash;</span>
+                    Schemas, tags &amp; metadata enrichment
+                </div>
+                <div style="font-size:0.82rem;">
+                    <span style="color:#7B1FA2; font-weight:600;">Phase 4</span>
+                    <span style="color:#999;">&mdash;</span>
+                    Tableflow &amp; catalog mapping
+                </div>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
     st.markdown(
-        "The extraction pipeline runs in **four phases**: "
-        "topic & consumer group inventory, transformation edge discovery "
-        "(connectors, ksqlDB, Flink), schema & metadata enrichment, "
-        "and Tableflow-to-catalog mapping. All phases run asynchronously "
-        "for maximum throughput."
+        "All phases run **asynchronously** for maximum throughput. "
+        "Catalog providers (Databricks Unity Catalog, AWS Glue) extend "
+        "lineage beyond Confluent Cloud, bridging streaming and lakehouse worlds."
     )
 
     # ── Step tracker ──────────────────────────────────────────────
     st.markdown("#### Get started")
 
     connected = st.session_state.connected
-    has_envs = bool(st.session_state.get("env_multi_select"))
+    has_envs = bool(st.session_state.get("env_select"))
 
     step1_cls = "step-done" if connected else "step-current"
     step1_icon = "\u2713" if connected else "1"
@@ -564,10 +590,10 @@ st.markdown(
     <div class="app-footer">
         <strong>LineageBridge</strong> &copy; 2026 Daniel Takabayashi<br>
         <a href="mailto:dtakabayashi@confluent.io">dtakabayashi@confluent.io</a><br>
-        Built with Streamlit &bull; Powered by Confluent Cloud<br>
+        Built with Streamlit &bull; Powered by Confluent Inc.<br>
         <span style="font-size:0.8rem; margin-top:4px; display:inline-block;">
             &#11088; Like this project?
-            <a href="https://github.com/dtakabayashi/lineage-bridge"
+            <a href="https://github.com/takabayashi/lineage-bridge"
                target="_blank">Give it a star on GitHub</a>
         </span>
     </div>

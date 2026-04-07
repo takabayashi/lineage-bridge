@@ -24,6 +24,7 @@ _DEFAULTS = {
     "last_extraction_params": None,
     "last_extraction_time": None,
     "_cache_loaded": False,
+    "watcher_engine": None,
 }
 
 

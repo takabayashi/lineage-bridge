@@ -8,13 +8,13 @@ import streamlit as st
 
 from lineage_bridge.config.cache import update_cache
 from lineage_bridge.config.settings import ClusterCredential
-from lineage_bridge.ui.discovery import _auto_provision_keys, _run_async
+from lineage_bridge.ui.discovery import _run_async
 
 
 def _save_selections_to_cache(params: dict) -> None:
     """Persist extraction selections + credentials to local cache."""
     cache_data: dict = {
-        "selected_envs": st.session_state.get("env_multi_select", []),
+        "selected_envs": st.session_state.get("env_select", ""),
         "selected_clusters": st.session_state.get("cluster_select", []),
         "last_extraction_params": params,
     }
@@ -127,30 +127,12 @@ def _run_extraction_with_params(settings, params: dict):
             merged[cid] = ClusterCredential(**cred_dict)
         settings = settings.model_copy(update={"cluster_credentials": merged})
 
-    # Pass SR endpoints from discovery cache
-    sr_endpoints = _build_sr_endpoints(params)
-
     log = st.session_state.extraction_log
 
     def on_progress(phase: str, detail: str = "") -> None:
         log.append(f"**{phase}** {detail}")
 
     async def _do_extract():
-        nonlocal params, settings
-
-        # Auto-provision missing keys if enabled
-        if st.session_state.get("auto_provision", False):
-            on_progress("Provisioning", "Checking for missing API keys...")
-            params = await _auto_provision_keys(settings, params, sr_endpoints, on_progress)
-            # Re-merge cluster credentials after provisioning
-            prov_creds = params.get("cluster_credentials", {})
-            if prov_creds:
-                merged = dict(settings.cluster_credentials)
-                for cid, cred_dict in prov_creds.items():
-                    merged[cid] = ClusterCredential(**cred_dict)
-                settings = settings.model_copy(update={"cluster_credentials": merged})
-            on_progress("Provisioning", "Key provisioning complete")
-
         return await run_extraction(
             settings,
             environment_ids=params["env_ids"],
