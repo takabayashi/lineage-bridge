@@ -13,7 +13,7 @@ Work is planned and executed using specialized agent personas. Each has a clear 
 | **Sentinel** | Quality gate & review | Reviews ALL work before commit. Runs lint, format, tests. Validates architectural alignment | Final approval on every commit |
 | **Forge** | Integration & wiring | Connects new modules into orchestrator, settings, UI — owns the glue between systems | Orchestrator phases, config wiring, import chains |
 | **Prism** | UI/UX specialist | Reviews UI flows, proposes UX improvements, accessibility, layout, interaction design | UI specs, component design, UX audit findings |
-| **Anvil** | DevOps & infra | IaC (Terraform), CI/CD pipelines, cloud provisioning, environment automation | `infra/`, `.github/workflows/`, `scripts/`, Makefile |
+| **Anvil** | DevOps & infra | IaC (Terraform), CI/CD pipelines, cloud provisioning, environment automation | `infra/`, `.github/workflows/`, Makefile |
 
 ## Workflow
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Generate .env file from Terraform outputs
-# Usage: ./scripts/env-from-terraform.sh
+# Usage: ./infra/demo/scripts/env-from-terraform.sh
 
 set -euo pipefail
 

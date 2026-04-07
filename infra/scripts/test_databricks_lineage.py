@@ -10,7 +10,7 @@ Steps:
   4. Query the Databricks Lineage Tracking API to inspect captured lineage
 
 Usage:
-  uv run python scripts/test_databricks_lineage.py
+  uv run python infra/scripts/test_databricks_lineage.py
 """
 
 from __future__ import annotations
