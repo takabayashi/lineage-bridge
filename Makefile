@@ -12,7 +12,8 @@ extract: ## Run lineage extraction CLI
 watch: ## Run change-detection watcher CLI
 	uv run lineage-bridge-watch
 
-ui: ## Start the Streamlit UI
+ui: ## Start the Streamlit UI (auto-provisions Cloud API key if missing)
+	@bash scripts/ensure-cloud-key.sh
 	uv run streamlit run lineage_bridge/ui/app.py
 
 test: ## Run tests
