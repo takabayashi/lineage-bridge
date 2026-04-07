@@ -1,0 +1,17 @@
+{
+  "id": "ae-002",
+  "source": "crn://confluent.cloud/organization=org-abc/environment=env-2yzd0o/kafka=lkc-jkn588/connector=lcc-xyz",
+  "type": "io.confluent.connect/authorization",
+  "time": "2026-04-06T11:00:00Z",
+  "data": {
+    "serviceName": "crn://confluent.cloud/organization=org-abc/environment=env-2yzd0o/kafka=lkc-jkn588",
+    "methodName": "connect.DeleteConnector",
+    "resourceName": "crn://confluent.cloud/organization=org-abc/environment=env-2yzd0o/kafka=lkc-jkn588/connector=lcc-xyz",
+    "authenticationInfo": {
+      "principal": "User:sa-demo"
+    },
+    "request": {
+      "connector_name": "my-postgres-sink"
+    }
+  }
+}

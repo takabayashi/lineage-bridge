@@ -34,6 +34,7 @@ class ClusterInfo:
     region: str
     availability: str  # SINGLE_ZONE, MULTI_ZONE
     rest_endpoint: str
+    bootstrap_endpoint: str = ""  # Kafka bootstrap servers (SASL_SSL)
 
 
 @dataclass
@@ -78,6 +79,9 @@ async def list_clusters(cloud: ConfluentClient, environment_id: str) -> list[Clu
         rest_endpoint = spec.get("http_endpoint", "")
         if not rest_endpoint and region and cloud_provider:
             rest_endpoint = f"https://{cluster_id}.{region}.{cloud_provider}.confluent.cloud:443"
+        # Bootstrap endpoint: strip protocol prefix if present
+        bootstrap_raw = spec.get("kafka_bootstrap_endpoint", "")
+        bootstrap = bootstrap_raw.removeprefix("SASL_SSL://")
         clusters.append(
             ClusterInfo(
                 id=cluster_id,
@@ -86,6 +90,7 @@ async def list_clusters(cloud: ConfluentClient, environment_id: str) -> list[Clu
                 region=region,
                 availability=spec.get("availability", ""),
                 rest_endpoint=rest_endpoint,
+                bootstrap_endpoint=bootstrap,
             )
         )
     return sorted(clusters, key=lambda c: c.display_name)

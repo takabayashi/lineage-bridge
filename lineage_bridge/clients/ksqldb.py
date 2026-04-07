@@ -129,6 +129,10 @@ class KsqlDBClient:
         nodes: list[LineageNode] = []
         edges: list[LineageEdge] = []
 
+        # Build stream/table name → backing Kafka topic mapping.
+        # ksqlDB SQL references stream/table names, not topic names.
+        name_to_topic = await self._build_name_to_topic_map(dp)
+
         queries = await self._show_queries(dp)
         for q in queries:
             qid = q.get("id", "")
@@ -153,13 +157,12 @@ class KsqlDBClient:
                 )
             )
 
-            # Parse SQL for source topics.
+            # Parse SQL for source streams/tables, resolve to Kafka topics.
             source_names = self._parse_source_names(sql)
             for sname in source_names:
-                # Streams/tables map 1:1 to Kafka topics (lowercase).
-                topic = sname.lower()
+                # Resolve stream/table name to backing Kafka topic.
+                topic = name_to_topic.get(sname.upper(), sname.lower())
                 tid = self._topic_node_id(topic)
-                # Placeholder topic node.
                 nodes.append(
                     LineageNode(
                         node_id=tid,
@@ -176,7 +179,7 @@ class KsqlDBClient:
                         src_id=tid,
                         dst_id=self._query_node_id(qid),
                         edge_type=EdgeType.CONSUMES,
-                        confidence=0.8,
+                        confidence=0.9 if sname.upper() in name_to_topic else 0.7,
                     )
                 )
 
@@ -223,6 +226,32 @@ class KsqlDBClient:
                 result.append(n)
         return result
 
+    # ── name resolution ──────────────────────────────────────────────────
+
+    async def _build_name_to_topic_map(self, dp: ConfluentClient) -> dict[str, str]:
+        """Build a mapping of ksqlDB stream/table name (UPPER) → Kafka topic name.
+
+        ksqlDB streams and tables are backed by Kafka topics, but the names
+        can differ (e.g. stream ``ORDERS_STREAM`` backed by topic ``orders``).
+        SQL statements reference stream/table names, so we need this mapping
+        to create edges to the correct topic nodes.
+        """
+        mapping: dict[str, str] = {}
+        streams = await self._show_streams(dp)
+        for s in streams:
+            name = s.get("name", "")
+            topic = s.get("topic", "")
+            if name and topic:
+                mapping[name.upper()] = topic
+        tables = await self._show_tables(dp)
+        for t in tables:
+            name = t.get("name", "")
+            topic = t.get("topic", "")
+            if name and topic:
+                mapping[name.upper()] = topic
+        logger.debug("ksqlDB name→topic map: %s", mapping)
+        return mapping
+
     # ── raw API calls ───────────────────────────────────────────────────
 
     async def _discover_clusters(self) -> list[dict[str, Any]]:
@@ -233,9 +262,36 @@ class KsqlDBClient:
 
     async def _show_queries(self, dp: ConfluentClient) -> list[dict[str, Any]]:
         resp = await dp.post("/ksql", json_body={"ksql": "SHOW QUERIES;", "streamsProperties": {}})
-        # Response is a list; first element contains the queries.
         if isinstance(resp, list) and resp:
             return resp[0].get("queries", [])
         if isinstance(resp, dict):
             return resp.get("queries", [])
+        return []
+
+    async def _show_streams(self, dp: ConfluentClient) -> list[dict[str, Any]]:
+        """SHOW STREAMS; → list of {name, topic, keyFormat, valueFormat, isWindowed}."""
+        try:
+            resp = await dp.post(
+                "/ksql", json_body={"ksql": "SHOW STREAMS;", "streamsProperties": {}}
+            )
+            if isinstance(resp, list) and resp:
+                return resp[0].get("streams", [])
+            if isinstance(resp, dict):
+                return resp.get("streams", [])
+        except Exception:
+            logger.debug("SHOW STREAMS failed", exc_info=True)
+        return []
+
+    async def _show_tables(self, dp: ConfluentClient) -> list[dict[str, Any]]:
+        """SHOW TABLES; → list of {name, topic, keyFormat, valueFormat, isWindowed}."""
+        try:
+            resp = await dp.post(
+                "/ksql", json_body={"ksql": "SHOW TABLES;", "streamsProperties": {}}
+            )
+            if isinstance(resp, list) and resp:
+                return resp[0].get("tables", [])
+            if isinstance(resp, dict):
+                return resp.get("tables", [])
+        except Exception:
+            logger.debug("SHOW TABLES failed", exc_info=True)
         return []

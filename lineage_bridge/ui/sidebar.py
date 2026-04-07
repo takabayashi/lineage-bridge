@@ -33,7 +33,6 @@ from lineage_bridge.ui.styles import (
     NODE_ICONS,
     NODE_TYPE_LABELS,
 )
-from lineage_bridge.ui.watcher import render_watcher_section
 
 
 def _sidebar_section(label: str):
@@ -103,15 +102,6 @@ def _render_sidebar():
 
                 _render_sidebar_publish()
 
-            # ══════════════════════════════════════════════════════════
-            #  WATCHER
-            # ══════════════════════════════════════════════════════════
-            if st.session_state.connected:
-                _sidebar_section("Watcher")
-
-                with st.expander("Audit Log Watcher", expanded=False):
-                    render_watcher_section()
-
         # ══════════════════════════════════════════════════════════════
         #  GRAPH
         # ══════════════════════════════════════════════════════════════
@@ -135,7 +125,7 @@ def _render_sidebar():
                 if st.button(
                     "Clear focus",
                     key="clear_focus_btn",
-                    use_container_width=True,
+                    width="stretch",
                 ):
                     st.session_state.focus_node = None
                     st.rerun()
@@ -171,7 +161,7 @@ def _render_sidebar_connection():
             "Connect",
             key="connect_btn",
             type="primary",
-            use_container_width=True,
+            width="stretch",
         ):
             with st.status("Connecting...", expanded=True) as status:
                 try:
@@ -221,7 +211,7 @@ def _render_sidebar_scope():
             key="discover_all_btn",
             type="primary" if not all_discovered else "secondary",
             disabled=all_discovered,
-            use_container_width=True,
+            width="stretch",
         ):
             bar = st.progress(0)
             for i, env in enumerate(all_envs):
@@ -237,7 +227,7 @@ def _render_sidebar_scope():
         if st.button(
             "Refresh",
             key="refresh_discovery_btn",
-            use_container_width=True,
+            width="stretch",
         ):
             bar = st.progress(0)
             for i, env in enumerate(all_envs):
@@ -468,7 +458,7 @@ def _render_sidebar_databricks():
     if st.button(
         "Discover Warehouses",
         key="discover_wh_btn",
-        use_container_width=True,
+        width="stretch",
     ):
         with st.spinner("Discovering..."):
             try:
@@ -636,7 +626,7 @@ def _render_sidebar_actions():
             key="extract_btn",
             type="primary",
             disabled=not selected_cluster_ids,
-            use_container_width=True,
+            width="stretch",
             help="Extract lineage from Confluent Cloud",
         ):
             action = "extract"
@@ -645,7 +635,7 @@ def _render_sidebar_actions():
             "Enrich",
             key="enrich_btn",
             disabled=not has_graph,
-            use_container_width=True,
+            width="stretch",
             help="Enrich graph with catalog metadata and metrics",
         ):
             action = "enrich"
@@ -655,7 +645,7 @@ def _render_sidebar_actions():
             "Refresh",
             key="refresh_extract_btn",
             disabled=not has_params,
-            use_container_width=True,
+            width="stretch",
             help="Re-run last extraction with same parameters",
         ):
             action = "refresh"
@@ -771,7 +761,7 @@ def _render_sidebar_publish():
                 "\u2934 Push to UC",
                 key="push_btn",
                 type="secondary",
-                use_container_width=True,
+                width="stretch",
                 help="Push lineage metadata to Databricks Unity Catalog",
             ):
                 action = "push_uc"
@@ -783,7 +773,7 @@ def _render_sidebar_publish():
                 "\u2934 Push to Glue",
                 key="glue_push_btn",
                 type="secondary",
-                use_container_width=True,
+                width="stretch",
                 help="Push lineage metadata to AWS Glue",
             ):
                 action = "push_glue"
@@ -1036,7 +1026,7 @@ def _render_sidebar_load_data():
         "Load Demo Graph",
         key="load_demo_sidebar",
         type="primary",
-        use_container_width=True,
+        width="stretch",
     ):
         st.session_state.graph = generate_sample_graph()
         st.session_state.graph_version = _GRAPH_VERSION

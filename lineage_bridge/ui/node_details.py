@@ -56,7 +56,7 @@ def render_node_details(graph: LineageGraph) -> None:
     if st.button(
         "Close",
         key="close_detail_btn",
-        use_container_width=True,
+        width="stretch",
     ):
         st.session_state._dismissed_node = sel_id
         st.session_state.selected_node = None
@@ -494,7 +494,7 @@ def render_node_details(graph: LineageGraph) -> None:
                 if st.button(
                     f"{nb.display_name}",
                     key=f"nb_up_{nb.node_id}",
-                    use_container_width=True,
+                    width="stretch",
                 ):
                     st.session_state.selected_node = nb.node_id
                     st.rerun()
@@ -508,7 +508,7 @@ def render_node_details(graph: LineageGraph) -> None:
                 if st.button(
                     f"{nb.display_name}",
                     key=f"nb_dn_{nb.node_id}",
-                    use_container_width=True,
+                    width="stretch",
                 ):
                     st.session_state.selected_node = nb.node_id
                     st.rerun()
@@ -522,7 +522,7 @@ def render_node_details(graph: LineageGraph) -> None:
         if st.button(
             "Focus on this node",
             key="focus_btn",
-            use_container_width=True,
+            width="stretch",
         ):
             st.session_state.focus_node = sel_id
             st.rerun()
@@ -530,7 +530,7 @@ def render_node_details(graph: LineageGraph) -> None:
         if st.button(
             "Clear selection",
             key="clear_sel_btn",
-            use_container_width=True,
+            width="stretch",
         ):
             st.session_state._dismissed_node = sel_id
             st.session_state.selected_node = None

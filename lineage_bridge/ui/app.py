@@ -455,7 +455,7 @@ def _render_empty_state():
             "\u26a1 Load Demo Graph",
             key="hero_demo_btn",
             type="primary",
-            use_container_width=True,
+            width="stretch",
         ):
             st.session_state.graph = generate_sample_graph()
             st.session_state.graph_version = _GRAPH_VERSION
@@ -465,9 +465,11 @@ def _render_empty_state():
 
 
 def _render_watcher_tab():
-    """Render the Change Watcher tab content."""
-    from lineage_bridge.ui.watcher import render_watcher_log
+    """Render the Change Watcher tab with controls and event log."""
+    from lineage_bridge.ui.watcher import render_watcher_controls, render_watcher_log
 
+    render_watcher_controls()
+    st.divider()
     render_watcher_log()
 
 
@@ -536,60 +538,60 @@ def _render_graph_content(graph: LineageGraph):
 
     if not vis_nodes:
         st.warning("No nodes match the current filters. Adjust filters in the sidebar.")
+        return
+
+    has_selection = st.session_state.selected_node is not None
+    if has_selection:
+        graph_col, detail_col = st.columns([3, 2])
     else:
-        # Layout: graph + optional detail panel
-        has_selection = st.session_state.selected_node is not None
-        if has_selection:
-            graph_col, detail_col = st.columns([3, 2])
-        else:
-            graph_col = st.container()
-            detail_col = None
+        graph_col = st.container()
+        detail_col = None
 
-        with graph_col:
-            st.caption(
-                f"Showing {len(vis_nodes)} of {graph.node_count} nodes, {len(vis_edges)} edges"
-            )
+    with graph_col:
+        st.caption(
+            f"Showing {len(vis_nodes)} of {graph.node_count} nodes, {len(vis_edges)} edges"
+        )
 
-            # Compute DAG layout positions (JS may override with saved positions)
-            edge_pairs = [(e["from"], e["to"]) for e in vis_edges]
-            positions = _compute_dag_layout([n["id"] for n in vis_nodes], edge_pairs)
-            for n in vis_nodes:
-                pos = positions.get(n["id"])
-                if pos:
-                    n["x"] = pos["x"]
-                    n["y"] = pos["y"]
+        # Compute DAG layout positions (JS may override with saved positions)
+        edge_pairs = [(e["from"], e["to"]) for e in vis_edges]
+        positions = _compute_dag_layout([n["id"] for n in vis_nodes], edge_pairs)
+        for n in vis_nodes:
+            pos = positions.get(n["id"])
+            if pos:
+                n["x"] = pos["x"]
+                n["y"] = pos["y"]
 
-            clear_positions = st.session_state.pop("_clear_positions", False)
-            vis_config = {
-                "layout": {"hierarchical": {"enabled": False}},
-                "physics": {"enabled": False},
-                "edges": {
-                    "smooth": {"enabled": False},
-                },
-                "_clearPositions": clear_positions,
-            }
+        clear_positions = st.session_state.pop("_clear_positions", False)
+        vis_config = {
+            "layout": {"hierarchical": {"enabled": False}},
+            "physics": {"enabled": False},
+            "edges": {
+                "smooth": {"enabled": False},
+            },
+            "_clearPositions": clear_positions,
+        }
 
-            clicked_node = visjs_graph(
-                nodes=vis_nodes,
-                edges=vis_edges,
-                config=vis_config,
-                height=650,
-                key="lineage_graph",
-            )
+        clicked_node = visjs_graph(
+            nodes=vis_nodes,
+            edges=vis_edges,
+            config=vis_config,
+            height=650,
+            key="lineage_graph",
+        )
 
-            if clicked_node:
-                dismissed = st.session_state._dismissed_node
-                if clicked_node == dismissed:
-                    pass
-                elif clicked_node != st.session_state.selected_node:
-                    st.session_state.selected_node = clicked_node
-                    st.session_state._dismissed_node = None
-                    st.rerun()
+        if clicked_node:
+            dismissed = st.session_state._dismissed_node
+            if clicked_node == dismissed:
+                pass
+            elif clicked_node != st.session_state.selected_node:
+                st.session_state.selected_node = clicked_node
+                st.session_state._dismissed_node = None
+                st.rerun()
 
-        # Node detail panel
-        if detail_col is not None:
-            with detail_col, st.container(border=True):
-                render_node_details(graph)
+    # Node detail panel
+    if detail_col is not None:
+        with detail_col, st.container(border=True):
+            render_node_details(graph)
 
 
 # ═══════════════════════════════════════════════════════════════════════

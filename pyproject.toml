@@ -14,6 +14,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "cryptography>=42.0",
     "boto3>=1.34",
+    "confluent-kafka>=2.3",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +28,7 @@ dev = [
 
 [project.scripts]
 lineage-bridge-extract = "lineage_bridge.extractors.orchestrator:main"
+lineage-bridge-watch = "lineage_bridge.watcher.cli:main"
 lineage-bridge-ui = "lineage_bridge.ui.app:run"
 
 [build-system]

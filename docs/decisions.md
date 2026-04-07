@@ -148,3 +148,14 @@ Living document. Every significant design or implementation decision made by the
 - **Alternatives:** Raise `ValidationError` to fail the extraction; silently ignore.
 - **Tradeoff:** Warnings surface issues for debugging without blocking the user. Orphan nodes are common in partial extractions (e.g., when some extractors are disabled). Raising would force users to fix upstream data before seeing any graph. Silent ignore would hide real bugs.
 - **Files:** `models/graph.py`, `extractors/orchestrator.py`
+
+## ADR-014: Change-detection watcher — REST polling + debounce
+
+- **Status:** Accepted (supersedes Kafka consumer approach)
+- **Date:** 2026-04-06
+- **Decided by:** Blueprint, Forge
+- **Context:** LineageBridge needs a reactive mode that detects lineage-relevant changes in Confluent Cloud and triggers extraction automatically. Initially designed around `confluent_kafka.Consumer` on the audit log cluster, but the audit log cluster is private (separate from data clusters) and has a 2-API-key limit, making it impractical for a development tool.
+- **Decision:** Poll Confluent Cloud REST APIs every 10 seconds using existing Cloud API keys. `ChangePoller` takes snapshots of topics, connectors, ksqlDB clusters, and Flink statements, compares hashes to detect changes, and emits synthetic `AuditEvent` objects. A `WatcherEngine` runs the poller in a background `threading.Thread` with a 30-second debounce cooldown. No additional credentials are needed — reuses the existing Cloud API key.
+- **Alternatives:** (1) Kafka consumer on audit log cluster — rejected due to private cluster + 2-key limit. (2) Webhook/event-driven — no Confluent Cloud webhook API available. (3) `asyncio` task — rejected because Streamlit's sync context creates a new event loop per call.
+- **Tradeoff:** REST polling is lightweight and requires no additional credentials, but can only detect state changes (not who/when/why). 10-second poll interval + 30-second cooldown means changes are reflected within ~40 seconds. Polling adds minimal API load (4 lightweight list endpoints per poll). The audit log consumer code is retained in `models/audit_event.py` for potential future use if audit log access becomes available.
+- **Files:** `watcher/engine.py`, `watcher/cli.py`, `clients/audit_consumer.py`, `models/audit_event.py`, `ui/watcher.py`

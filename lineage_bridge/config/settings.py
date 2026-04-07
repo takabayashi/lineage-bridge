@@ -80,6 +80,18 @@ class Settings(BaseSettings):
         description="AWS region for Glue Data Catalog",
     )
 
+    # ── Audit log watcher ─────────────────────────────────────────────────
+    audit_log_bootstrap_servers: str | None = Field(
+        default=None,
+        description="Bootstrap servers for the Confluent Cloud audit log cluster",
+    )
+    audit_log_api_key: str | None = Field(
+        default=None, description="API key for the audit log cluster"
+    )
+    audit_log_api_secret: str | None = Field(
+        default=None, description="API secret for the audit log cluster"
+    )
+
     # ── Per-cluster credentials ─────────────────────────────────────────
     # JSON map: {"lkc-abc123": {"api_key": "...", "api_secret": "..."}, ...}
     # Set via env: LINEAGE_BRIDGE_CLUSTER_CREDENTIALS='{"lkc-abc":{"api_key":".."}}'

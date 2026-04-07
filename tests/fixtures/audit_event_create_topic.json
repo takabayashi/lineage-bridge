@@ -1,0 +1,25 @@
+{
+  "id": "ae-001",
+  "source": "crn://confluent.cloud/organization=org-abc/environment=env-2yzd0o/kafka=lkc-jkn588",
+  "type": "io.confluent.kafka.server/authorization",
+  "time": "2026-04-06T10:30:00Z",
+  "data": {
+    "serviceName": "crn://confluent.cloud/organization=org-abc/environment=env-2yzd0o/kafka=lkc-jkn588",
+    "methodName": "kafka.CreateTopics",
+    "resourceName": "crn://confluent.cloud/organization=org-abc/environment=env-2yzd0o/kafka=lkc-jkn588/topic=lineage_bridge.new_topic",
+    "authenticationInfo": {
+      "principal": "User:sa-demo"
+    },
+    "authorizationInfo": {
+      "granted": true,
+      "operation": "Create",
+      "resourceType": "Topic",
+      "resourceName": "lineage_bridge.new_topic",
+      "patternType": "LITERAL"
+    },
+    "request": {
+      "correlation_id": "12345",
+      "client_id": "confluent-cli"
+    }
+  }
+}
