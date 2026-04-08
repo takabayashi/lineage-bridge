@@ -753,7 +753,7 @@ resource "aws_iam_role" "tableflow" {
       {
         Sid       = "SelfAssume"
         Effect    = "Allow"
-        Principal = { AWS = "arn:aws:iam::${var.aws_account_id}:root" }
+        Principal = { AWS = ["arn:aws:iam::${var.aws_account_id}:root", "arn:aws:iam::${var.aws_account_id}:role/${local.demo_prefix}-tableflow-role"] }
         Action    = "sts:AssumeRole"
       }
     ]
@@ -897,7 +897,7 @@ resource "terraform_data" "update_trust_phase1" {
       {
         Sid       = "SelfAssume"
         Effect    = "Allow"
-        Principal = { AWS = "arn:aws:iam::${var.aws_account_id}:root" }
+        Principal = { AWS = ["arn:aws:iam::${var.aws_account_id}:root", aws_iam_role.tableflow.arn] }
         Action    = "sts:AssumeRole"
       },
       {
@@ -937,7 +937,7 @@ resource "terraform_data" "update_trust_phase2" {
       {
         Sid       = "SelfAssume"
         Effect    = "Allow"
-        Principal = { AWS = "arn:aws:iam::${var.aws_account_id}:root" }
+        Principal = { AWS = ["arn:aws:iam::${var.aws_account_id}:root", aws_iam_role.tableflow.arn] }
         Action    = "sts:AssumeRole"
       },
       {
