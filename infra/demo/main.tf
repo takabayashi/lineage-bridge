@@ -1050,7 +1050,7 @@ resource "databricks_grants" "schema" {
 
   grant {
     principal  = "account users"
-    privileges = ["USE_SCHEMA", "SELECT"]
+    privileges = ["USE_SCHEMA", "SELECT", "CREATE_TABLE", "MODIFY"]
   }
 }
 
@@ -1262,6 +1262,10 @@ resource "databricks_notebook" "customer_order_summary" {
 
 resource "databricks_job" "customer_order_summary" {
   name = "${local.demo_prefix}-customer-order-summary"
+
+  run_as {
+    service_principal_name = var.databricks_client_id
+  }
 
   task {
     task_key = "summarize"
