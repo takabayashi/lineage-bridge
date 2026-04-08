@@ -753,7 +753,7 @@ resource "aws_iam_role" "tableflow" {
       {
         Sid       = "SelfAssume"
         Effect    = "Allow"
-        Principal = { AWS = ["arn:aws:iam::${var.aws_account_id}:root", "arn:aws:iam::${var.aws_account_id}:role/${local.demo_prefix}-tableflow-role"] }
+        Principal = { AWS = "arn:aws:iam::${var.aws_account_id}:root" }
         Action    = "sts:AssumeRole"
       }
     ]
