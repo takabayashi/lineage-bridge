@@ -15,9 +15,10 @@
 #   - Databricks personal access token
 #   - Databricks service principal client ID + secret
 #
-# Prerequisites:
-#   - confluent CLI logged in (confluent login)
-#   - AWS CLI configured (aws configure)
+# Prerequisites (auto-installed via Homebrew if missing):
+#   - confluent CLI (confluent login --save)
+#   - AWS CLI (aws sso login)
+#   - Databricks CLI (databricks configure)
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -31,6 +32,103 @@ echo "════════════════════════�
 echo "  LineageBridge Demo — Credential Setup"
 echo "══════════════════════════════════════════════════════════════════"
 echo ""
+
+# ── Prerequisites: CLI tools ───────────────────────────────────────────────
+
+MISSING_CLIS=()
+
+if ! command -v confluent &>/dev/null; then
+    MISSING_CLIS+=("confluent")
+fi
+if ! command -v aws &>/dev/null; then
+    MISSING_CLIS+=("aws")
+fi
+if ! command -v databricks &>/dev/null; then
+    MISSING_CLIS+=("databricks")
+fi
+
+if [ ${#MISSING_CLIS[@]} -gt 0 ]; then
+    echo "  Missing CLI tools: ${MISSING_CLIS[*]}"
+    echo ""
+
+    if command -v brew &>/dev/null; then
+        read -rp "  Install via Homebrew? [Y/n]: " install_clis
+        if [ "${install_clis:-Y}" != "n" ] && [ "${install_clis:-Y}" != "N" ]; then
+            for cli in "${MISSING_CLIS[@]}"; do
+                case "$cli" in
+                    confluent)
+                        echo "  Installing Confluent CLI..."
+                        brew install confluentinc/tap/cli
+                        ;;
+                    aws)
+                        echo "  Installing AWS CLI..."
+                        brew install awscli
+                        ;;
+                    databricks)
+                        echo "  Installing Databricks CLI..."
+                        brew install databricks
+                        ;;
+                esac
+            done
+            echo ""
+            echo "  CLIs installed. Logging in..."
+            echo ""
+            for cli in "${MISSING_CLIS[@]}"; do
+                case "$cli" in
+                    confluent)
+                        echo "  ▸ Confluent Cloud login (saves credentials locally):"
+                        confluent login --save || echo "  Warning: confluent login failed — you can retry later with: confluent login --save"
+                        echo ""
+                        ;;
+                    aws)
+                        echo "  ▸ AWS SSO login:"
+                        aws sso login || aws configure || echo "  Warning: AWS login failed — you can retry later with: aws sso login"
+                        echo ""
+                        ;;
+                    databricks)
+                        echo "  ▸ Databricks login:"
+                        databricks configure || echo "  Warning: databricks configure failed — you can retry later with: databricks configure"
+                        echo ""
+                        ;;
+                esac
+            done
+        else
+            echo "  Skipping installation. Install and log in manually:"
+            for cli in "${MISSING_CLIS[@]}"; do
+                case "$cli" in
+                    confluent)  echo "    brew install confluentinc/tap/cli && confluent login --save" ;;
+                    aws)        echo "    brew install awscli && aws sso login" ;;
+                    databricks) echo "    brew install databricks && databricks configure" ;;
+                esac
+            done
+            echo ""
+        fi
+    else
+        echo "  Homebrew not found. Install the missing CLIs and log in:"
+        for cli in "${MISSING_CLIS[@]}"; do
+            case "$cli" in
+                confluent)
+                    echo "    Install: https://docs.confluent.io/confluent-cli/current/install.html"
+                    echo "    Login:   confluent login --save"
+                    ;;
+                aws)
+                    echo "    Install: https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html"
+                    echo "    Login:   aws sso login"
+                    ;;
+                databricks)
+                    echo "    Install: https://docs.databricks.com/dev-tools/cli/install.html"
+                    echo "    Login:   databricks configure"
+                    ;;
+            esac
+        done
+        echo ""
+        read -rp "  Continue without them? [y/N]: " continue_anyway
+        if [ "${continue_anyway:-N}" != "y" ] && [ "${continue_anyway:-N}" != "Y" ]; then
+            echo "  Exiting. Install the CLIs and re-run."
+            exit 1
+        fi
+    fi
+fi
 
 # ── Helper: read existing tfvars value ──────────────────────────────────────
 
