@@ -62,7 +62,8 @@ def arr(s, e, label="", dash=False):
             ss = min(p + 5, ln - 8)
             draw.line(
                 (x1 + dx * p, y1 + dy * p, x1 + dx * ss, y1 + dy * ss),
-                fill=ARROW_COL, width=2,
+                fill=ARROW_COL,
+                width=2,
             )
             p += 10
     else:
@@ -84,8 +85,11 @@ def arr(s, e, label="", dash=False):
 # ── Title ───────────────────────────────────────────────────────────────────
 
 draw.text(
-    (W // 2, 22), "LineageBridge Demo Architecture",
-    fill=TEXT, font=font_title, anchor="mm",
+    (W // 2, 22),
+    "LineageBridge Demo Architecture",
+    fill=TEXT,
+    font=font_title,
+    anchor="mm",
 )
 
 # ═══════════════════════════════════════════════════════════════════════════════
