@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Generate demo architecture diagram as PNG using Pillow."""
 
-from PIL import Image, ImageDraw, ImageFont
 import math
+
+from PIL import Image, ImageDraw, ImageFont
 
 # ── Canvas ──────────────────────────────────────────────────────────────────
 
