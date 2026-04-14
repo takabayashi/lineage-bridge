@@ -106,16 +106,39 @@ else
   terraform apply -auto-approve
 fi
 
+# ── Generate .env ─────────────────────────────────────────────────────────
+
+echo ""
+echo "▸ Generating .env file..."
+
+PROJECT_DIR="$(dirname "$(dirname "$DEMO_DIR")")"
+ENV_FILE="$PROJECT_DIR/.env"
+
+if [ -f "$ENV_FILE" ]; then
+    backup="$ENV_FILE.backup.$(date +%Y%m%d_%H%M%S)"
+    cp "$ENV_FILE" "$backup"
+    echo "  Backed up existing .env to $(basename "$backup")"
+fi
+
+terraform output -raw demo_env_file 2>/dev/null \
+    | sed 's/^    //' \
+    > "$ENV_FILE"
+
+echo "  Written to $ENV_FILE"
+
 # ── Done ───────────────────────────────────────────────────────────────────
 
 echo ""
 echo "══════════════════════════════════════════════════════════════════"
 echo "  Demo provisioned successfully!"
 echo ""
-echo "  Next steps:"
-echo "    cd $(dirname "$DEMO_DIR")/.."
-echo "    terraform -chdir=infra/demo output -raw demo_env_file >> .env"
-echo "    uv run lineage-bridge-extract"
-echo "    uv run streamlit run lineage_bridge/ui/app.py"
+echo "  .env has been configured automatically."
+echo "  Starting the UI..."
+echo ""
+echo "  Other commands:"
+echo "    make extract      # run extraction CLI (headless)"
+echo "    make watch        # run change-detection watcher"
+echo "    make docker-ui    # run UI via Docker"
+echo "    make demo-down    # tear down all infrastructure"
 echo "══════════════════════════════════════════════════════════════════"
 echo ""

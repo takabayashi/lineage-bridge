@@ -6,13 +6,21 @@ SHELL := /bin/bash
 # Extract variables from terraform.tfvars for cleanup scripts
 DATABRICKS_HOST  := $(shell grep databricks_workspace_url terraform.tfvars 2>/dev/null | sed 's/.*= *"\(.*\)"/\1/')
 DATABRICKS_TOKEN := $(shell grep databricks_token terraform.tfvars 2>/dev/null | sed 's/.*= *"\(.*\)"/\1/')
-CATALOG_NAME     := $(shell terraform output -raw databricks_catalog_name 2>/dev/null || echo "lb_demo")
+CATALOG_NAME     := $(shell terraform state show 'databricks_catalog.demo' >/dev/null 2>&1 && terraform output -raw databricks_catalog_name 2>/dev/null || echo "")
 
 .DEFAULT_GOAL := help
 
-.PHONY: demo-up demo-down clean-catalog clean status env help
+.PHONY: setup demo-up demo-down clean-catalog clean status env help
 
-demo-up: ## Provision everything from scratch (init + apply + Tableflow key bootstrap)
+setup: ## Interactive credential setup (creates terraform.tfvars)
+	bash scripts/setup-tfvars.sh
+
+demo-up: ## Provision everything (auto-runs setup if terraform.tfvars missing)
+	@if [ ! -f terraform.tfvars ] || grep -q 'YOUR_' terraform.tfvars 2>/dev/null; then \
+		echo "  terraform.tfvars missing or has placeholders — running setup..."; \
+		echo ""; \
+		bash scripts/setup-tfvars.sh; \
+	fi
 	bash scripts/provision-demo.sh
 
 demo-down: ## Tear down everything (catalog cleanup + terraform destroy)
@@ -22,10 +30,14 @@ demo-down: ## Tear down everything (catalog cleanup + terraform destroy)
 	@echo "══════════════════════════════════════════════════════════════════"
 	@echo ""
 	@echo "▸ Cleaning up auto-created Databricks schemas..."
-	@DATABRICKS_HOST="$(DATABRICKS_HOST)" \
-	DATABRICKS_TOKEN="$(DATABRICKS_TOKEN)" \
-	CATALOG_NAME="$(CATALOG_NAME)" \
-	bash scripts/cleanup-catalog.sh || true
+	@if [ -n "$(CATALOG_NAME)" ] && [ -n "$(DATABRICKS_HOST)" ]; then \
+		DATABRICKS_HOST="$(DATABRICKS_HOST)" \
+		DATABRICKS_TOKEN="$(DATABRICKS_TOKEN)" \
+		CATALOG_NAME="$(CATALOG_NAME)" \
+		bash scripts/cleanup-catalog.sh || true; \
+	else \
+		echo "  Skipped (catalog already destroyed)"; \
+	fi
 	@echo ""
 	@echo "▸ Destroying Terraform resources..."
 	terraform destroy -auto-approve
@@ -55,7 +67,6 @@ help: ## Show this help
 		awk -F':.*## ' '{ printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2 }'
 	@echo ""
 	@echo "  Quick start:"
-	@echo "    cp terraform.tfvars.example terraform.tfvars"
-	@echo "    # edit terraform.tfvars with your credentials"
-	@echo "    make demo-up"
+	@echo "    make setup      # interactive credential setup"
+	@echo "    make demo-up    # provision infrastructure"
 	@echo ""

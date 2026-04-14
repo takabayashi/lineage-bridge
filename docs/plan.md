@@ -162,6 +162,34 @@ Committed in 3 commits. 304 tests, all passing.
 
 ---
 
+## v0.3.0 Housekeeping (2026-04-07)
+
+**What was done:**
+- Version sync: `__init__.py` aligned to `0.3.0` (was `0.1.0`)
+- ADR-009 updated: Glue `enrich()` no longer a stub — marked as superseded
+- Terraform destroy ordering: `time_sleep` delay before provider integration deletion (fixes 409 Conflict)
+- Terraform idempotent CTAS: `DROP TABLE IF EXISTS` before Flink CTAS statements
+- Makefile: robust `terraform output` handling during partial destroys
+- Docker: healthchecks for all compose services (extract, ui, watch)
+- Added `py.typed` marker for PEP 561 compliance
+- Master plan: added "What's Next" roadmap
+
+---
+
+## What's Next
+
+Potential improvement areas, roughly ordered by impact:
+
+| Area | Priority | Description |
+|------|----------|-------------|
+| **Test coverage** | High | Flink/ksqlDB SQL parsers (726 LOC, complex regex, no direct tests), sidebar.py (1,077 LOC), app.py (629 LOC) |
+| **Proxy-safe tests** | Medium | Strip proxy env vars in conftest.py — tests fail when ALL_PROXY is set |
+| **Sidebar decomposition** | Medium | sidebar.py (1,077 LOC) is the new monolith after app.py was split |
+| **Watcher circuit breaker** | Medium | No backoff when Confluent API is consistently failing |
+| **Sample data drift** | Low | sample_data.py may not reflect current node/edge types |
+
+---
+
 ## Dependency Graph
 
 ```
@@ -178,4 +206,7 @@ Phase 4 (DONE) ──> Polish + hardening ──> v0.2.0
                         │
                         v
 Post-v0.2.0 (DONE) ──> UC fixes, Databricks push, Glue enrichment, watcher, Docker
+                        │
+                        v
+v0.3.0 Housekeeping ──> Version sync, ADR cleanup, Terraform fixes, Docker healthchecks
 ```

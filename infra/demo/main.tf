@@ -303,6 +303,91 @@ resource "confluent_api_key" "flink" {
   depends_on = [confluent_role_binding.env_admin]
 }
 
+# ── Flink SQL: Drop stale tables before CTAS (idempotent re-provisioning) ───
+
+resource "confluent_flink_statement" "drop_enriched_orders" {
+  organization {
+    id = data.confluent_organization.demo.id
+  }
+
+  environment {
+    id = confluent_environment.demo.id
+  }
+
+  compute_pool {
+    id = confluent_flink_compute_pool.demo.id
+  }
+
+  principal {
+    id = confluent_service_account.demo.id
+  }
+
+  statement_name = "${local.demo_prefix}-drop-enriched-orders"
+  rest_endpoint  = data.confluent_flink_region.demo.rest_endpoint
+
+  statement = "DROP TABLE IF EXISTS `lineage_bridge.enriched_orders`;"
+
+  properties = {
+    "sql.current-catalog"  = confluent_environment.demo.display_name
+    "sql.current-database" = confluent_kafka_cluster.demo.display_name
+  }
+
+  credentials {
+    key    = confluent_api_key.flink.id
+    secret = confluent_api_key.flink.secret
+  }
+
+  depends_on = [
+    confluent_connector.datagen_orders,
+    confluent_connector.datagen_customers,
+  ]
+
+  lifecycle {
+    ignore_changes = all
+  }
+}
+
+resource "confluent_flink_statement" "drop_order_stats" {
+  organization {
+    id = data.confluent_organization.demo.id
+  }
+
+  environment {
+    id = confluent_environment.demo.id
+  }
+
+  compute_pool {
+    id = confluent_flink_compute_pool.demo.id
+  }
+
+  principal {
+    id = confluent_service_account.demo.id
+  }
+
+  statement_name = "${local.demo_prefix}-drop-order-stats"
+  rest_endpoint  = data.confluent_flink_region.demo.rest_endpoint
+
+  statement = "DROP TABLE IF EXISTS `lineage_bridge.order_stats`;"
+
+  properties = {
+    "sql.current-catalog"  = confluent_environment.demo.display_name
+    "sql.current-database" = confluent_kafka_cluster.demo.display_name
+  }
+
+  credentials {
+    key    = confluent_api_key.flink.id
+    secret = confluent_api_key.flink.secret
+  }
+
+  depends_on = [
+    confluent_connector.datagen_orders,
+  ]
+
+  lifecycle {
+    ignore_changes = all
+  }
+}
+
 # ── Flink SQL: Enriched Orders (CTAS — JOIN orders + customers) ─────────────
 
 resource "confluent_flink_statement" "enriched_orders" {
@@ -353,6 +438,7 @@ resource "confluent_flink_statement" "enriched_orders" {
   }
 
   depends_on = [
+    confluent_flink_statement.drop_enriched_orders,
     confluent_connector.datagen_orders,
     confluent_connector.datagen_customers,
   ]
@@ -405,6 +491,7 @@ resource "confluent_flink_statement" "order_stats" {
   }
 
   depends_on = [
+    confluent_flink_statement.drop_order_stats,
     confluent_connector.datagen_orders,
   ]
 }
@@ -758,6 +845,19 @@ resource "confluent_provider_integration" "aws" {
   }
 }
 
+# Confluent API returns 409 if the provider integration is deleted while
+# tableflow topics or catalog integrations still reference it. Terraform
+# infers destroy order from attribute refs but the API deregisters
+# dependents asynchronously. This sleep runs on destroy only, after all
+# dependents are destroyed but before the provider integration is.
+resource "time_sleep" "provider_integration_destroy_delay" {
+  destroy_duration = "60s"
+
+  triggers = {
+    provider_integration_id = confluent_provider_integration.aws.id
+  }
+}
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # DATABRICKS — Storage Credential (needs IAM role ARN)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -792,31 +892,31 @@ resource "terraform_data" "update_trust_phase1" {
       aws iam update-assume-role-policy --output json \
         --role-name "${aws_iam_role.tableflow.name}" \
         --policy-document '${jsonencode({
-          Version = "2012-10-17"
-          Statement = [
-            {
-              Sid       = "SelfAssume"
-              Effect    = "Allow"
-              Principal = { AWS = "arn:aws:iam::${var.aws_account_id}:root" }
-              Action    = "sts:AssumeRole"
-            },
-            {
-              Sid       = "DatabricksAssumeRole"
-              Effect    = "Allow"
-              Principal = { AWS = "arn:aws:iam::414351767826:root" }
-              Action    = "sts:AssumeRole"
-              Condition = {
-                StringEquals = {
-                  "sts:ExternalId" = databricks_storage_credential.tableflow.aws_iam_role[0].external_id
-                }
-              }
-            }
-          ]
-        })}'
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "SelfAssume"
+        Effect    = "Allow"
+        Principal = { AWS = ["arn:aws:iam::${var.aws_account_id}:root", aws_iam_role.tableflow.arn] }
+        Action    = "sts:AssumeRole"
+      },
+      {
+        Sid       = "DatabricksAssumeRole"
+        Effect    = "Allow"
+        Principal = { AWS = "arn:aws:iam::414351767826:root" }
+        Action    = "sts:AssumeRole"
+        Condition = {
+          StringEquals = {
+            "sts:ExternalId" = databricks_storage_credential.tableflow.aws_iam_role[0].external_id
+          }
+        }
+      }
+    ]
+})}'
     EOT
-  }
+}
 
-  depends_on = [databricks_storage_credential.tableflow]
+depends_on = [databricks_storage_credential.tableflow]
 }
 
 resource "time_sleep" "phase1" {
@@ -832,48 +932,48 @@ resource "terraform_data" "update_trust_phase2" {
       aws iam update-assume-role-policy --output json \
         --role-name "${aws_iam_role.tableflow.name}" \
         --policy-document '${jsonencode({
-          Version = "2012-10-17"
-          Statement = [
-            {
-              Sid       = "SelfAssume"
-              Effect    = "Allow"
-              Principal = { AWS = "arn:aws:iam::${var.aws_account_id}:root" }
-              Action    = "sts:AssumeRole"
-            },
-            {
-              Sid       = "DatabricksAssumeRole"
-              Effect    = "Allow"
-              Principal = { AWS = "arn:aws:iam::414351767826:root" }
-              Action    = "sts:AssumeRole"
-              Condition = {
-                StringEquals = {
-                  "sts:ExternalId" = databricks_storage_credential.tableflow.aws_iam_role[0].external_id
-                }
-              }
-            },
-            {
-              Sid       = "ConfluentAssumeRole"
-              Effect    = "Allow"
-              Principal = { AWS = confluent_provider_integration.aws.aws[0].iam_role_arn }
-              Action    = "sts:AssumeRole"
-              Condition = {
-                StringEquals = {
-                  "sts:ExternalId" = confluent_provider_integration.aws.aws[0].external_id
-                }
-              }
-            },
-            {
-              Sid       = "ConfluentTagSession"
-              Effect    = "Allow"
-              Principal = { AWS = confluent_provider_integration.aws.aws[0].iam_role_arn }
-              Action    = "sts:TagSession"
-            }
-          ]
-        })}'
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "SelfAssume"
+        Effect    = "Allow"
+        Principal = { AWS = ["arn:aws:iam::${var.aws_account_id}:root", aws_iam_role.tableflow.arn] }
+        Action    = "sts:AssumeRole"
+      },
+      {
+        Sid       = "DatabricksAssumeRole"
+        Effect    = "Allow"
+        Principal = { AWS = "arn:aws:iam::414351767826:root" }
+        Action    = "sts:AssumeRole"
+        Condition = {
+          StringEquals = {
+            "sts:ExternalId" = databricks_storage_credential.tableflow.aws_iam_role[0].external_id
+          }
+        }
+      },
+      {
+        Sid       = "ConfluentAssumeRole"
+        Effect    = "Allow"
+        Principal = { AWS = confluent_provider_integration.aws.aws[0].iam_role_arn }
+        Action    = "sts:AssumeRole"
+        Condition = {
+          StringEquals = {
+            "sts:ExternalId" = confluent_provider_integration.aws.aws[0].external_id
+          }
+        }
+      },
+      {
+        Sid       = "ConfluentTagSession"
+        Effect    = "Allow"
+        Principal = { AWS = confluent_provider_integration.aws.aws[0].iam_role_arn }
+        Action    = "sts:TagSession"
+      }
+    ]
+})}'
     EOT
-  }
+}
 
-  depends_on = [time_sleep.phase1, confluent_provider_integration.aws]
+depends_on = [time_sleep.phase1, confluent_provider_integration.aws]
 }
 
 resource "time_sleep" "phase2" {
@@ -950,7 +1050,7 @@ resource "databricks_grants" "schema" {
 
   grant {
     principal  = "account users"
-    privileges = ["USE_SCHEMA", "SELECT"]
+    privileges = ["USE_SCHEMA", "SELECT", "CREATE_TABLE", "MODIFY"]
   }
 }
 
@@ -972,7 +1072,7 @@ resource "confluent_tableflow_topic" "orders" {
 
   byob_aws {
     bucket_name             = aws_s3_bucket.tableflow.bucket
-    provider_integration_id = confluent_provider_integration.aws.id
+    provider_integration_id = time_sleep.provider_integration_destroy_delay.triggers["provider_integration_id"]
   }
 
   credentials {
@@ -997,7 +1097,7 @@ resource "confluent_tableflow_topic" "customers" {
 
   byob_aws {
     bucket_name             = aws_s3_bucket.tableflow.bucket
-    provider_integration_id = confluent_provider_integration.aws.id
+    provider_integration_id = time_sleep.provider_integration_destroy_delay.triggers["provider_integration_id"]
   }
 
   credentials {
@@ -1059,7 +1159,7 @@ resource "confluent_catalog_integration" "glue" {
   }
 
   aws_glue {
-    provider_integration_id = confluent_provider_integration.aws.id
+    provider_integration_id = time_sleep.provider_integration_destroy_delay.triggers["provider_integration_id"]
   }
 
   credentials {
@@ -1089,7 +1189,7 @@ resource "confluent_tableflow_topic" "order_stats" {
 
   byob_aws {
     bucket_name             = aws_s3_bucket.tableflow.bucket
-    provider_integration_id = confluent_provider_integration.aws.id
+    provider_integration_id = time_sleep.provider_integration_destroy_delay.triggers["provider_integration_id"]
   }
 
   credentials {
@@ -1162,6 +1262,10 @@ resource "databricks_notebook" "customer_order_summary" {
 
 resource "databricks_job" "customer_order_summary" {
   name = "${local.demo_prefix}-customer-order-summary"
+
+  run_as {
+    service_principal_name = var.databricks_client_id
+  }
 
   task {
     task_key = "summarize"

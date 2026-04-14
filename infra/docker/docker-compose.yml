@@ -11,6 +11,12 @@ services:
       - ../../data:/app/data
     profiles:
       - extract
+    healthcheck:
+      test: ["CMD", "python", "-c", "import lineage_bridge"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   ui:
     build:
@@ -25,6 +31,12 @@ services:
       - ../../data:/app/data
     profiles:
       - ui
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   watch:
     build:
@@ -41,3 +53,9 @@ services:
       - ../../data:/app/data
     profiles:
       - watch
+    healthcheck:
+      test: ["CMD", "python", "-c", "import lineage_bridge"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

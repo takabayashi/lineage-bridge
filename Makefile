@@ -1,8 +1,9 @@
 .DEFAULT_GOAL := help
 
-.PHONY: install extract watch ui test lint format clean docker-build docker-extract docker-watch docker-ui docker-down demo-up demo-down help
+.PHONY: install extract watch ui test lint format clean docker-build docker-extract docker-watch docker-ui docker-down demo-setup demo-up demo-down help
 
 install: ## Install project with dev dependencies
+	@test -x .venv/bin/python || uv venv
 	uv pip install -e ".[dev]"
 
 extract: ## Run lineage extraction CLI
@@ -11,7 +12,8 @@ extract: ## Run lineage extraction CLI
 watch: ## Run change-detection watcher CLI
 	uv run lineage-bridge-watch
 
-ui: ## Start the Streamlit UI
+ui: ## Start the Streamlit UI (auto-provisions Cloud API key if missing)
+	@bash scripts/ensure-cloud-key.sh
 	uv run streamlit run lineage_bridge/ui/app.py
 
 test: ## Run tests
@@ -50,8 +52,12 @@ docker-down: ## Stop all Docker services
 
 # ── Demo Infrastructure ────────────────────────────────────────────────────
 
-demo-up: ## Provision demo infrastructure (Confluent + AWS + Databricks)
+demo-setup: ## Interactive credential setup for demo infrastructure
+	$(MAKE) -C infra/demo setup
+
+demo-up: ## Provision demo infrastructure and start UI
 	$(MAKE) -C infra/demo demo-up
+	$(MAKE) ui
 
 demo-down: ## Tear down demo infrastructure
 	$(MAKE) -C infra/demo demo-down
