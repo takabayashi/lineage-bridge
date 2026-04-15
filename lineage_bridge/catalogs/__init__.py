@@ -6,12 +6,14 @@ from __future__ import annotations
 
 from lineage_bridge.catalogs.aws_glue import GlueCatalogProvider
 from lineage_bridge.catalogs.databricks_uc import DatabricksUCProvider
+from lineage_bridge.catalogs.google_lineage import GoogleLineageProvider
 from lineage_bridge.catalogs.protocol import CatalogProvider
 from lineage_bridge.models.graph import LineageGraph
 
 _PROVIDERS: dict[str, CatalogProvider] = {
     "UNITY_CATALOG": DatabricksUCProvider(),
     "AWS_GLUE": GlueCatalogProvider(),
+    "GOOGLE_DATA_LINEAGE": GoogleLineageProvider(),
 }
 
 

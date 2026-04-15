@@ -1,0 +1,12 @@
+{
+  "type": "record",
+  "name": "Customer",
+  "namespace": "com.lineagebridge.demo",
+  "fields": [
+    {"name": "customer_id", "type": "string", "arg.properties": {"regex": "CUST-[0-9]{4}"}},
+    {"name": "name", "type": "string", "arg.properties": {"options": ["Alice Johnson", "Bob Smith", "Carol Williams", "David Brown", "Eve Davis", "Frank Miller", "Grace Wilson", "Henry Moore", "Ivy Taylor", "Jack Anderson"]}},
+    {"name": "email", "type": "string", "arg.properties": {"regex": "[a-z]{5,10}@example\\.(com|org|net)"}},
+    {"name": "country", "type": "string", "arg.properties": {"options": ["US", "UK", "DE", "FR", "JP", "BR", "AU", "CA", "IN", "MX"]}},
+    {"name": "signup_date", "type": {"type": "int", "logicalType": "date"}}
+  ]
+}

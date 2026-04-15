@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     schema_registry_api_secret: str | None = Field(
         default=None, description="Schema Registry API secret"
     )
+    ksqldb_endpoint: str | None = Field(
+        default=None, description="ksqlDB REST endpoint URL (auto-discovered if unset)"
+    )
     ksqldb_api_key: str | None = Field(default=None, description="ksqlDB API key")
     ksqldb_api_secret: str | None = Field(default=None, description="ksqlDB API secret")
     flink_api_key: str | None = Field(default=None, description="Flink API key")
@@ -80,6 +83,16 @@ class Settings(BaseSettings):
         description="AWS region for Glue Data Catalog",
     )
 
+    # ── Google Cloud ─────────────────────────────────────────────────────
+    gcp_project_id: str | None = Field(
+        default=None,
+        description="GCP project ID for Google Data Lineage and BigQuery",
+    )
+    gcp_location: str = Field(
+        default="us",
+        description="GCP location for Data Lineage API (e.g. us, us-central1)",
+    )
+
     # ── Audit log watcher ─────────────────────────────────────────────────
     audit_log_bootstrap_servers: str | None = Field(
         default=None,
@@ -99,6 +112,14 @@ class Settings(BaseSettings):
         default_factory=dict,
         description="Per-cluster API credentials keyed by cluster ID",
     )
+
+    # ── REST API ─────────────────────────────────────────────────────────
+    api_key: str | None = Field(
+        default=None,
+        description="API key for REST API authentication (if unset, API runs unauthenticated)",
+    )
+    api_host: str = Field(default="0.0.0.0", description="API server bind host")
+    api_port: int = Field(default=8000, description="API server bind port")
 
     # ── Logging ─────────────────────────────────────────────────────────
     log_level: str = Field(

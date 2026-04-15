@@ -709,6 +709,60 @@ resource "confluent_connector" "postgres_sink" {
   ]
 }
 
+# ── BigQuery Sink Connector V2 (order_stats → BigQuery) ──────────────────────
+#
+# IMPORTANT: BigQuery connectors (BigQuerySink / BigQueryStorageSink) are ONLY
+# available on GCP-hosted Kafka clusters. This demo cluster runs on AWS
+# (cloud = "AWS"), so this connector is DISABLED by default.
+#
+# To enable: change the Kafka cluster to cloud = "GCP" and set gcp_project_id.
+# The connector sinks the Flink-aggregated order_stats topic to BigQuery,
+# creating a dual-path lineage:
+#   order_stats → Tableflow → Glue (Iceberg)
+#   order_stats → BigQuery Connector → BigQuery
+#
+# Reference working config: /Users/taka/projects/pocs/mb-nts/infra/connectors.tf
+
+resource "confluent_connector" "bigquery_sink" {
+  # Disabled: BigQuery connectors require GCP-hosted clusters.
+  # Set to 1 when the Kafka cluster is on GCP and gcp_project_id is configured.
+  count = 0
+
+  environment {
+    id = confluent_environment.demo.id
+  }
+
+  kafka_cluster {
+    id = confluent_kafka_cluster.demo.id
+  }
+
+  config_nonsensitive = {
+    "connector.class"          = "BigQueryStorageSink"
+    "name"                     = "${local.demo_prefix}-bigquery-sink"
+    "kafka.auth.mode"          = "SERVICE_ACCOUNT"
+    "kafka.service.account.id" = confluent_service_account.demo.id
+    "input.data.format"        = "AVRO"
+    "ingestion.mode"           = "STREAMING"
+    "topics"                   = "lineage_bridge.order_stats"
+    "project"                  = var.gcp_project_id
+    "datasets"                 = var.bigquery_dataset
+    "auto.create.tables"       = "true"
+    "auto.update.schemas"      = "true"
+    "sanitize.topics"          = "true"
+    "sanitize.field.names"     = "true"
+    "tasks.max"                = "1"
+  }
+
+  config_sensitive = {
+    "keyfile" = var.gcp_sa_key_json
+  }
+
+  depends_on = [
+    confluent_role_binding.cluster_admin,
+    confluent_flink_statement.order_stats,
+  ]
+}
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # AWS — S3 Bucket + IAM Role (shared by Confluent Tableflow + Databricks UC)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1263,9 +1317,9 @@ resource "databricks_notebook" "customer_order_summary" {
 resource "databricks_job" "customer_order_summary" {
   name = "${local.demo_prefix}-customer-order-summary"
 
-  run_as {
-    service_principal_name = var.databricks_client_id
-  }
+  # Note: run_as with a service principal requires the deploying user to have
+  # the account-level "servicePrincipal.user" role, which can't be granted via
+  # workspace PAT. The job runs as the PAT user instead — sufficient for demo.
 
   task {
     task_key = "summarize"

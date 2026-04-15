@@ -21,6 +21,7 @@ from lineage_bridge.ui.extraction import (
     _run_enrichment_on_graph,
     _run_extraction_with_params,
     _run_glue_push,
+    _run_google_push,
     _run_lineage_push,
     _save_selections_to_cache,
 )
@@ -99,6 +100,9 @@ def _render_sidebar():
 
                 with st.expander("AWS Glue", expanded=False):
                     _render_sidebar_aws_glue()
+
+                with st.expander("Google Data Lineage", expanded=False):
+                    _render_sidebar_google()
 
                 _render_sidebar_publish()
 
@@ -531,6 +535,31 @@ def _render_sidebar_aws_glue():
     st.checkbox("Set table description", value=True, key="glue_push_description")
 
 
+def _render_sidebar_google():
+    """Google Data Lineage settings and push options."""
+    settings = _try_load_settings()
+    if not settings:
+        st.caption("Configure `.env` to enable.")
+        return
+
+    if not settings.gcp_project_id:
+        st.caption("Set `LINEAGE_BRIDGE_GCP_PROJECT_ID` in .env to enable.")
+        return
+
+    st.caption(f"Project: `{settings.gcp_project_id}`")
+    st.caption(f"Location: `{settings.gcp_location}`")
+    st.caption("Credentials: Application Default Credentials (ADC)")
+
+    graph = st.session_state.get("graph")
+    if graph is not None:
+        google_tables = graph.filter_by_type(NodeType.GOOGLE_TABLE)
+        if google_tables:
+            enriched = sum(1 for n in google_tables if n.attributes.get("columns"))
+            st.info(f"{len(google_tables)} BigQuery table(s), {enriched} enriched")
+        else:
+            st.caption("No Google tables in current graph.")
+
+
 def _resolve_extraction_context():
     """Resolve selected environments, clusters, and credentials from UI state."""
     settings = _try_load_settings()
@@ -746,13 +775,15 @@ def _render_sidebar_publish():
 
     has_uc_tables = len(graph.filter_by_type(NodeType.UC_TABLE)) > 0
     has_glue_tables = len(graph.filter_by_type(NodeType.GLUE_TABLE)) > 0
+    has_google_tables = len(graph.filter_by_type(NodeType.GOOGLE_TABLE)) > 0
 
-    if not has_uc_tables and not has_glue_tables:
+    if not has_uc_tables and not has_glue_tables and not has_google_tables:
         st.caption("No catalog tables to publish to. Run extraction with Tableflow enabled.")
         return
 
     action = None
-    cols = st.columns(2) if has_uc_tables and has_glue_tables else [st.columns(1)[0]]
+    num_buttons = sum([has_uc_tables, has_glue_tables, has_google_tables])
+    cols = st.columns(num_buttons) if num_buttons > 1 else [st.columns(1)[0]]
     col_idx = 0
 
     if has_uc_tables:
@@ -777,6 +808,18 @@ def _render_sidebar_publish():
                 help="Push lineage metadata to AWS Glue",
             ):
                 action = "push_glue"
+        col_idx += 1
+
+    if has_google_tables:
+        with cols[min(col_idx, len(cols) - 1)]:
+            if st.button(
+                "\u2934 Push to Google",
+                key="google_push_btn",
+                type="secondary",
+                width="stretch",
+                help="Push lineage as OpenLineage events to Google Data Lineage",
+            ):
+                action = "push_google"
 
     # Full-width status widgets
     if action == "push_uc":
@@ -819,6 +862,20 @@ def _render_sidebar_publish():
                     f"{push_result.properties_set} parameters, "
                     f"{push_result.comments_set} descriptions"
                 )
+                if push_result.errors:
+                    msg += f" ({len(push_result.errors)} error(s))"
+                status.update(label=msg, state="complete")
+                st.rerun()
+            except Exception as exc:
+                status.update(label=f"Failed: {exc}", state="error")
+
+    elif action == "push_google":
+        st.session_state.extraction_log = []
+        st.session_state._log_source = "publish"
+        with st.status("Pushing lineage to Google...", expanded=True) as status:
+            try:
+                push_result = _run_google_push(settings, st.session_state.graph, {})
+                msg = f"Pushed — {push_result.tables_updated} events"
                 if push_result.errors:
                     msg += f" ({len(push_result.errors)} error(s))"
                 status.update(label=msg, state="complete")
@@ -884,6 +941,13 @@ def _render_extraction_log():
     st.markdown("".join(html_parts), unsafe_allow_html=True)
 
 
+def _get_type_counts(graph: LineageGraph) -> dict[NodeType, int]:
+    """Count nodes per NodeType in a single pass."""
+    from collections import Counter
+
+    return Counter(n.node_type for n in graph.nodes)
+
+
 def _render_sidebar_graph_filters(graph: LineageGraph):
     """Graph filters organized into logical groups."""
     # ── Search ───────────────────────────────────────────────────
@@ -935,8 +999,9 @@ def _render_sidebar_graph_filters(graph: LineageGraph):
 
     # ── Node type filters (compact two-column) ───────────────────
     st.caption("Node Types")
+    type_counts = _get_type_counts(graph)
     type_items = [
-        (ntype, NODE_TYPE_LABELS.get(ntype, ntype.value), len(graph.filter_by_type(ntype)))
+        (ntype, NODE_TYPE_LABELS.get(ntype, ntype.value), type_counts.get(ntype, 0))
         for ntype in NodeType
     ]
     visible_types = [(nt, lbl, cnt) for nt, lbl, cnt in type_items if cnt > 0]
@@ -981,10 +1046,10 @@ def _render_sidebar_legend(graph: LineageGraph):
     """Compact legend with node types and edge types."""
     # ── Node types (two-column grid) ─────────────────────────────
     st.caption("Nodes")
+    type_counts = _get_type_counts(graph)
     node_html_parts = []
     for ntype in NodeType:
-        count = len(graph.filter_by_type(ntype))
-        if count == 0:
+        if type_counts.get(ntype, 0) == 0:
             continue
         icon_uri = NODE_ICONS.get(ntype, "")
         label = NODE_TYPE_LABELS.get(ntype, ntype.value)

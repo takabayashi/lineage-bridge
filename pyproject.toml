@@ -15,6 +15,9 @@ dependencies = [
     "cryptography>=42.0",
     "boto3>=1.34",
     "confluent-kafka>=2.3",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +33,7 @@ dev = [
 lineage-bridge-extract = "lineage_bridge.extractors.orchestrator:main"
 lineage-bridge-watch = "lineage_bridge.watcher.cli:main"
 lineage-bridge-ui = "lineage_bridge.ui.app:run"
+lineage-bridge-api = "lineage_bridge.api.main:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -44,6 +48,8 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["N806"]  # Allow MockFoo naming in tests
+"lineage_bridge/api/openlineage/models.py" = ["N815"]  # OpenLineage spec uses camelCase fields
+"lineage_bridge/api/routers/*.py" = ["B008"]  # Depends() in defaults is standard FastAPI pattern
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

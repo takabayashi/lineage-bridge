@@ -65,17 +65,17 @@ def uc_graph():
     graph = LineageGraph()
     graph.add_node(
         LineageNode(
-            node_id="databricks:uc_table:env-abc:confluent_tableflow.lkc-abc123.orders-tableflow",
+            node_id="databricks:uc_table:env-abc:confluent_tableflow.lkc-abc123.orders_tableflow",
             system=SystemType.DATABRICKS,
             node_type=NodeType.UC_TABLE,
-            qualified_name="confluent_tableflow.lkc-abc123.orders-tableflow",
-            display_name="confluent_tableflow.lkc-abc123.orders-tableflow",
+            qualified_name="confluent_tableflow.lkc-abc123.orders_tableflow",
+            display_name="confluent_tableflow.lkc-abc123.orders_tableflow",
             environment_id="env-abc",
             cluster_id="lkc-abc123",
             attributes={
                 "catalog_name": "confluent_tableflow",
                 "schema_name": "lkc-abc123",
-                "table_name": "orders-tableflow",
+                "table_name": "orders_tableflow",
                 "workspace_url": WORKSPACE_URL,
             },
         )
@@ -133,6 +133,12 @@ class TestBuildNode:
         assert node.qualified_name == "confluent_tableflow.lkc-abc123.lineage_bridge_orders_v2"
         assert "lineage_bridge_orders_v2" in node.node_id
 
+    def test_schema_name_preserves_cluster_id(self, provider, flat_ci_config):
+        """Tableflow uses the raw cluster ID (with hyphens) as the schema name."""
+        node, _ = provider.build_node(flat_ci_config, "tf-id", "orders", "lkc-abc123", "env-abc")
+        assert node.attributes["schema_name"] == "lkc-abc123"
+        assert "lkc-abc123" in node.qualified_name
+
 
 class TestBuildUrl:
     def test_with_workspace_url(self, provider):
@@ -180,7 +186,7 @@ class TestEnrich:
         fixture = load_fixture("databricks_table.json")
         respx.get(
             f"{WORKSPACE_URL}/api/2.1/unity-catalog/tables/"
-            "confluent_tableflow.lkc-abc123.orders-tableflow"
+            "confluent_tableflow.lkc-abc123.orders_tableflow"
         ).mock(return_value=httpx.Response(200, json=fixture))
         self._mock_lineage_empty()
 
@@ -202,7 +208,7 @@ class TestEnrich:
     async def test_enrich_handles_401(self, provider, uc_graph, no_sleep):
         respx.get(
             f"{WORKSPACE_URL}/api/2.1/unity-catalog/tables/"
-            "confluent_tableflow.lkc-abc123.orders-tableflow"
+            "confluent_tableflow.lkc-abc123.orders_tableflow"
         ).mock(return_value=httpx.Response(401, json={"error": "unauthorized"}))
         self._mock_lineage_empty()
 
@@ -215,7 +221,7 @@ class TestEnrich:
     async def test_enrich_handles_404(self, provider, uc_graph, no_sleep):
         respx.get(
             f"{WORKSPACE_URL}/api/2.1/unity-catalog/tables/"
-            "confluent_tableflow.lkc-abc123.orders-tableflow"
+            "confluent_tableflow.lkc-abc123.orders_tableflow"
         ).mock(return_value=httpx.Response(404, json={"error": "not found"}))
         self._mock_lineage_empty()
 
@@ -228,7 +234,7 @@ class TestEnrich:
         fixture = load_fixture("databricks_table.json")
         route = respx.get(
             f"{WORKSPACE_URL}/api/2.1/unity-catalog/tables/"
-            "confluent_tableflow.lkc-abc123.orders-tableflow"
+            "confluent_tableflow.lkc-abc123.orders_tableflow"
         )
         route.side_effect = [
             httpx.Response(429, json={"error": "rate limited"}),
@@ -247,7 +253,7 @@ class TestEnrich:
         """503 three times exhausts retries without raising."""
         respx.get(
             f"{WORKSPACE_URL}/api/2.1/unity-catalog/tables/"
-            "confluent_tableflow.lkc-abc123.orders-tableflow"
+            "confluent_tableflow.lkc-abc123.orders_tableflow"
         ).mock(return_value=httpx.Response(503, json={"error": "unavailable"}))
         self._mock_lineage_empty()
 
@@ -259,7 +265,7 @@ class TestEnrich:
         """Network-level errors are handled gracefully."""
         respx.get(
             f"{WORKSPACE_URL}/api/2.1/unity-catalog/tables/"
-            "confluent_tableflow.lkc-abc123.orders-tableflow"
+            "confluent_tableflow.lkc-abc123.orders_tableflow"
         ).mock(side_effect=httpx.ConnectError("connection refused"))
         self._mock_lineage_empty()
 
@@ -271,7 +277,7 @@ class TestEnrich:
         """Unexpected status codes (e.g. 418) are logged and skipped."""
         respx.get(
             f"{WORKSPACE_URL}/api/2.1/unity-catalog/tables/"
-            "confluent_tableflow.lkc-abc123.orders-tableflow"
+            "confluent_tableflow.lkc-abc123.orders_tableflow"
         ).mock(return_value=httpx.Response(418, json={"error": "teapot"}))
         self._mock_lineage_empty()
 
@@ -290,13 +296,13 @@ class TestEnrich:
         fixture = load_fixture("databricks_table.json")
         respx.get(
             f"{WORKSPACE_URL}/api/2.1/unity-catalog/tables/"
-            "confluent_tableflow.lkc-abc123.orders-tableflow"
+            "confluent_tableflow.lkc-abc123.orders_tableflow"
         ).mock(return_value=httpx.Response(200, json=fixture))
 
         # Lineage for seed node returns a downstream table
         respx.get(
             LINEAGE_URL,
-            params__contains={"table_name": "confluent_tableflow.lkc-abc123.orders-tableflow"},
+            params__contains={"table_name": "confluent_tableflow.lkc-abc123.orders_tableflow"},
         ).mock(
             return_value=httpx.Response(
                 200,
@@ -351,7 +357,7 @@ class TestEnrich:
         assert any(
             e.edge_type == EdgeType.TRANSFORMS
             and e.src_id
-            == "databricks:uc_table:env-abc:confluent_tableflow.lkc-abc123.orders-tableflow"
+            == "databricks:uc_table:env-abc:confluent_tableflow.lkc-abc123.orders_tableflow"
             and e.dst_id
             == "databricks:uc_table:env-abc:confluent_tableflow.lkc-abc123.order_summary"
             for e in uc_graph.edges

@@ -712,6 +712,35 @@ def generate_sample_graph() -> LineageGraph:
     graph.add_node(glue_payments)
     graph.add_node(glue_shipments)
 
+    # ── Google BigQuery tables ────────────────────────────────────────
+    gcp_enriched = LineageNode(
+        node_id=_node_id("google", "google_table", "my-project.streaming.enriched_orders"),
+        system=SystemType.GOOGLE,
+        node_type=NodeType.GOOGLE_TABLE,
+        qualified_name="my-project.streaming.enriched_orders",
+        display_name="BQ: my-project.streaming.enriched_orders",
+        environment_id=ENV_ID,
+        environment_name=ENV_NAME,
+        attributes={
+            "project_id": "my-project",
+            "dataset_id": "streaming",
+            "table_name": "enriched_orders",
+            "location": "us",
+            "table_type": "TABLE",
+            "columns": [
+                {"name": "order_id", "type": "STRING"},
+                {"name": "product", "type": "STRING"},
+                {"name": "quantity", "type": "INTEGER"},
+                {"name": "price", "type": "FLOAT"},
+                {"name": "customer_name", "type": "STRING"},
+                {"name": "customer_email", "type": "STRING"},
+                {"name": "customer_tier", "type": "STRING"},
+            ],
+        },
+        tags=["google-bigquery"],
+    )
+    graph.add_node(gcp_enriched)
+
     # ── Consumer groups ────────────────────────────────────────────────
     cg_configs = {
         "orders-processing-cg": {"state": "Stable", "is_simple": False},
@@ -832,6 +861,9 @@ def generate_sample_graph() -> LineageGraph:
     graph.add_edge(
         _edge(topics["shipments"].node_id, glue_shipments.node_id, EdgeType.MATERIALIZES)
     )
+
+    # ── Enriched orders → Google BigQuery (MATERIALIZES) ──────────────
+    graph.add_edge(_edge(tf_enriched.node_id, gcp_enriched.node_id, EdgeType.MATERIALIZES))
 
     # ── UC lineage: orders_avro TRANSFORMS → daily_order_summary ──────
     graph.add_edge(_edge(uc_orders.node_id, uc_daily_summary.node_id, EdgeType.TRANSFORMS))
