@@ -7,7 +7,9 @@
 
 **Extract stream lineage from Confluent Cloud, bridge it to data catalogs, and visualize it as an interactive graph.**
 
-LineageBridge fills a gap: Confluent Cloud has rich stream processing lineage (connectors, Flink jobs, ksqlDB queries, consumer groups) but no way to export it as a queryable graph or bridge it into external data catalogs. LineageBridge extracts this lineage using only public APIs, connects it to Databricks Unity Catalog and AWS Glue via Tableflow, and renders everything in an interactive Streamlit UI.
+LineageBridge fills a gap: Confluent Cloud has rich stream processing lineage (connectors, Flink jobs, ksqlDB queries, consumer groups) but no way to export it as a queryable graph or bridge it into external data catalogs. LineageBridge extracts this lineage using only public APIs, connects it to Databricks Unity Catalog, AWS Glue, and Google Data Lineage / BigQuery via Tableflow, and renders everything in an interactive Streamlit UI.
+
+📚 **[Read the full documentation →](https://takabayashi.github.io/lineage-bridge/)** — quickstart, configuration, demos, catalog integration guides, architecture, API reference.
 
 ## Architecture
 
@@ -15,7 +17,8 @@ LineageBridge fills a gap: Confluent Cloud has rich stream processing lineage (c
 Confluent Cloud APIs ──> Clients ──> Orchestrator ──> LineageGraph ──> Streamlit UI
   (REST v3, Kafka)       (async)      (5 phases)      (networkx)       (vis.js)
                                           │
-              Databricks UC / AWS Glue <──┘ (catalog enrichment + lineage push)
+       Databricks UC / AWS Glue / <──────┘ (catalog enrichment + lineage push)
+       Google Data Lineage
 ```
 
 ## What It Extracts
@@ -28,10 +31,11 @@ Confluent Cloud APIs ──> Clients ──> Orchestrator ──> LineageGraph �
 | **ksqlDB** | Persistent queries | Input/output topic edges from SQL parsing |
 | **SchemaRegistry** | Avro/Protobuf/JSON schemas | Topic -> schema edges |
 | **StreamCatalog** | Tags, business metadata | Enrichment on topic nodes |
-| **Tableflow** | Topic -> table mappings | Topic -> Tableflow -> UC/Glue table |
+| **Tableflow** | Topic -> table mappings | Topic -> Tableflow -> UC / Glue / BigQuery table |
 | **Metrics** | Throughput (bytes/records) | Real-time metrics on topics and connectors |
 | **Databricks UC** | Table metadata, lineage | UC table enrichment + lineage push |
 | **AWS Glue** | Table metadata | Glue table enrichment + lineage push |
+| **Google Data Lineage** | BigQuery datasets/tables | BigQuery table enrichment + lineage push to Google Data Lineage API |
 
 ## Features
 
@@ -44,9 +48,10 @@ Confluent Cloud APIs ──> Clients ──> Orchestrator ──> LineageGraph �
 - Export graph as JSON
 
 ### Data Catalog Integration
-- **Databricks Unity Catalog:** Enrich UC tables with metadata, push lineage as table properties and comments
-- **AWS Glue:** Enrich Glue tables with metadata, push lineage as table parameters
-- Extensible provider pattern — add new catalogs with a single file
+- **[Databricks Unity Catalog](https://takabayashi.github.io/lineage-bridge/catalog-integration/databricks-unity-catalog/):** Enrich UC tables with metadata, push lineage as table properties and comments
+- **[AWS Glue](https://takabayashi.github.io/lineage-bridge/catalog-integration/aws-glue/):** Enrich Glue tables with metadata, push lineage as table parameters
+- **[Google Data Lineage](https://takabayashi.github.io/lineage-bridge/catalog-integration/google-data-lineage/):** Enrich BigQuery tables with metadata, push lineage to the Google Data Lineage API
+- [Extensible provider pattern](https://takabayashi.github.io/lineage-bridge/catalog-integration/adding-new-catalogs/) — add new catalogs with a single file
 
 ### Operations
 - Real-time metrics enrichment (throughput, consumer lag)
@@ -88,10 +93,19 @@ Only a cloud-level API key is required to start. The UI will guide you through a
 Optional catalog credentials:
 
 ```env
+# Databricks Unity Catalog
 LINEAGE_BRIDGE_DATABRICKS_WORKSPACE_URL=https://your-workspace.databricks.com
 LINEAGE_BRIDGE_DATABRICKS_TOKEN=your-databricks-token
+
+# AWS Glue (uses ambient AWS credentials / profile)
 LINEAGE_BRIDGE_AWS_REGION=us-east-1
+
+# Google Data Lineage / BigQuery (uses ambient gcloud / ADC credentials)
+LINEAGE_BRIDGE_GCP_PROJECT_ID=your-gcp-project
+LINEAGE_BRIDGE_GCP_LOCATION=us
 ```
+
+For full configuration details, see the [Configuration guide](https://takabayashi.github.io/lineage-bridge/getting-started/configuration/).
 
 ### Run
 
@@ -104,9 +118,14 @@ uv run lineage-bridge-extract
 
 # Change-detection watcher
 uv run lineage-bridge-watch
+
+# REST + OpenLineage API server
+uv run lineage-bridge-api
 ```
 
 Open http://localhost:8501, select an environment and cluster, and click **Extract Lineage**.
+
+For a step-by-step walkthrough, see the [Quickstart guide](https://takabayashi.github.io/lineage-bridge/getting-started/quickstart/).
 
 ### Docker
 
@@ -171,7 +190,9 @@ make format
 - [x] **Phase 3:** UI decomposition + UX improvements
 - [x] **Phase 4:** Polish, hardening, v0.2.0 release
 - [x] **Post-v0.2.0:** UC integration fixes, Databricks lineage push, change-detection watcher
-- [ ] **Next:** Glue enrichment, additional catalog providers, graph comparison
+- [x] **v0.4.0:** Glue enrichment, Google Data Lineage / BigQuery provider, demo infrastructure (Terraform), OpenLineage API
+- [x] **Unreleased:** Official brand icons for graph nodes, comprehensive integration tests
+- [ ] **Next:** Graph comparison, additional catalog providers
 
 ## License
 
