@@ -1,78 +1,94 @@
 # Copyright 2026 Daniel Takabayashi
 # Licensed under the Apache License, Version 2.0
-"""In-memory state management for the REST API."""
+"""GraphStore — thin adapter over a `GraphRepository`.
+
+The public API is unchanged from the pre-Phase-1C in-memory implementation
+so existing API routers and tests work without modification. Persistence is
+delegated to whichever backend the factory builds (see ADR-022 + Phase 1C).
+"""
 
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
 
 from pydantic import BaseModel
 
 from lineage_bridge.models.graph import LineageGraph
+from lineage_bridge.storage.backends.memory import MemoryGraphRepository
+from lineage_bridge.storage.protocol import GraphMeta, GraphRepository
 
 
 class GraphEntry(BaseModel):
-    """Wrapper around a LineageGraph with metadata."""
+    """Public metadata wrapper kept for backward compatibility.
+
+    Equivalent to `GraphMeta` from the storage layer; we expose the BaseModel
+    flavour here because some routers serialise it via FastAPI.
+    """
 
     graph_id: str
-    created_at: datetime
-    last_modified: datetime
+    created_at: object  # datetime; loose type to avoid Pydantic v2 coercion fights
+    last_modified: object
 
     model_config = {"arbitrary_types_allowed": True}
 
 
 class GraphSummary(BaseModel):
-    """Lightweight graph info for listing."""
+    """Lightweight graph info for `GET /graphs`."""
 
     graph_id: str
     node_count: int
     edge_count: int
     pipeline_count: int
-    created_at: datetime
-    last_modified: datetime
+    created_at: object
+    last_modified: object
+
+    model_config = {"arbitrary_types_allowed": True}
 
 
 class GraphStore:
-    """Manages named LineageGraph instances in memory."""
+    """Manages named LineageGraph instances via a `GraphRepository`."""
 
-    def __init__(self) -> None:
-        self._graphs: dict[str, LineageGraph] = {}
-        self._meta: dict[str, GraphEntry] = {}
+    def __init__(self, repo: GraphRepository | None = None) -> None:
+        self._repo: GraphRepository = repo or MemoryGraphRepository()
 
     def create(self, graph: LineageGraph | None = None) -> str:
         """Create a new graph and return its ID."""
         graph_id = str(uuid.uuid4())
-        now = datetime.now(UTC)
-        self._graphs[graph_id] = graph or LineageGraph()
-        self._meta[graph_id] = GraphEntry(graph_id=graph_id, created_at=now, last_modified=now)
+        meta = GraphMeta.now(graph_id)
+        self._repo.save(graph_id, graph or LineageGraph(), meta)
         return graph_id
 
     def get(self, graph_id: str) -> LineageGraph | None:
-        return self._graphs.get(graph_id)
+        loaded = self._repo.get(graph_id)
+        return loaded[0] if loaded else None
 
     def get_meta(self, graph_id: str) -> GraphEntry | None:
-        return self._meta.get(graph_id)
+        loaded = self._repo.get(graph_id)
+        if loaded is None:
+            return None
+        _, meta = loaded
+        return GraphEntry(
+            graph_id=meta.graph_id,
+            created_at=meta.created_at,
+            last_modified=meta.last_modified,
+        )
 
     def delete(self, graph_id: str) -> bool:
-        if graph_id in self._graphs:
-            del self._graphs[graph_id]
-            del self._meta[graph_id]
-            return True
-        return False
+        return self._repo.delete(graph_id)
 
     def touch(self, graph_id: str) -> None:
-        """Update last_modified timestamp."""
-        if graph_id in self._meta:
-            self._meta[graph_id].last_modified = datetime.now(UTC)
+        self._repo.touch(graph_id)
 
     def list_all(self) -> list[GraphSummary]:
-        result = []
-        for gid, graph in self._graphs.items():
-            meta = self._meta[gid]
+        result: list[GraphSummary] = []
+        for meta in self._repo.list_meta():
+            loaded = self._repo.get(meta.graph_id)
+            if loaded is None:
+                continue
+            graph, _ = loaded
             result.append(
                 GraphSummary(
-                    graph_id=gid,
+                    graph_id=meta.graph_id,
                     node_count=graph.node_count,
                     edge_count=graph.edge_count,
                     pipeline_count=graph.pipeline_count,
@@ -84,4 +100,4 @@ class GraphStore:
 
     @property
     def count(self) -> int:
-        return len(self._graphs)
+        return self._repo.count()

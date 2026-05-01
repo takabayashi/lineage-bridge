@@ -1,35 +1,39 @@
 # Copyright 2026 Daniel Takabayashi
 # Licensed under the Apache License, Version 2.0
-"""In-memory store for OpenLineage events."""
+"""EventStore — thin adapter over an `EventRepository`.
+
+Public API unchanged from the pre-Phase-1C in-memory implementation so the
+API routers (`api/routers/lineage.py`, `api/routers/datasets.py`,
+`api/routers/jobs.py`) need no changes. The repository owns persistence;
+the store owns query semantics (filters, dataset/job uniqueness).
+"""
 
 from __future__ import annotations
 
 from datetime import datetime
 from fnmatch import fnmatch
+from typing import TYPE_CHECKING
 
 from lineage_bridge.openlineage.models import Dataset, Job, RunEvent
 
+if TYPE_CHECKING:
+    from lineage_bridge.storage.protocol import EventRepository
+
 
 class EventStore:
-    """Stores and queries OpenLineage RunEvents in memory.
+    """Stores and queries OpenLineage RunEvents via an `EventRepository`."""
 
-    Events are indexed for fast lookup by namespace, job, dataset, and run ID.
-    """
+    def __init__(self, repo: EventRepository | None = None) -> None:
+        from lineage_bridge.storage.backends.memory import MemoryEventRepository
 
-    def __init__(self) -> None:
-        self._events: list[RunEvent] = []
-        self._by_run_id: dict[str, list[RunEvent]] = {}
+        self._repo: EventRepository = repo or MemoryEventRepository()
 
     def store_events(self, events: list[RunEvent]) -> int:
         """Store events, returning the count stored."""
-        for event in events:
-            self._events.append(event)
-            run_id = event.run.runId
-            self._by_run_id.setdefault(run_id, []).append(event)
-        return len(events)
+        return self._repo.add(events)
 
     def get_by_run_id(self, run_id: str) -> list[RunEvent]:
-        return self._by_run_id.get(run_id, [])
+        return self._repo.by_run_id(run_id)
 
     def query_events(
         self,
@@ -42,7 +46,7 @@ class EventStore:
         offset: int = 0,
     ) -> list[RunEvent]:
         """Query events with optional filters. Supports glob patterns for namespace."""
-        results = self._events
+        results = self._repo.all()
 
         if namespace:
             results = [e for e in results if fnmatch(e.job.namespace, namespace)]
@@ -64,7 +68,7 @@ class EventStore:
         """Get unique datasets from all events."""
         seen: dict[tuple[str, str], Dataset] = {}
 
-        for event in self._events:
+        for event in self._repo.all():
             for ds in [*event.inputs, *event.outputs]:
                 key = (ds.namespace, ds.name)
                 if key in seen:
@@ -86,7 +90,7 @@ class EventStore:
         """Get unique jobs from all events."""
         seen: dict[tuple[str, str], Job] = {}
 
-        for event in self._events:
+        for event in self._repo.all():
             key = (event.job.namespace, event.job.name)
             if key in seen:
                 continue
@@ -100,8 +104,7 @@ class EventStore:
 
     @property
     def event_count(self) -> int:
-        return len(self._events)
+        return self._repo.count()
 
     def clear(self) -> None:
-        self._events.clear()
-        self._by_run_id.clear()
+        self._repo.clear()
