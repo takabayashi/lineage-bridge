@@ -5,9 +5,13 @@
 from __future__ import annotations
 
 import base64
+import re
+from pathlib import Path
 from typing import Any
 
 from lineage_bridge.models.graph import EdgeType, NodeType
+
+_ICONS_DIR = Path(__file__).parent / "assets" / "icons"
 
 # ── Color palette per node type ────────────────────────────────────────
 NODE_COLORS: dict[NodeType, str] = {
@@ -255,52 +259,151 @@ _SYMBOLS: dict[NodeType, str] = {
 }
 
 
+# Per-icon spec: (filename, mode, fill_override).
+#   mode="logo" → white rounded chip with the artwork nested at 40x40 inside.
+#   mode="tile" → artwork fills the whole 64x64 chip with rounded-corner clipping
+#                 (use this for icons designed as full coloured tiles, e.g. AWS
+#                 Architecture Icons).
+#   fill_override → swap the root <svg> fill colour, for recolouring monochrome
+#                   brand marks (e.g. Databricks default red → palette amber).
+class _IconSpec:
+    __slots__ = ("filename", "fill_override", "mode")
+
+    def __init__(
+        self,
+        filename: str,
+        mode: str = "logo",
+        fill_override: str | None = None,
+    ) -> None:
+        self.filename = filename
+        self.mode = mode
+        self.fill_override = fill_override
+
+
+def _prepare_official_svg(spec: _IconSpec) -> str:
+    """Read, sanitise, and (optionally) recolour an official brand SVG."""
+    raw = (_ICONS_DIR / spec.filename).read_text(encoding="utf-8")
+    raw = re.sub(r"<\?xml[^>]*\?>", "", raw)
+    raw = re.sub(r"<!--.*?-->", "", raw, flags=re.DOTALL)
+    raw = re.sub(r"<title>.*?</title>", "", raw, flags=re.DOTALL)
+    raw = re.sub(r"<desc>.*?</desc>", "", raw, flags=re.DOTALL)
+    if spec.fill_override:
+        raw = re.sub(
+            r'(<svg\b[^>]*?\s)fill="[^"]*"',
+            rf'\1fill="{spec.fill_override}"',
+            raw,
+            count=1,
+        )
+
+    # Strip width/height from the root <svg> so our injected sizing isn't
+    # duplicated (duplicate attrs are malformed and break some renderers).
+    def _strip_size(match: re.Match[str]) -> str:
+        return re.sub(r'\s(?:width|height)="[^"]*"', "", match.group(0))
+
+    return re.sub(r"<svg\b[^>]*>", _strip_size, raw, count=1)
+
+
+def _load_official_logo_body(spec: _IconSpec, fallback_stroke: str) -> str:
+    """Render an official logo on a white rounded chip with brand-coloured outline."""
+    raw = _prepare_official_svg(spec)
+    root_fill = re.search(r'<svg[^>]*\sfill="(#[0-9A-Fa-f]+)"', raw)
+    stroke = spec.fill_override or (root_fill.group(1) if root_fill else fallback_stroke)
+    nested = re.sub(
+        r"<svg(\s)",
+        '<svg x="12" y="12" width="40" height="40" preserveAspectRatio="xMidYMid meet"\\1',
+        raw,
+        count=1,
+    ).strip()
+    return (
+        '<rect x="2" y="2" width="60" height="60" rx="14" '
+        f'fill="#ffffff" stroke="{stroke}" stroke-width="2"/>'
+        f"{nested}"
+    )
+
+
+def _load_official_tile_body(spec: _IconSpec) -> str:
+    """Render an official full-bleed tile artwork with rounded-corner clipping."""
+    raw = _prepare_official_svg(spec)
+    nested = re.sub(
+        r"<svg(\s)",
+        '<svg x="0" y="0" width="64" height="64" preserveAspectRatio="xMidYMid slice"\\1',
+        raw,
+        count=1,
+    ).strip()
+    return (
+        '<defs><clipPath id="tile-clip">'
+        '<rect x="0" y="0" width="64" height="64" rx="14"/>'
+        "</clipPath></defs>"
+        f'<g clip-path="url(#tile-clip)">{nested}</g>'
+    )
+
+
+def _load_official_chip_body(spec: _IconSpec, fallback_stroke: str) -> str:
+    if spec.mode == "tile":
+        return _load_official_tile_body(spec)
+    return _load_official_logo_body(spec, fallback_stroke)
+
+
+# Node types whose icons are loaded from official brand SVGs.
+_OFFICIAL_ICON_FILES: dict[NodeType, _IconSpec] = {
+    NodeType.KAFKA_TOPIC: _IconSpec("apache-kafka.svg"),
+    NodeType.FLINK_JOB: _IconSpec("apache-flink.svg"),
+    # Databricks brand red recoloured to palette amber/yellow.
+    NodeType.UC_TABLE: _IconSpec("databricks.svg", fill_override="#F9A825"),
+    NodeType.GOOGLE_TABLE: _IconSpec("google-bigquery.svg"),
+    # Use AWS Architecture Icon as a full-bleed tile (gradient + white squid).
+    NodeType.GLUE_TABLE: _IconSpec("aws-glue.svg", mode="tile"),
+}
+
+
+def _get_chip_body(ntype: NodeType) -> str:
+    """Return the inner body SVG for a node icon (no <svg> wrapper)."""
+    if ntype in _OFFICIAL_ICON_FILES:
+        fallback = NODE_COLORS.get(ntype, "#cccccc")
+        return _load_official_chip_body(_OFFICIAL_ICON_FILES[ntype], fallback)
+    color = NODE_COLORS.get(ntype, "#757575")
+    symbol = _SYMBOLS.get(ntype, "")
+    return (
+        f'<rect x="2" y="2" width="60" height="60" rx="14" '
+        f'fill="{color}" stroke="#fff" stroke-width="2"/>'
+        f'<g fill="#fff" transform="translate(32,32)">{symbol}</g>'
+    )
+
+
+def _wrap_svg(body: str) -> str:
+    """Wrap an SVG body fragment in the standard 64x64 root element."""
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" '
+        'width="64" height="64" viewBox="0 0 64 64">'
+        f"{body}</svg>"
+    )
+
+
 def _build_node_icons() -> dict[NodeType, str]:
     """Pre-build SVG data URIs for all node types."""
-    icons: dict[NodeType, str] = {}
-    for ntype in NodeType:
-        color = NODE_COLORS.get(ntype, "#757575")
-        symbol = _SYMBOLS.get(ntype, "")
-        svg = _make_icon_svg(color, symbol)
-        icons[ntype] = _svg_to_data_uri(svg)
-    return icons
+    return {ntype: _svg_to_data_uri(_wrap_svg(_get_chip_body(ntype))) for ntype in NodeType}
 
 
 NODE_ICONS: dict[NodeType, str] = _build_node_icons()
 
 
-def _make_icon_with_badge(
-    color: str,
-    symbol_path: str,
-    badge_color: str,
-    badge_text: str = "S",
-) -> str:
-    """Build a 64x64 SVG with a small badge in the bottom-right corner."""
+def _badge_overlay(badge_color: str, badge_text: str) -> str:
+    """SVG fragment for a small status badge in the bottom-right corner."""
     return (
-        '<svg xmlns="http://www.w3.org/2000/svg" '
-        'width="64" height="64" viewBox="0 0 64 64">'
-        f'<circle cx="32" cy="32" r="30" fill="{color}" '
-        'stroke="#fff" stroke-width="2"/>'
-        f'<g fill="#fff" transform="translate(32,32)">'
-        f"{symbol_path}</g>"
-        # Badge circle in bottom-right
         f'<circle cx="52" cy="52" r="11" fill="{badge_color}" '
         'stroke="#fff" stroke-width="2"/>'
         f'<text x="52" y="56" text-anchor="middle" '
         f'font-size="13" font-weight="bold" '
         f'font-family="Inter,system-ui,sans-serif" '
         f'fill="#fff">{badge_text}</text>'
-        "</svg>"
     )
 
 
 def build_topic_with_schema_icon() -> str:
     """Return a data URI for a Kafka topic icon with a schema badge."""
-    color = NODE_COLORS[NodeType.KAFKA_TOPIC]
-    symbol = _SYMBOLS[NodeType.KAFKA_TOPIC]
-    badge_color = NODE_COLORS[NodeType.SCHEMA]
-    svg = _make_icon_with_badge(color, symbol, badge_color)
-    return _svg_to_data_uri(svg)
+    body = _get_chip_body(NodeType.KAFKA_TOPIC)
+    badge = _badge_overlay(NODE_COLORS[NodeType.SCHEMA], "S")
+    return _svg_to_data_uri(_wrap_svg(body + badge))
 
 
 TOPIC_WITH_SCHEMA_ICON: str = build_topic_with_schema_icon()
@@ -349,11 +452,10 @@ def build_status_badge_icon(ntype: NodeType, status: str) -> str | None:
     if cache_key in _status_icon_cache:
         return _status_icon_cache[cache_key]
 
-    color = NODE_COLORS.get(ntype, "#757575")
-    symbol = _SYMBOLS.get(ntype, "")
     badge_color, badge_text = badge_info
-    svg = _make_icon_with_badge(color, symbol, badge_color, badge_text)
-    uri = _svg_to_data_uri(svg)
+    body = _get_chip_body(ntype)
+    badge = _badge_overlay(badge_color, badge_text)
+    uri = _svg_to_data_uri(_wrap_svg(body + badge))
     _status_icon_cache[cache_key] = uri
     return uri
 

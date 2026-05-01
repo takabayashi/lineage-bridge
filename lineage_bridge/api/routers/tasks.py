@@ -107,14 +107,15 @@ async def _run_extraction(
         settings = Settings()
         store.add_progress(task_id, "Loaded settings")
 
-        from lineage_bridge.extractors.orchestrator import run_extraction
         from lineage_bridge.clients.discovery import list_environments
+        from lineage_bridge.extractors.orchestrator import run_extraction
 
         env_ids = params.get("environment_ids", [])
 
         # If no environment_ids provided, discover all environments
         if not env_ids:
             from lineage_bridge.clients.base import ConfluentClient
+
             cloud = ConfluentClient(
                 "https://api.confluent.cloud",
                 settings.confluent_cloud_api_key,
