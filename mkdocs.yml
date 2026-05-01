@@ -1,0 +1,126 @@
+site_name: LineageBridge Documentation
+site_url: https://takabayashi.github.io/lineage-bridge
+site_description: Extract and visualize stream lineage from Confluent Cloud
+site_author: Daniel Takabayashi
+repo_name: takabayashi/lineage-bridge
+repo_url: https://github.com/takabayashi/lineage-bridge
+
+theme:
+  name: material
+  palette:
+    # Light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    # Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+plugins:
+  - search
+  - minify:
+      minify_html: true
+  - git-revision-date-localized:
+      type: date
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - tables
+  - attr_list
+  - md_in_html
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Overview: getting-started/index.md
+      - Installation: getting-started/installation.md
+      - Configuration: getting-started/configuration.md
+      - Quickstart: getting-started/quickstart.md
+  - User Guide:
+      - Overview: user-guide/index.md
+      - CLI Tools: user-guide/cli-tools.md
+      - Streamlit UI: user-guide/streamlit-ui.md
+      - Graph Visualization: user-guide/graph-visualization.md
+      - Change Detection: user-guide/change-detection.md
+  - Catalog Integration:
+      - Overview: catalog-integration/index.md
+      - Databricks Unity Catalog: catalog-integration/databricks-unity-catalog.md
+      - AWS Glue: catalog-integration/aws-glue.md
+      - Google Data Lineage: catalog-integration/google-data-lineage.md
+      - Adding New Catalogs: catalog-integration/adding-new-catalogs.md
+  - API Reference:
+      - Overview: api-reference/index.md
+      - Interactive Explorer: api-reference/openapi.md
+      - OpenLineage Mapping: api-reference/openlineage-mapping.md
+      - Authentication: api-reference/authentication.md
+      - Examples: api-reference/examples.md
+  - Demos:
+      - Overview: demos/index.md
+      - Unity Catalog: demos/unity-catalog-demo.md
+      - AWS Glue: demos/aws-glue-demo.md
+      - BigQuery: demos/bigquery-demo.md
+  - Architecture:
+      - Overview: architecture/index.md
+      - Extraction Pipeline: architecture/extraction-pipeline.md
+      - Graph Model: architecture/graph-model.md
+      - Clients: architecture/clients.md
+      - Design Decisions: architecture/design-decisions.md
+  - How-To Guides:
+      - Overview: how-to/index.md
+      - Multi-Environment Setup: how-to/multi-environment-setup.md
+      - Credential Management: how-to/credential-management.md
+      - Docker Deployment: how-to/docker-deployment.md
+      - CI/CD Integration: how-to/ci-cd-integration.md
+  - Troubleshooting:
+      - Quick Reference: troubleshooting/index.md
+      - Credential Issues: troubleshooting/credential-issues.md
+      - API Errors: troubleshooting/api-errors.md
+      - Extraction Failures: troubleshooting/extraction-failures.md
+      - Performance: troubleshooting/performance.md
+  - Contributing:
+      - Overview: contributing/index.md
+      - Development Setup: contributing/development-setup.md
+      - Testing: contributing/testing.md
+      - Adding Extractors: contributing/adding-extractors.md
+  - Reference:
+      - Changelog: reference/changelog.md
+      - Roadmap: reference/roadmap.md
+      - Glossary: reference/glossary.md
+
+extra:
+  version:
+    provider: mike
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/takabayashi/lineage-bridge

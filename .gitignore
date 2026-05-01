@@ -64,3 +64,6 @@ tfplan
 
 # GCP service account keys
 gcp-sa-key.json
+
+# MkDocs
+site/

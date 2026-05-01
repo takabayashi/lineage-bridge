@@ -28,6 +28,12 @@ dev = [
     "respx>=0.21",
     "ruff>=0.3",
 ]
+docs = [
+    "mkdocs>=1.5",
+    "mkdocs-material>=9.5",
+    "mkdocs-minify-plugin>=0.8",
+    "mkdocs-git-revision-date-localized-plugin>=1.2",
+]
 
 [project.scripts]
 lineage-bridge-extract = "lineage_bridge.extractors.orchestrator:main"

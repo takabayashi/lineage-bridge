@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: install extract watch api openapi ui test lint format clean docker-build docker-extract docker-watch docker-ui docker-down demo-setup demo-up demo-down demo-uc-up demo-uc-down demo-glue-up demo-glue-down demo-bq-up demo-bq-down help
+.PHONY: install extract watch api openapi ui test lint format clean docker-build docker-extract docker-watch docker-ui docker-down demo-setup demo-up demo-down demo-uc-up demo-uc-down demo-glue-up demo-glue-down demo-bq-up demo-bq-down docs-serve docs-build docs-deploy docs-install help
 
 install: ## Install project with dev dependencies
 	@test -x .venv/bin/python || uv venv
@@ -91,6 +91,20 @@ demo-up: ## (legacy) Provision demo — same as demo-uc-up
 
 demo-down: ## (legacy) Tear down demo — same as demo-uc-down
 	$(MAKE) demo-uc-down
+
+# ── Documentation ──────────────────────────────────────────────────────────
+
+docs-serve: ## Serve docs locally with live reload
+	uv run mkdocs serve
+
+docs-build: ## Build static docs site
+	uv run mkdocs build --strict
+
+docs-deploy: ## Deploy docs to GitHub Pages
+	uv run mkdocs gh-deploy --force
+
+docs-install: ## Install documentation dependencies
+	uv pip install -e ".[docs]"
 
 # ── Help ───────────────────────────────────────────────────────────────────
 
