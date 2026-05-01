@@ -11,6 +11,8 @@ import warnings
 
 import streamlit as st
 
+from lineage_bridge.catalogs import configure_providers
+from lineage_bridge.config.settings import Settings
 from lineage_bridge.models.graph import LineageGraph, NodeType
 from lineage_bridge.ui.components.visjs_graph import visjs_graph
 from lineage_bridge.ui.graph_renderer import (
@@ -38,6 +40,19 @@ st.set_page_config(
 
 ensure_defaults()
 load_cached_selections()
+
+# Seed catalog providers with the user's actual workspace URL so deeplinks
+# don't fall back to whatever (possibly stale) URL Confluent has stored in
+# its Tableflow catalog-integration config.
+try:
+    _settings = Settings()  # type: ignore[call-arg]
+    configure_providers(
+        databricks_workspace_url=_settings.databricks_workspace_url,
+        databricks_token=_settings.databricks_token,
+    )
+except Exception:
+    # Settings missing is fine for sample-data mode.
+    pass
 
 # ── Custom CSS ────────────────────────────────────────────────────────
 

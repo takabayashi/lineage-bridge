@@ -153,7 +153,8 @@ class TestBuildUrl:
         url = provider.build_url(node)
         assert url == f"{WORKSPACE_URL}/explore/data/catalog/schema/table"
 
-    def test_no_workspace_url(self, provider):
+    def test_no_workspace_url(self, provider_no_creds):
+        """No URL on the provider AND none on the node → None."""
         node = LineageNode(
             node_id="test",
             system=SystemType.DATABRICKS,
@@ -162,7 +163,7 @@ class TestBuildUrl:
             display_name="catalog.schema.table",
             attributes={},
         )
-        assert provider.build_url(node) is None
+        assert provider_no_creds.build_url(node) is None
 
     def test_invalid_qualified_name(self, provider):
         node = LineageNode(
@@ -174,6 +175,48 @@ class TestBuildUrl:
             attributes={"workspace_url": WORKSPACE_URL},
         )
         assert provider.build_url(node) is None
+
+    def test_provider_url_overrides_stale_node_attribute(self, provider):
+        """If Confluent stored a stale workspace URL on the node, the
+        provider's settings-configured URL must win."""
+        stale = "https://stale-workspace.cloud.databricks.com"
+        node = LineageNode(
+            node_id="test",
+            system=SystemType.DATABRICKS,
+            node_type=NodeType.UC_TABLE,
+            qualified_name="catalog.schema.table",
+            display_name="catalog.schema.table",
+            attributes={"workspace_url": stale},
+        )
+        url = provider.build_url(node)
+        assert url == f"{WORKSPACE_URL}/explore/data/catalog/schema/table"
+        assert stale not in url
+
+    def test_strips_trailing_slash_on_provider_url(self):
+        """Provider URLs with trailing slashes should not produce double slashes."""
+        provider = DatabricksUCProvider(workspace_url=f"{WORKSPACE_URL}/", token=TOKEN)
+        node = LineageNode(
+            node_id="test",
+            system=SystemType.DATABRICKS,
+            node_type=NodeType.UC_TABLE,
+            qualified_name="catalog.schema.table",
+            display_name="catalog.schema.table",
+            attributes={},
+        )
+        url = provider.build_url(node)
+        assert url == f"{WORKSPACE_URL}/explore/data/catalog/schema/table"
+
+    def test_build_node_prefers_provider_workspace_url(self, provider):
+        """build_node should bake the provider's URL into the node, not Confluent's."""
+        ci_config_with_stale = {
+            "kind": "Unity",
+            "workspace_endpoint": "https://stale-workspace.cloud.databricks.com",
+            "catalog_name": "confluent_tableflow",
+        }
+        node, _ = provider.build_node(
+            ci_config_with_stale, "tf-id", "orders", "lkc-abc123", "env-abc"
+        )
+        assert node.attributes["workspace_url"] == WORKSPACE_URL
 
 
 class TestEnrich:

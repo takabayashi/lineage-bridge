@@ -568,17 +568,18 @@ def _build_external_dataset_url(node: Any) -> str | None:
 
 def build_node_url(node: Any) -> str | None:
     """Build a URL for any node type — dispatches to catalog providers for catalog nodes."""
-    from lineage_bridge.catalogs.aws_glue import GlueCatalogProvider
-    from lineage_bridge.catalogs.databricks_uc import DatabricksUCProvider
-    from lineage_bridge.catalogs.google_lineage import GoogleLineageProvider
+    from lineage_bridge.catalogs import get_provider
     from lineage_bridge.models.graph import NodeType
 
     if node.node_type == NodeType.UC_TABLE:
-        return DatabricksUCProvider().build_url(node)
+        provider = get_provider("UNITY_CATALOG")
+        return provider.build_url(node) if provider else None
     if node.node_type == NodeType.GLUE_TABLE:
-        return GlueCatalogProvider().build_url(node)
+        provider = get_provider("AWS_GLUE")
+        return provider.build_url(node) if provider else None
     if node.node_type == NodeType.GOOGLE_TABLE:
-        return GoogleLineageProvider().build_url(node)
+        provider = get_provider("GOOGLE_DATA_LINEAGE")
+        return provider.build_url(node) if provider else None
     if node.node_type == NodeType.EXTERNAL_DATASET:
         return _build_external_dataset_url(node)
     return build_confluent_cloud_url(node)

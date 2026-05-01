@@ -67,7 +67,13 @@ class DatabricksUCProvider:
         # Support both flat config format (API) and nested format (legacy/tests)
         uc_cfg = ci_config.get("unity_catalog", ci_config)
         catalog_name = uc_cfg.get("catalog_name", "confluent_tableflow")
-        workspace_url = uc_cfg.get("workspace_endpoint") or uc_cfg.get("workspace_url")
+        # Prefer the user-configured workspace URL (settings) over Confluent's
+        # stored workspace_endpoint, which may be stale or wrong.
+        workspace_url = (
+            self._workspace_url
+            or uc_cfg.get("workspace_endpoint")
+            or uc_cfg.get("workspace_url")
+        )
         # Tableflow normalizes dots → underscores in table names, but keeps
         # the raw cluster ID (with hyphens) as the schema name.
         uc_table_name = topic_name.replace(".", "_")
@@ -499,11 +505,14 @@ class DatabricksUCProvider:
 
     def build_url(self, node: LineageNode) -> str | None:
         """Build a deep link to the table in the Databricks workspace UI."""
-        workspace_url = node.attributes.get("workspace_url")
+        # Prefer the provider's configured workspace URL (from settings) over
+        # the per-node attribute, which may carry a stale value baked in by
+        # Confluent's Tableflow integration config.
+        workspace_url = self._workspace_url or node.attributes.get("workspace_url")
         if not workspace_url:
             return None
         parts = node.qualified_name.split(".")
         if len(parts) != 3:
             return None
         catalog, schema, table = parts
-        return f"{workspace_url}/explore/data/{catalog}/{schema}/{table}"
+        return f"{workspace_url.rstrip('/')}/explore/data/{catalog}/{schema}/{table}"

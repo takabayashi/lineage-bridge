@@ -299,6 +299,13 @@ async def run_extraction(
     on_progress: ProgressCallback = None,
 ) -> LineageGraph:
     """Run the extraction pipeline and return the merged graph."""
+    from lineage_bridge.catalogs import configure_providers
+
+    configure_providers(
+        databricks_workspace_url=settings.databricks_workspace_url,
+        databricks_token=settings.databricks_token,
+    )
+
     graph = LineageGraph()
 
     cloud = ConfluentClient(

@@ -17,6 +17,24 @@ _PROVIDERS: dict[str, CatalogProvider] = {
 }
 
 
+def configure_providers(
+    *,
+    databricks_workspace_url: str | None = None,
+    databricks_token: str | None = None,
+) -> None:
+    """Reconfigure the registry's provider singletons with runtime settings.
+
+    Call this once at app entry (orchestrator, UI, watcher) so that
+    ``get_provider`` returns instances aware of the user's actual
+    workspace URL — not whatever value Confluent happens to have stored
+    in its Tableflow catalog-integration config.
+    """
+    _PROVIDERS["UNITY_CATALOG"] = DatabricksUCProvider(
+        workspace_url=databricks_workspace_url,
+        token=databricks_token,
+    )
+
+
 def get_provider(catalog_type: str) -> CatalogProvider | None:
     """Return the provider for the given catalog type, or None if unknown."""
     return _PROVIDERS.get(catalog_type)
