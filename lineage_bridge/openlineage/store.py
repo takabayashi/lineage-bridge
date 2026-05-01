@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 from fnmatch import fnmatch
 
-from lineage_bridge.api.openlineage.models import Dataset, Job, RunEvent
+from lineage_bridge.openlineage.models import Dataset, Job, RunEvent
 
 
 class EventStore:

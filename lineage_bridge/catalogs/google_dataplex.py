@@ -72,7 +72,7 @@ def _kafka_fqn(cluster_id: str, topic: str) -> str:
     Kept here to preserve the import path that test_google_dataplex.py uses.
     The single source of truth lives in ``api.openlineage.normalize``.
     """
-    from lineage_bridge.api.openlineage.normalize import kafka_fqn
+    from lineage_bridge.openlineage.normalize import kafka_fqn
 
     return kafka_fqn(cluster_id, topic)
 
@@ -303,8 +303,7 @@ class DataplexAssetRegistrar:
                 "platform": "kafka",
                 "displayName": topic.display_name or topic_name,
                 "description": (
-                    topic.attributes.get("description")
-                    or f"Kafka topic on cluster {cluster_id}"
+                    topic.attributes.get("description") or f"Kafka topic on cluster {cluster_id}"
                 ),
             },
         }

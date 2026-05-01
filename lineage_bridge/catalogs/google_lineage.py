@@ -255,7 +255,7 @@ class GoogleLineageProvider:
         # the source topics. Each event's namespaces are rewritten to formats
         # Google's processor recognizes; events that end up with no recognized
         # datasets after normalization are dropped.
-        from lineage_bridge.api.openlineage.translator import graph_to_events
+        from lineage_bridge.openlineage.translator import graph_to_events
 
         events = graph_to_events(graph)
         for event in events:
@@ -349,7 +349,7 @@ class GoogleLineageProvider:
         on output; Kafka on both sides). UC/Glue/EXTERNAL datasets are
         dropped — Google can't link them.
         """
-        from lineage_bridge.api.openlineage.normalize import normalize_event
+        from lineage_bridge.openlineage.normalize import normalize_event
 
         normalize_event(event, allow={"bigquery"})
 

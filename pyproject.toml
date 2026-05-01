@@ -55,7 +55,7 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["N806"]  # Allow MockFoo naming in tests
-"lineage_bridge/api/openlineage/models.py" = ["N815"]  # OpenLineage spec uses camelCase fields
+"lineage_bridge/openlineage/models.py" = ["N815"]  # OpenLineage spec uses camelCase fields
 "lineage_bridge/api/routers/*.py" = ["B008"]  # Depends() in defaults is standard FastAPI pattern
 
 [tool.pytest.ini_options]

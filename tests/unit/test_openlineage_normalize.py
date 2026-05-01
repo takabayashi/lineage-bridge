@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from lineage_bridge.api.openlineage.normalize import kafka_fqn, normalize_event
+from lineage_bridge.openlineage.normalize import kafka_fqn, normalize_event
 
 
 def _ds(ns, name):

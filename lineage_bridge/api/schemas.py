@@ -12,8 +12,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from lineage_bridge.api.openlineage.models import Job, RunEvent
 from lineage_bridge.models.graph import LineageEdge, LineageNode
+from lineage_bridge.openlineage.models import Job, RunEvent
 
 # ── Simple responses ──────────────────────────────────────────────────────
 

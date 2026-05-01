@@ -16,7 +16,15 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from lineage_bridge.api.openlineage.models import (
+from lineage_bridge.models.graph import (
+    EdgeType,
+    LineageEdge,
+    LineageGraph,
+    LineageNode,
+    NodeType,
+    SystemType,
+)
+from lineage_bridge.openlineage.models import (
     ConfluentConnectorJobFacet,
     ConfluentKafkaDatasetFacet,
     DatasetFacets,
@@ -32,14 +40,6 @@ from lineage_bridge.api.openlineage.models import (
     SchemaDatasetFacet,
     SchemaField,
     SqlJobFacet,
-)
-from lineage_bridge.models.graph import (
-    EdgeType,
-    LineageEdge,
-    LineageGraph,
-    LineageNode,
-    NodeType,
-    SystemType,
 )
 
 # Node types that map to OpenLineage Dataset

@@ -70,9 +70,7 @@ class DatabricksUCProvider:
         # Prefer the user-configured workspace URL (settings) over Confluent's
         # stored workspace_endpoint, which may be stale or wrong.
         workspace_url = (
-            self._workspace_url
-            or uc_cfg.get("workspace_endpoint")
-            or uc_cfg.get("workspace_url")
+            self._workspace_url or uc_cfg.get("workspace_endpoint") or uc_cfg.get("workspace_url")
         )
         # Tableflow normalizes dots → underscores in table names, but keeps
         # the raw cluster ID (with hyphens) as the schema name.

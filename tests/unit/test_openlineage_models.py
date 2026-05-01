@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from lineage_bridge.api.openlineage.models import (
+from lineage_bridge.openlineage.models import (
     ConfluentKafkaDatasetFacet,
     Dataset,
     DatasetFacets,

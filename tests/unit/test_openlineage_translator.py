@@ -6,7 +6,15 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from lineage_bridge.api.openlineage.models import (
+from lineage_bridge.models.graph import (
+    EdgeType,
+    LineageEdge,
+    LineageGraph,
+    LineageNode,
+    NodeType,
+    SystemType,
+)
+from lineage_bridge.openlineage.models import (
     ConfluentKafkaDatasetFacet,
     DatasetFacets,
     InputDataset,
@@ -16,18 +24,10 @@ from lineage_bridge.api.openlineage.models import (
     RunEvent,
     RunEventType,
 )
-from lineage_bridge.api.openlineage.translator import (
+from lineage_bridge.openlineage.translator import (
     _build_namespace,
     events_to_graph,
     graph_to_events,
-)
-from lineage_bridge.models.graph import (
-    EdgeType,
-    LineageEdge,
-    LineageGraph,
-    LineageNode,
-    NodeType,
-    SystemType,
 )
 
 # ── Helpers ────────────────────────────────────────────────────────────────

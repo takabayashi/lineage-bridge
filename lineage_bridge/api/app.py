@@ -7,10 +7,10 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from lineage_bridge.api.auth import configure_auth
-from lineage_bridge.api.openlineage.store import EventStore
 from lineage_bridge.api.routers import datasets, graphs, jobs, lineage, meta, push, tasks
 from lineage_bridge.api.state import GraphStore
 from lineage_bridge.api.task_store import TaskStore
+from lineage_bridge.openlineage.store import EventStore
 
 
 def create_app(*, api_key: str | None = None) -> FastAPI:

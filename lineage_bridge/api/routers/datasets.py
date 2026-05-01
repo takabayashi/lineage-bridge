@@ -7,9 +7,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from lineage_bridge.api.auth import require_api_key
-from lineage_bridge.api.openlineage.models import Dataset, RunEvent
-from lineage_bridge.api.openlineage.store import EventStore
 from lineage_bridge.api.schemas import DatasetLineageOrigin, DatasetLineageResponse
+from lineage_bridge.openlineage.models import Dataset, RunEvent
+from lineage_bridge.openlineage.store import EventStore
 
 router = APIRouter()
 

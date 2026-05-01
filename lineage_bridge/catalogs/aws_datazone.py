@@ -28,8 +28,8 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from lineage_bridge.api.openlineage.normalize import kafka_fqn, normalize_event
 from lineage_bridge.models.graph import LineageGraph, LineageNode, NodeType, PushResult, SystemType
+from lineage_bridge.openlineage.normalize import kafka_fqn, normalize_event
 
 logger = logging.getLogger(__name__)
 
@@ -147,9 +147,7 @@ class DataZoneAssetRegistrar:
         """
         # Fast path: asset type already exists, nothing to bootstrap.
         try:
-            self.client.get_asset_type(
-                domainIdentifier=self._domain_id, identifier=ASSET_TYPE_NAME
-            )
+            self.client.get_asset_type(domainIdentifier=self._domain_id, identifier=ASSET_TYPE_NAME)
             return ASSET_TYPE_NAME
         except Exception as exc:
             err_name = type(exc).__name__
@@ -380,7 +378,7 @@ class AWSDataZoneProvider:
         *,
         on_progress: Callable[[str, str], None] | None = None,
     ) -> int:
-        from lineage_bridge.api.openlineage.translator import graph_to_events
+        from lineage_bridge.openlineage.translator import graph_to_events
 
         events = graph_to_events(graph)
         # DataZone accepts the same allowlist as Google for Kafka inputs; for
