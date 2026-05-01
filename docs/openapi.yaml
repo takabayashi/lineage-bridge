@@ -1526,6 +1526,16 @@ components:
           - type: string
           - type: 'null'
           title: Cluster Name
+        catalog_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Catalog Type
+          description: |-
+            For NodeType.CATALOG_TABLE only — discriminator for which catalog
+            owns this node (e.g. 'UNITY_CATALOG', 'AWS_GLUE',
+            'GOOGLE_DATA_LINEAGE', 'AWS_DATAZONE'). None for non-catalog node
+            types. (Added in v0.5.0; per ADR-021.)
         attributes:
           additionalProperties: true
           type: object
@@ -1566,14 +1576,18 @@ components:
       - ksqldb_query
       - flink_job
       - tableflow_table
-      - uc_table
-      - glue_table
-      - google_table
+      - catalog_table
       - schema
       - external_dataset
       - consumer_group
       title: NodeType
-      description: Types of nodes in the lineage graph.
+      description: |-
+        Types of nodes in the lineage graph.
+
+        v0.5.0 (ADR-021): the per-catalog values `uc_table` / `glue_table` /
+        `google_table` were collapsed into a single `catalog_table` value.
+        The `catalog_type` field on `LineageNode` carries the discriminator
+        (e.g. `UNITY_CATALOG`, `AWS_GLUE`, `GOOGLE_DATA_LINEAGE`).
     OutputDataset-Input:
       properties:
         namespace:

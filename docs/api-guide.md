@@ -231,10 +231,18 @@ When you POST OpenLineage events, they are merged into the graph store and becom
 
 ## Registered Catalog Providers
 
-| Provider | Catalog Type | Node Type | System |
+| Provider | `catalog_type` discriminator | Node type | System |
 |---|---|---|---|
-| Databricks UC | `UNITY_CATALOG` | `uc_table` | `databricks` |
-| AWS Glue | `AWS_GLUE` | `glue_table` | `aws` |
-| Google Data Lineage | `GOOGLE_DATA_LINEAGE` | `google_table` | `google` |
+| Databricks UC | `UNITY_CATALOG` | `catalog_table` | `databricks` |
+| AWS Glue | `AWS_GLUE` | `catalog_table` | `aws` |
+| Google Data Lineage | `GOOGLE_DATA_LINEAGE` | `catalog_table` | `google` |
+| AWS DataZone | `AWS_DATAZONE` | `catalog_table` *(push-only — no native nodes)* | `aws` |
 
-Adding a new catalog = one file in `lineage_bridge/catalogs/`, register in `__init__.py`.
+Per ADR-021 (v0.5.0), every catalog provider creates `NodeType.CATALOG_TABLE`
+nodes; the `catalog_type` field on `LineageNode` carries the discriminator.
+The `GET /api/v1/catalogs` endpoint returns one `{"catalog_type": "..."}`
+entry per registered provider.
+
+Adding a new catalog = one provider class + one entry in
+`lineage_bridge/catalogs/__init__.py` + one entry in
+`lineage_bridge/ui/styles.CATALOG_STYLES`.
