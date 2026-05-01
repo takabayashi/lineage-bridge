@@ -27,7 +27,7 @@ def create_app(*, api_key: str | None = None) -> FastAPI:
             "stream lineage for integration with data catalogs "
             "(Databricks UC, AWS Glue, Google Data Lineage, and more)."
         ),
-        version="0.3.0",
+        version="0.4.0",
         docs_url="/docs",
         redoc_url="/redoc",
     )

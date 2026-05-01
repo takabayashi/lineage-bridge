@@ -20,7 +20,7 @@ async def health() -> StatusResponse:
 
 @router.get("/version")
 async def version() -> VersionResponse:
-    return VersionResponse(version="0.3.0", name="lineage-bridge")
+    return VersionResponse(version="0.4.0", name="lineage-bridge")
 
 
 @router.get("/catalogs")

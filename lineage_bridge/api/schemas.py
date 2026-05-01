@@ -34,7 +34,7 @@ class VersionResponse(BaseModel):
 
     model_config = {
         "json_schema_extra": {
-            "examples": [{"version": "0.3.0", "name": "lineage-bridge"}],
+            "examples": [{"version": "0.4.0", "name": "lineage-bridge"}],
         }
     }
 
