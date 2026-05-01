@@ -2,6 +2,21 @@
 
 LineageBridge exposes an **OpenLineage-compatible REST API** that bridges Confluent Cloud stream lineage with external data catalogs.
 
+## Quick Start
+
+Start the API server:
+
+```bash
+make api
+# API runs at http://localhost:8000
+```
+
+**Explore the API interactively:**
+
+- **Swagger UI**: http://localhost:8000/docs (recommended)
+- **ReDoc**: http://localhost:8000/redoc
+- **Scalar Explorer**: [Interactive API Reference →](openapi.md)
+
 ## Overview
 
 The LineageBridge API provides a RESTful interface for:
@@ -12,32 +27,33 @@ The LineageBridge API provides a RESTful interface for:
 - Triggering extraction and enrichment tasks
 - Traversing dataset and job relationships
 
-## Base URL
+## Base URL & Versioning
 
-The API runs on `http://localhost:8000` by default, with all endpoints prefixed by `/api/v1`:
+**API Base URL**: `http://localhost:8000/api/v1/`
+
+All API endpoints are prefixed with `/api/v1`:
 
 ```
-http://localhost:8000/api/v1/
+GET  http://localhost:8000/api/v1/health
+POST http://localhost:8000/api/v1/lineage/events
+GET  http://localhost:8000/api/v1/graphs
 ```
 
-Configure the host and port via environment variables:
+**Interactive Documentation**:
+
+- Swagger UI at `/docs` - Test endpoints in your browser
+- ReDoc at `/redoc` - Clean API reference
+- OpenAPI spec at `/openapi.json` - Machine-readable spec
+
+**Configuration**:
 
 ```bash
-export LINEAGE_BRIDGE_API_HOST="0.0.0.0"
-export LINEAGE_BRIDGE_API_PORT=8000
+export LINEAGE_BRIDGE_API_HOST="0.0.0.0"  # Default: 0.0.0.0
+export LINEAGE_BRIDGE_API_PORT=8000        # Default: 8000
+export LINEAGE_BRIDGE_API_KEY="your-key"  # Optional auth
 ```
 
-## Versioning
-
-The API uses URL-based versioning. The current version is `v1`, reflected in all endpoint paths:
-
-```
-/api/v1/health
-/api/v1/lineage/events
-/api/v1/graphs
-```
-
-Future versions will be released as `v2`, `v3`, etc., allowing backward compatibility.
+**Versioning**: URL-based (`/api/v1`, `/api/v2`, etc.) for backward compatibility.
 
 ## Endpoint Categories
 

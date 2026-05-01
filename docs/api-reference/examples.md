@@ -2,14 +2,17 @@
 
 Comprehensive examples for using the LineageBridge API with cURL and Python.
 
+!!! tip "Interactive API Testing"
+    **Prefer interactive testing?** Visit **http://localhost:8000/docs** in your browser after starting the API server. You can test all endpoints directly in Swagger UI without writing code!
+
 ## Prerequisites
 
 Start the API server:
 
 ```bash
-uv run lineage-bridge-api
-# or
 make api
+# API available at http://localhost:8000
+# Interactive docs at http://localhost:8000/docs
 ```
 
 ## Health Check

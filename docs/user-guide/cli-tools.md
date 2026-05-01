@@ -457,26 +457,29 @@ No command-line arguments. Configuration is via environment variables.
 
 ### What It Does
 
-Starts a FastAPI + Uvicorn server with these endpoints:
+Starts a FastAPI + Uvicorn server with 25 REST endpoints for programmatic lineage access.
 
-- `GET /api/v1/environments` — List environments
-- `POST /api/v1/extract` — Trigger extraction
-- `GET /api/v1/graph` — Retrieve the current graph
-- `POST /api/v1/openlineage/lineage` — Ingest OpenLineage events
-- `GET /docs` — Interactive API documentation (Swagger/Scalar)
+**Key endpoints:**
+
+- `GET /api/v1/health` — Health check (no auth)
+- `POST /api/v1/lineage/events` — Ingest OpenLineage events
+- `GET /api/v1/graphs` — Manage lineage graphs
+- `POST /api/v1/tasks/extract` — Trigger async extraction
+
+See [API Reference](../api-reference/index.md) for all 25 endpoints.
 
 ### Access
 
-After launch, the API is available at:
+!!! success "Start Here"
+    After starting the server, visit **http://localhost:8000/docs** in your browser for interactive API testing!
 
-```
-http://localhost:8000
-```
+**API Base URL**: `http://localhost:8000/api/v1/`
 
-Interactive docs:
+**Interactive Documentation**:
 
-- Swagger UI: `http://localhost:8000/docs`
-- Scalar UI: `http://localhost:8000/api-docs`
+- **Swagger UI**: http://localhost:8000/docs (recommended)
+- **ReDoc**: http://localhost:8000/redoc
+- **OpenAPI Spec**: http://localhost:8000/openapi.json
 
 ### Environment Variables
 
