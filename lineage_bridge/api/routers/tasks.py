@@ -1,6 +1,11 @@
 # Copyright 2026 Daniel Takabayashi
 # Licensed under the Apache License, Version 2.0
-"""Async task endpoints: trigger extraction/enrichment and poll status."""
+"""Async task endpoints: trigger extraction/enrichment and poll status.
+
+Routes through `lineage_bridge.services` so the API and UI hit the same code
+path (see ADR-020). The `POST /extract` body is an `ExtractionRequest`
+JSON; the request_builder enforces parity with the UI.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +18,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from lineage_bridge.api.auth import require_api_key
 from lineage_bridge.api.schemas import TaskCreatedResponse
 from lineage_bridge.api.task_store import TaskInfo, TaskStatus, TaskStore, TaskType
+from lineage_bridge.services import (
+    EnrichmentRequest,
+    ExtractionRequest,
+    build_extraction_request,
+    run_enrichment,
+    run_extraction,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,18 +64,24 @@ async def get_task(
 @router.post("/extract", status_code=202, dependencies=[Depends(require_api_key)])
 async def trigger_extraction(
     request: Request,
-    environment_ids: list[str] | None = None,
+    body: ExtractionRequest | None = None,
     store: TaskStore = Depends(_get_task_store),
 ) -> TaskCreatedResponse:
     """Trigger an async lineage extraction from Confluent Cloud.
 
+    Body is an `ExtractionRequest` (see `services.requests.ExtractionRequest`).
+    If no body is provided, all environments visible to the configured Cloud
+    credentials are extracted with default flags.
+
     Returns immediately with a task_id. Poll GET /tasks/{task_id} for progress.
     """
-    params = {"environment_ids": environment_ids or []}
-    task = store.create(TaskType.EXTRACT, params)
+    if body is None:
+        # No body: extract every discoverable env with default flags. Matches
+        # the previous behaviour of the no-arg POST /extract.
+        body = ExtractionRequest(environment_ids=[])
+    task = store.create(TaskType.EXTRACT, body.model_dump())
 
-    # Run extraction in background — fire-and-forget; task store tracks lifecycle
-    bg = asyncio.create_task(_run_extraction(task.task_id, request.app, params))
+    bg = asyncio.create_task(_run_extraction(task.task_id, request.app, body))
     _background_tasks.add(bg)
     bg.add_done_callback(_background_tasks.discard)
 
@@ -74,17 +92,19 @@ async def trigger_extraction(
 async def trigger_enrichment(
     request: Request,
     graph_id: str | None = None,
+    body: EnrichmentRequest | None = None,
     store: TaskStore = Depends(_get_task_store),
 ) -> TaskCreatedResponse:
     """Trigger catalog enrichment on an existing graph.
 
-    Runs all registered catalog providers' enrich() methods.
     Returns immediately with a task_id.
     """
-    params = {"graph_id": graph_id}
+    if body is None:
+        body = EnrichmentRequest()
+    params = {"graph_id": graph_id, **body.model_dump()}
     task = store.create(TaskType.ENRICH, params)
 
-    bg = asyncio.create_task(_run_enrichment(task.task_id, request.app, params))
+    bg = asyncio.create_task(_run_enrichment_task(task.task_id, request.app, graph_id, body))
     _background_tasks.add(bg)
     bg.add_done_callback(_background_tasks.discard)
 
@@ -94,7 +114,7 @@ async def trigger_enrichment(
 async def _run_extraction(
     task_id: str,
     app: Any,
-    params: dict[str, Any],
+    req: ExtractionRequest,
 ) -> None:
     """Background coroutine for lineage extraction."""
     store: TaskStore = app.state.task_store
@@ -107,14 +127,10 @@ async def _run_extraction(
         settings = Settings()
         store.add_progress(task_id, "Loaded settings")
 
-        from lineage_bridge.clients.discovery import list_environments
-        from lineage_bridge.extractors.orchestrator import run_extraction
-
-        env_ids = params.get("environment_ids", [])
-
-        # If no environment_ids provided, discover all environments
+        env_ids = list(req.environment_ids)
         if not env_ids:
             from lineage_bridge.clients.base import ConfluentClient
+            from lineage_bridge.clients.discovery import list_environments
 
             cloud = ConfluentClient(
                 "https://api.confluent.cloud",
@@ -124,19 +140,17 @@ async def _run_extraction(
             envs = await list_environments(cloud)
             env_ids = [e.id for e in envs]
             store.add_progress(task_id, f"Discovered {len(env_ids)} environments")
+            # Re-route through build_extraction_request so the env_ids land in
+            # a frozen request, not patched onto the existing one.
+            req = build_extraction_request({**req.model_dump(), "environment_ids": env_ids})
 
         store.add_progress(task_id, f"Extracting from {len(env_ids)} environment(s)")
 
-        graph = await run_extraction(
-            settings,
-            environment_ids=env_ids,
-            enable_enrichment=True,
-        )
+        graph = await run_extraction(req, settings)
 
         msg = f"Extraction complete: {graph.node_count} nodes, {graph.edge_count} edges"
         store.add_progress(task_id, msg)
 
-        # Store the graph
         graph_store = app.state.graph_store
         graph_id = graph_store.create(graph)
         store.add_progress(task_id, f"Graph stored as {graph_id}")
@@ -155,10 +169,11 @@ async def _run_extraction(
         store.fail(task_id, str(exc))
 
 
-async def _run_enrichment(
+async def _run_enrichment_task(
     task_id: str,
     app: Any,
-    params: dict[str, Any],
+    graph_id: str | None,
+    req: EnrichmentRequest,
 ) -> None:
     """Background coroutine for catalog enrichment."""
     store: TaskStore = app.state.task_store
@@ -167,9 +182,7 @@ async def _run_enrichment(
 
     try:
         graph_store = app.state.graph_store
-        graph_id = params.get("graph_id")
 
-        # If no graph_id given, use the first available graph
         if not graph_id:
             all_graphs = graph_store.list_all()
             if not all_graphs:
@@ -184,26 +197,18 @@ async def _run_enrichment(
 
         store.add_progress(task_id, f"Enriching graph {graph_id}")
 
-        from lineage_bridge.catalogs import get_active_providers
+        from lineage_bridge.config.settings import Settings
 
-        providers = get_active_providers(graph)
-        store.add_progress(task_id, f"Found {len(providers)} active catalog providers")
-
-        for provider in providers:
-            store.add_progress(task_id, f"Running {provider.catalog_type} enrichment")
-            try:
-                await provider.enrich(graph)
-                store.add_progress(task_id, f"{provider.catalog_type} enrichment complete")
-            except Exception as exc:
-                store.add_progress(task_id, f"{provider.catalog_type} enrichment failed: {exc}")
+        settings = Settings()
+        await run_enrichment(req, settings, graph)
 
         graph_store.touch(graph_id)
         store.complete(
             task_id,
             {
                 "graph_id": graph_id,
-                "providers_run": len(providers),
                 "node_count": graph.node_count,
+                "edge_count": graph.edge_count,
             },
         )
 

@@ -9,6 +9,7 @@ phase's `execute(ctx)` call. Phases read from it and mutate `ctx.graph`.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -18,8 +19,8 @@ if TYPE_CHECKING:
     from lineage_bridge.models.graph import LineageGraph
 
 
-# Callable that receives (phase_label, detail_message)
-ProgressCallback = Any  # typing: Callable[[str, str], None] | None
+# (phase_label, detail_message) -> None
+ProgressCallback = Callable[[str, str], None] | None
 
 
 @dataclass
