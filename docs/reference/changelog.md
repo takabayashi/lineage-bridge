@@ -20,9 +20,29 @@ All notable changes to LineageBridge are documented here. The format follows [Ke
 - Shared OpenLineage namespace normalizer (`api/openlineage/normalize.py`) — used by both Google and DataZone providers, parametrised by allowlist (`{bigquery}` for Google, `{kafka, aws}` and `{bigquery, aws}` for DataZone).
 - Shared upstream-chain builder (`catalogs/upstream_chain.py`) — single source of truth for chain shape, used by all four catalogs.
 - `google-auth` is now a hard dependency (was previously imported lazily and silently failed if missing).
-- BigQuery sink connectors synthesise per-topic `GOOGLE_TABLE` nodes in `clients/connect.py` so the publish UI surfaces them and Tableflow isn't required for the BQ demo.
 
 See the [latest commits](https://github.com/takabayashi/lineage-bridge/commits/main) for work in progress.
+
+## [0.4.1] - 2026-05-01
+
+**Brand-icon refresh, BigQuery node enhancement, and CI/docs hardening.**
+
+### Added
+
+- **Official brand icons** for Kafka, Flink, Databricks (Unity Catalog), Google BigQuery, and AWS Glue graph nodes. Other node types keep their geometric icons. New `_IconSpec` config supports `logo` and `tile` render modes plus an optional `fill_override` for recolouring monochrome marks.
+- **Shell-based integration test harnesses** for all three demo environments: `scripts/integration-test-uc.sh` (7 tests), `scripts/integration-test-glue.sh` (8 tests), `scripts/integration-test-bigquery.sh` (9 tests). Each validates extraction, enrichment, catalog push, API, watcher, and Docker, with `--skip-docker` for CI.
+- **Documentation polish**: prominent docs-site link on the README, deep-links from catalog feature bullets to per-catalog guides, GCP environment variables documented, `lineage-bridge-api` entrypoint surfaced.
+
+### Changed
+
+- **BigQuery connector lineage**: BigQuery sink connectors now synthesise per-topic `GOOGLE_TABLE` nodes in `clients/connect.py` so the publish UI surfaces them directly without requiring Tableflow.
+
+### Fixed
+
+- **Deploy Documentation workflow**: 9 broken cross-reference links in `docs/how-to/index.md`, `docs/reference/glossary.md`, and `docs/demos/index.md` retargeted to existing pages so `mkdocs build --strict` passes.
+- **CI lint**: import ordering + formatter applied to `lineage_bridge/api/routers/tasks.py` (had been failing `ruff check` on every PR).
+- **IAM trust policy** corrections and Interactive API Explorer fix (use built-in Swagger UI).
+- **7 bugs** discovered during integration-test validation (full list in `docs/INTEGRATION_TESTS_BUG_FIXES.md`).
 
 ## [0.4.0] - 2024-12-15
 
