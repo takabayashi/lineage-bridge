@@ -63,14 +63,14 @@ The watcher should be the **third peer service** alongside the API and UI: its o
 
 ## Phase plan
 
-### Phase 0 — Foundation ADRs (Blueprint, ~1 day, **sequential gate**)
+### Phase 0 — Foundation ADRs 020-023 (Blueprint, ~1 day, **sequential gate**)
 
-Write three ADRs to `docs/decisions.md` that freeze the contracts everyone else builds against:
+Write four ADRs to `docs/decisions.md` that freeze the contracts everyone else builds against. (Numbers shifted from the original 017–020 because ADRs 017–019 were taken on 2026-05-01 by the demo-credentials/upstream-chain/catalog-registration work.)
 
-- **ADR-017: Service layer between API/UI and orchestrator.** Defines `ExtractionRequest`, `EnrichmentRequest`, `PushRequest` Pydantic v2 models and the `services/extraction_service.py` API surface.
-- **ADR-018: Catalog protocol v2 (breaking).** New protocol methods, `MaterializationContext` discriminated union, collapsing per-catalog NodeTypes into `NodeType.CATALOG_TABLE` with a `catalog_type` attribute. Includes the migration helper for stored graphs.
-- **ADR-019: Pluggable storage layer.** `Repository` protocol per entity, backends `memory`/`file`/`sqlite`, env-var-driven selection. Adds `WatcherRepository` to the protocol set (events, extraction history, control state).
-- **ADR-020: Watcher as independent service.** Watcher becomes its own deployable process (no longer a thread inside Streamlit). State persisted via `WatcherRepository`. New `services/watcher_service.py` exposes the engine as a library; CLI/daemon wrapper runs it long-lived; new `api/routers/watcher.py` exposes start/stop/status endpoints. UI becomes stateless about the watcher — it polls the API like any other client.
+- **ADR-020: Service layer between API/UI and orchestrator.** Defines `ExtractionRequest`, `EnrichmentRequest`, `PushRequest` Pydantic v2 models and the `services/extraction_service.py` API surface.
+- **ADR-021: Catalog protocol v2 (breaking).** New protocol methods, `MaterializationContext` discriminated union, collapsing per-catalog NodeTypes into `NodeType.CATALOG_TABLE` with a `catalog_type` attribute. Includes the migration helper for stored graphs. Supersedes ADR-006.
+- **ADR-022: Pluggable storage layer.** `Repository` protocol per entity, backends `memory`/`file`/`sqlite`, env-var-driven selection. Adds `WatcherRepository` to the protocol set (events, extraction history, control state).
+- **ADR-023: Watcher as independent service.** Watcher becomes its own deployable process (no longer a thread inside Streamlit). State persisted via `WatcherRepository`. New `services/watcher_service.py` exposes the engine as a library; CLI/daemon wrapper runs it long-lived; new `api/routers/watcher.py` exposes start/stop/status endpoints. UI becomes stateless about the watcher — it polls the API like any other client. Supersedes the in-process threading model from ADR-014.
 
 **Sentinel sign-off required before Phase 1 starts.** This is the bottleneck — once these contracts are frozen, four streams can run in parallel.
 
@@ -276,7 +276,7 @@ ui/sidebar/
 - `tests/storage/test_sqlite_backend.py` (uses tmp_path fixture).
 - Conformance suite from Phase 1C runs against sqlite automatically.
 
-**Out of scope (deferred):** postgres backend, S3 backend, redis. Documented in ADR-019 as future work; can be added in a single PR each when there's a real production driver.
+**Out of scope (deferred):** postgres backend, S3 backend, redis. Documented in ADR-022 as future work; can be added in a single PR each when there's a real production driver.
 
 #### Phase 2G — Watcher as independent service (Forge + Weaver + Lens, ~3 days, **after Phase 1A + 1C + 1D**)
 
@@ -374,7 +374,7 @@ Still works, but now starts a daemon that registers itself in storage and is vis
 - `docs/openapi.yaml` — regenerated, includes `/push/{provider}` endpoints
 - `docs/api-reference/examples.md` — add push examples, service layer examples
 - `docs/contributing/adding-extractors.md` — service layer pattern, no longer call orchestrator directly
-- `docs/decisions.md` — finalize ADRs 017/018/019; supersede ADR-009 (Glue stub note) and any others made stale
+- `docs/decisions.md` — finalize ADRs 020/021/022/023; supersede ADR-006 (per-catalog NodeTypes), ADR-014's in-process threading model, and any others made stale
 - `CLAUDE.md` — update module map (add services/, storage/, openlineage/ at top level; update catalog protocol description)
 - `README.md` — refreshed architecture diagram, link to storage tiers
 - `docs/plan.md` — append "Refactor (2026-MM-DD)" section once complete; mark this `plan-refactor.md` as superseded
@@ -423,7 +423,7 @@ These are the **acceptance test** for the v2 protocol. If either requires change
 ```
 Day:    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15   16
         │
-P0  ████│         (foundation ADRs incl. ADR-020 — Blueprint, gate)
+P0  ████│         (foundation ADRs 020-023 — Blueprint, gate)
         │
 P1A      ████████│         (services + API parity — Forge+Lens)
 P1B      █████████████│    (catalog protocol v2 + migration — Blueprint+Weaver+Lens)
@@ -515,14 +515,14 @@ This refactor is complete when:
 6. **Three-service deployment:** `docker-compose up api ui watcher` starts three independent services; killing any one does not kill the others; all three share state via the storage backend.
 7. **Module size:** `ui/sidebar/` total < 900 LOC (down from 1167); `extractors/orchestrator.py` < 300 LOC (down from 833); `services/watcher_service.py` < 400 LOC (down from `watcher/engine.py` 352 + threading).
 8. **Test suite:** ≥ 70% coverage maintained, all green. New conformance suites for catalogs, storage, and watcher repository added. Multi-process integration test for the watcher passes.
-9. **Docs:** Every new module has an entry in `docs/architecture/`. `CLAUDE.md` and `README.md` reflect new structure (three peer services). `docs/user-guide/change-detection.md` updated for the new daemon model. ADRs 017/018/019/020 finalized.
+9. **Docs:** Every new module has an entry in `docs/architecture/`. `CLAUDE.md` and `README.md` reflect new structure (three peer services). `docs/user-guide/change-detection.md` updated for the new daemon model. ADRs 020/021/022/023 finalized.
 10. **No backwards-imports:** `grep -r "from lineage_bridge.api" lineage_bridge/{catalogs,clients,models,extractors,services,storage,openlineage,watcher}` returns nothing. `grep -r "WatcherEngine" lineage_bridge/ui/` returns nothing.
 
 ---
 
 ## Out of scope (deferred to follow-up plans)
 
-- Postgres / S3 / Redis storage backends (documented as future work in ADR-019).
+- Postgres / S3 / Redis storage backends (documented as future work in ADR-022).
 - BigQuery direct provider, Apache Polaris / Iceberg REST catalog provider.
 - Redis-backed distributed task queue.
 - Distributed (multi-worker) extraction.
