@@ -319,4 +319,4 @@ curl -u "$CONFLUENT_TABLEFLOW_API_KEY:$CONFLUENT_TABLEFLOW_API_SECRET" \
 - **[Unity Catalog Demo Guide →](unity-catalog-demo.md)** — Full walkthrough for the UC demo with Databricks integration
 - **[AWS Glue Demo Guide →](aws-glue-demo.md)** — Iceberg tables in AWS Glue Data Catalog
 - **[BigQuery Demo Guide →](bigquery-demo.md)** — Streaming sink to BigQuery with Data Lineage API
-- **[Production Deployment →](../deployment/production.md)** — Adapt these demos for your production environments
+- **[Production Deployment →](../how-to/index.md)** — Adapt these demos for your production environments

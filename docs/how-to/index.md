@@ -50,8 +50,8 @@ These guides help you integrate LineageBridge into your existing workflows:
 
 If you're new to LineageBridge:
 
-1. Read the [Quickstart Tutorial](../tutorials/quickstart.md) to understand the basics
-2. Review the [Architecture Overview](../reference/architecture.md) to understand how components fit together
+1. Read the [Quickstart Tutorial](../getting-started/quickstart.md) to understand the basics
+2. Review the [Architecture Overview](../architecture/index.md) to understand how components fit together
 3. Pick a guide from the table above based on your current task
 
 ## Style Conventions
@@ -66,7 +66,7 @@ Throughout these guides:
 
 ## Need Help?
 
-- If a guide doesn't cover your use case, check the [FAQ](../reference/faq.md)
-- For API details, see the [API Reference](../reference/api.md)
-- For conceptual explanations, see [Concepts](../reference/concepts.md)
+- If a guide doesn't cover your use case, check the [Troubleshooting](../troubleshooting/index.md) section
+- For API details, see the [API Reference](../api-reference/index.md)
+- For conceptual explanations, see the [Glossary](../reference/glossary.md)
 - To report issues or suggest improvements, [open an issue](https://github.com/takabayashi/lineage-bridge/issues)

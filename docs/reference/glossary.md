@@ -328,6 +328,6 @@ Change-detection service (`watcher/engine.py`) that polls Confluent APIs for cha
 
 ## See Also
 
-- [Architecture](../architecture.md) - System design and component overview
-- [Catalog Integration](../catalog-integration.md) - Data catalog provider details
-- [API Reference](../api-reference.md) - REST API and client documentation
+- [Architecture](../architecture/index.md) - System design and component overview
+- [Catalog Integration](../catalog-integration/index.md) - Data catalog provider details
+- [API Reference](../api-reference/index.md) - REST API and client documentation
