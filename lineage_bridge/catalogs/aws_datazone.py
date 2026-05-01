@@ -320,7 +320,10 @@ class AWSDataZoneProvider:
         client = boto3.client("datazone", region_name=self._region)
         count = 0
         for ev in events:
-            payload = json.dumps(ev.model_dump(mode="json", exclude_none=True))
+            # by_alias=True so Pydantic's `producer` / `schema_url` fields serialize
+            # as `_producer` / `_schemaURL` per the OpenLineage spec — DataZone
+            # rejects events that omit these (Google silently dropped them).
+            payload = json.dumps(ev.model_dump(mode="json", exclude_none=True, by_alias=True))
             try:
                 await asyncio.to_thread(
                     client.post_lineage_event,
