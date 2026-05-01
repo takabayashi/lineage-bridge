@@ -25,9 +25,13 @@ ENV/
 # Environment / secrets
 .env
 .env_*
+.env.backup.*
+.env.*-demo
+.env.*-test
 
 # Project output
 lineage_graph.json
+lineage_graph_*.json
 
 # Testing
 .pytest_cache/
