@@ -1,8 +1,33 @@
 # AWS Glue Data Catalog Integration
 
-LineageBridge integrates with AWS Glue Data Catalog to enrich table metadata and push Confluent lineage information as table parameters and descriptions.
+**What you'll build**: Kafka lineage visible in AWS Glue, Athena, and Redshift Spectrum with enriched table metadata showing source topics and connectors.
 
-## Overview
+**Why this matters**: Your data platform is AWS-native. Analysts query Glue tables with Athena, compliance needs to know data sources, and your S3 data lake is cataloged in Glue. LineageBridge bridges the gap between Confluent and AWS.
+
+## Data Flow
+
+Here's how Kafka topics become AWS Glue tables:
+
+```mermaid
+graph LR
+    A[Kafka Topic<br/>orders.v1] --> B[Confluent Tableflow]
+    B --> C[S3 Path<br/>s3://bucket/orders/]
+    C --> D[Glue Table<br/>lkc-abc123.orders.v1]
+    D --> E[Glue API]
+    E --> F[Schema & Partitions]
+    F --> G[LineageBridge Graph]
+    G --> H[Update Table Parameters]
+    H --> I[Athena Queries]
+    H --> J[Redshift Spectrum]
+```
+
+**LineageBridge role**:
+1. Discovers the Tableflow-created Glue table
+2. Enriches it with schema, SerDe, and storage metadata from Glue API
+3. Pushes Kafka source metadata as table parameters (queryable via `SHOW TBLPROPERTIES`)
+4. Makes lineage visible in Athena and other AWS tools
+
+## Capabilities
 
 The `GlueCatalogProvider` offers native integration with AWS analytics services:
 
@@ -44,34 +69,60 @@ Attach this policy to an IAM user or role used by LineageBridge.
 
 ## Configuration
 
-Add the following to your `.env` file:
+=== "Environment Variables"
 
-```env
-# AWS Glue Data Catalog
-LINEAGE_BRIDGE_AWS_REGION=us-east-1
-```
+    ```bash
+    # Required: AWS region
+    export LINEAGE_BRIDGE_AWS_REGION=us-east-1
+    
+    # Option 1: Use IAM role (recommended for EC2/ECS/Lambda)
+    # No additional config needed — boto3 auto-discovers role
+    
+    # Option 2: Use access keys
+    export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+    export AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+    ```
 
-**AWS Credentials**: LineageBridge uses boto3, which loads credentials from:
+=== ".env File"
+
+    ```bash
+    # Add to .env in your project root
+    
+    # Required: AWS region
+    LINEAGE_BRIDGE_AWS_REGION=us-east-1
+    
+    # Option 2: Access keys (not recommended for production)
+    AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+    AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+    ```
+
+=== "AWS Credentials File"
+
+    ```bash
+    # ~/.aws/credentials
+    [default]
+    aws_access_key_id = AKIAIOSFODNN7EXAMPLE
+    aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+    
+    # Then set region in .env or env var
+    export LINEAGE_BRIDGE_AWS_REGION=us-east-1
+    ```
+
+=== "IAM Role (Production)"
+
+    ```bash
+    # When running on EC2, ECS, or Lambda, just set region
+    export LINEAGE_BRIDGE_AWS_REGION=us-east-1
+    
+    # Attach IAM role with this policy to your instance/task/function:
+    # - glue:GetTable
+    # - glue:UpdateTable
+    ```
+
+**Credential Resolution Order** (boto3 standard):
 1. Environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`)
 2. AWS credentials file (`~/.aws/credentials`)
-3. IAM role (when running on EC2, ECS, or Lambda)
-
-**Example using environment variables:**
-
-```env
-AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
-AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
-LINEAGE_BRIDGE_AWS_REGION=us-east-1
-```
-
-**Example using credentials file:**
-
-```ini
-# ~/.aws/credentials
-[default]
-aws_access_key_id = AKIAIOSFODNN7EXAMPLE
-aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
-```
+3. IAM role (EC2 instance profile, ECS task role, Lambda execution role)
 
 ## Features
 
@@ -256,39 +307,84 @@ Note: Athena requires backticks for table names with dots.
 
 ### Error: "EntityNotFoundException: Table not found"
 
-**Cause**: Table does not exist in Glue Data Catalog
+**What it means**: The Glue table doesn't exist yet.
 
-**Fix**:
-1. Verify Tableflow sync is running: `confluent tableflow connection list`
-2. Check table exists: `aws glue get-table --database-name <db> --name <table>`
-3. Confirm database/table names in Tableflow config match Glue
+**How to fix**:
+1. Verify Tableflow is running:
+   ```bash
+   confluent tableflow connection list
+   ```
+2. Check the table exists in Glue:
+   ```bash
+   aws glue get-table --database-name lkc-abc123 --name orders.v1 --region us-east-1
+   ```
+3. Check Tableflow config matches Glue naming:
+   - Database name (default: cluster ID)
+   - Table name (raw topic name with dots preserved)
+
+**Common cause**: Tableflow sync hasn't completed. Wait a few minutes after creating the integration.
 
 ### Error: "AccessDeniedException: Insufficient permissions"
 
-**Cause**: IAM credentials lack `glue:GetTable` or `glue:UpdateTable` permissions
+**What it means**: Your IAM credentials lack Glue permissions.
 
-**Fix**:
-1. Verify IAM policy includes required permissions (see Prerequisites)
-2. Check IAM user/role has the policy attached
-3. Test credentials: `aws glue get-table --database-name <db> --name <table>`
+**How to fix**:
+1. Attach this policy to your IAM user/role:
+   ```json
+   {
+     "Effect": "Allow",
+     "Action": ["glue:GetTable", "glue:UpdateTable"],
+     "Resource": ["arn:aws:glue:*:*:catalog", "arn:aws:glue:*:*:database/*", "arn:aws:glue:*:*:table/*"]
+   }
+   ```
+2. Test permissions:
+   ```bash
+   aws glue get-table --database-name lkc-abc123 --name orders.v1
+   ```
+3. If still failing, check `aws sts get-caller-identity` to verify which credentials you're using
+
+**Common cause**: Using credentials from the wrong AWS account or missing policy attachment.
 
 ### Error: "InvalidInputException: TableInput is invalid"
 
-**Cause**: `update_table` requires specific fields from the existing table definition
+**What it means**: The table definition is malformed (rare).
 
-**Fix**: This is handled automatically by `_build_table_input()`. If the error persists, the existing table may be corrupted. Try recreating it.
+**How to fix**:
+This is handled automatically by `_build_table_input()`. If it persists:
+1. Check the table wasn't manually edited with invalid fields
+2. Try recreating the Glue table via Tableflow
+3. Check CloudTrail logs for the exact validation error
+
+**Common cause**: Table was manually modified outside Tableflow.
 
 ### Parameters appear but description is empty
 
-**Cause**: `set_description` was disabled during push
+**What it means**: You disabled description updates during lineage push.
 
-**Fix**: Re-run lineage push with `set_description: true`
+**How to fix**:
+Re-run lineage push in the UI with "Set table description" enabled, or via API:
+```bash
+curl -X POST http://localhost:8000/api/v1/lineage/push \
+  -H "Content-Type: application/json" \
+  -d '{"catalog_type": "AWS_GLUE", "set_description": true}'
+```
 
-### Table has dots in the name and queries fail
+### Athena query fails: "Table orders.v1 not found"
 
-**Cause**: Athena and some tools require escaping table names with dots
+**What it means**: Athena can't parse table names with dots.
 
-**Fix**: Use backticks: `SELECT * FROM db.\`orders.v1\``
+**How to fix**:
+Wrap the table name in backticks:
+```sql
+SELECT * FROM lkc_abc123.`orders.v1` LIMIT 10;
+```
+
+Or in your catalog tool:
+```sql
+SHOW TBLPROPERTIES lkc_abc123.`orders.v1`;
+```
+
+**Common cause**: Glue preserves topic names with dots (unlike UC which normalizes them).
 
 ## Integration with AWS Services
 
@@ -299,6 +395,90 @@ Glue lineage metadata is visible in:
 - **Amazon Redshift Spectrum**: Access Glue tables from Redshift
 - **AWS Lake Formation**: Manage permissions and governance
 - **Amazon EMR**: Read Glue table metadata in Spark/Hive jobs
+
+## Common Pitfalls
+
+### Pitfall 1: Wrong AWS Region
+
+**Problem**: Region configured in LineageBridge doesn't match Tableflow/Glue region
+
+**Symptom**: "EntityNotFoundException" even though table exists
+
+**Fix**: Match regions exactly
+```bash
+# Check Glue region in AWS console URL or Tableflow config
+# Update .env to match
+LINEAGE_BRIDGE_AWS_REGION=us-west-2  # Must match your Glue catalog region
+```
+
+### Pitfall 2: Access Keys in Environment
+
+**Problem**: Credentials from previous project in environment variables
+
+**Symptom**: "AccessDeniedException" or wrong account
+
+**Fix**: Check which credentials boto3 is using
+```bash
+# Clear unwanted env vars
+unset AWS_ACCESS_KEY_ID
+unset AWS_SECRET_ACCESS_KEY
+
+# Verify credentials
+aws sts get-caller-identity
+
+# Use credentials file or IAM role instead
+```
+
+### Pitfall 3: Table Names with Dots
+
+**Problem**: Topic `orders.v1` becomes Glue table `orders.v1` (dots preserved)
+
+**Symptom**: Athena queries fail: "Table orders.v1 not found"
+
+**Fix**: Use backticks in Athena
+```sql
+-- Wrong
+SELECT * FROM lkc_abc123.orders.v1;
+
+-- Right
+SELECT * FROM lkc_abc123.`orders.v1`;
+```
+
+### Pitfall 4: Insufficient IAM Permissions
+
+**Problem**: Policy grants `glue:*` on wrong resources
+
+**Symptom**: "AccessDeniedException" even with broad permissions
+
+**Fix**: Grant on catalog, database, AND table resources
+```json
+{
+  "Resource": [
+    "arn:aws:glue:*:*:catalog",
+    "arn:aws:glue:*:*:database/*",
+    "arn:aws:glue:*:*:table/*"
+  ]
+}
+```
+
+### Pitfall 5: Overwriting User Parameters
+
+**Problem**: Worried lineage push will overwrite existing table parameters
+
+**Symptom**: Hesitation to enable lineage push
+
+**Reality**: LineageBridge merges parameters — user-defined parameters are preserved
+```python
+# Existing parameters
+{"user_param": "value", "another_param": "123"}
+
+# After lineage push
+{
+  "user_param": "value",  # Preserved
+  "another_param": "123",  # Preserved
+  "lineage_bridge.source_topics": "orders.v1"  # Added
+}
+```
 
 ## Best Practices
 

@@ -1,8 +1,34 @@
 # Databricks Unity Catalog Integration
 
-LineageBridge integrates with Databricks Unity Catalog (UC) to enrich table metadata and push Confluent lineage information back into UC as table properties, comments, and lineage records.
+**What you'll build**: A complete view of how Kafka topics flow into Unity Catalog tables and downstream Delta transformations, visible in both LineageBridge and the Databricks workspace.
 
-## Overview
+**Why this matters**: Your data team works in Databricks SQL and notebooks. They need to know which Kafka topics feed their tables, who owns the source connectors, and how data flows through transformations. LineageBridge makes this visible without leaving the workspace.
+
+## Data Flow
+
+Here's how your data travels from Confluent to Databricks:
+
+```mermaid
+graph LR
+    A[Kafka Topic<br/>orders.v1] --> B[Confluent Tableflow]
+    B --> C[Delta Table<br/>lkc-abc123.orders_v1]
+    C --> D[UC Metadata API]
+    D --> E[Schema & Owner]
+    C --> F[SQL Transformation]
+    F --> G[Derived Table<br/>gold.orders_daily]
+    G --> D
+    E --> H[LineageBridge Graph]
+    G --> H
+    H --> I[Push to UC Properties]
+```
+
+**LineageBridge role**:
+1. Discovers the Tableflow-created table via API
+2. Enriches it with schema, owner, and storage metadata from UC
+3. Walks the UC lineage API to find derived tables
+4. Pushes Kafka source metadata back to UC as queryable properties
+
+## Capabilities
 
 The `DatabricksUCProvider` offers the most comprehensive catalog integration:
 
@@ -33,16 +59,41 @@ The `DatabricksUCProvider` offers the most comprehensive catalog integration:
 
 ## Configuration
 
-Add the following to your `.env` file:
+=== "Environment Variables"
 
-```env
-# Databricks Unity Catalog
-LINEAGE_BRIDGE_DATABRICKS_WORKSPACE_URL=https://myworkspace.cloud.databricks.com
-LINEAGE_BRIDGE_DATABRICKS_TOKEN=dapi1234567890abcdef1234567890ab
-LINEAGE_BRIDGE_DATABRICKS_WAREHOUSE_ID=abc123def456  # Required for lineage push
-```
+    ```bash
+    # Required for enrichment
+    export LINEAGE_BRIDGE_DATABRICKS_WORKSPACE_URL=https://myworkspace.cloud.databricks.com
+    export LINEAGE_BRIDGE_DATABRICKS_TOKEN=dapi1234567890abcdef1234567890ab
+    
+    # Required for lineage push (SQL writes)
+    export LINEAGE_BRIDGE_DATABRICKS_WAREHOUSE_ID=abc123def456
+    ```
 
-**Note**: The workspace URL should not include a trailing slash.
+=== ".env File"
+
+    ```bash
+    # Add to .env in your project root
+    
+    # Required for enrichment
+    LINEAGE_BRIDGE_DATABRICKS_WORKSPACE_URL=https://myworkspace.cloud.databricks.com
+    LINEAGE_BRIDGE_DATABRICKS_TOKEN=dapi1234567890abcdef1234567890ab
+    
+    # Required for lineage push (SQL writes)
+    LINEAGE_BRIDGE_DATABRICKS_WAREHOUSE_ID=abc123def456
+    ```
+
+=== "UI Configuration"
+
+    1. Launch the UI: `uv run streamlit run lineage_bridge/ui/app.py`
+    2. Sidebar → **Connection Settings**
+    3. Enter:
+       - Workspace URL (no trailing slash)
+       - Personal Access Token
+       - SQL Warehouse ID (for lineage push)
+    4. Click **Save**
+
+**Important**: The workspace URL must NOT include a trailing slash.
 
 ## Features
 
@@ -105,6 +156,40 @@ orders.v1 (topic)
 ```
 
 This allows LineageBridge to trace how Confluent topics flow through Databricks transformations.
+
+**What happens under the hood**:
+```python
+# 1. Query UC lineage API for downstream tables
+response = await client.get(
+    f"/api/2.0/lineage-tracking/table-lineage",
+    params={"table_name": "confluent_tableflow.lkc-abc123.orders_v1"}
+)
+
+# 2. For each downstream table found
+for downstream in response.get("downstreams", []):
+    # Create UC_TABLE node
+    derived_node = LineageNode(
+        node_id=f"databricks:uc_table:{env_id}:{downstream['table_name']}",
+        node_type=NodeType.UC_TABLE,
+        qualified_name=downstream["table_name"],
+        attributes={"derived": True}  # Flag as discovered
+    )
+    
+    # Create TRANSFORMS edge
+    edge = LineageEdge(
+        src_id=source_table_node_id,
+        dst_id=derived_node.node_id,
+        edge_type=EdgeType.TRANSFORMS
+    )
+    
+    # Enrich with metadata from UC Tables API
+    await enrich_node(derived_node)
+    
+    # Recurse to find further downstream tables
+    await discover_downstream(derived_node)
+```
+
+**Why this is powerful**: You automatically see the full lakehouse flow without manually mapping transformations.
 
 ### 4. Lineage Push (push_lineage)
 
@@ -185,6 +270,42 @@ curl -X POST http://localhost:8000/api/v1/lineage/push \
 
 ## Testing
 
+### Quick Test with Demo Data
+
+Want to test without setting up your own Tableflow? Use the built-in UC demo:
+
+```bash
+# Navigate to UC demo
+cd infra/demos/uc
+
+# Provision demo infrastructure (Confluent + Databricks + Tableflow)
+make demo-up
+
+# Get .env file for LineageBridge
+make env > ../../../.env.uc-demo
+
+# Return to project root and use demo config
+cd ../../..
+cp .env .env.backup
+cp .env.uc-demo .env
+
+# Extract lineage
+uv run lineage-bridge-extract
+
+# View in UI
+uv run streamlit run lineage_bridge/ui/app.py
+
+# Clean up when done
+cd infra/demos/uc
+make demo-down
+```
+
+**What this creates**:
+- Confluent environment with topics and connectors
+- Databricks workspace with Unity Catalog
+- Tableflow integration syncing topics to UC tables
+- Sample derived tables for lineage discovery testing
+
 ### 1. Test Enrichment
 
 Extract lineage with UC credentials configured:
@@ -243,30 +364,139 @@ After extraction, search the graph for `orders_daily` — it should appear as a 
 
 ### Error: "Databricks UC API returned 401"
 
-**Cause**: Invalid or expired token
+**What it means**: Your token is invalid or expired.
 
-**Fix**: Regenerate the token and update `.env`
+**How to fix**:
+1. Generate a new token in Databricks: **User Settings** → **Developer** → **Access Tokens**
+2. Update your `.env`:
+   ```bash
+   LINEAGE_BRIDGE_DATABRICKS_TOKEN=dapi_your_new_token_here
+   ```
+3. Restart the extraction
+
+**Common cause**: Personal access tokens expire. Use service principals for production.
 
 ### Error: "Databricks UC API returned 404"
 
-**Cause**: Table does not exist in Unity Catalog
+**What it means**: The table doesn't exist in Unity Catalog yet.
 
-**Fix**:
-1. Verify Tableflow sync is running: `confluent tableflow connection list`
-2. Check table exists: `SHOW TABLES IN <catalog>.<schema>`
-3. Confirm catalog/schema/table names in Tableflow config match UC
+**How to fix**:
+1. Verify Tableflow is running:
+   ```bash
+   confluent tableflow connection list
+   ```
+2. Check the table exists in UC:
+   ```sql
+   SHOW TABLES IN confluent_tableflow.lkc_abc123;
+   ```
+3. Check Tableflow config matches UC naming:
+   - Catalog name (default: `confluent_tableflow`)
+   - Schema name (default: cluster ID like `lkc-abc123`)
+   - Table name (topic name with dots → underscores)
+
+**Common cause**: Tableflow sync hasn't completed yet. Wait a few minutes after creating the integration.
 
 ### Error: "Bridge table creation failed: permission denied"
 
-**Cause**: Token lacks `CREATE TABLE` permission on the default schema
+**What it means**: Your token can't create tables in the default schema.
 
-**Fix**: Grant `CREATE` on `{catalog}.default` or use a service principal with broader permissions
+**How to fix**:
+1. Grant `CREATE` permission on `{catalog}.default`:
+   ```sql
+   GRANT CREATE ON SCHEMA confluent_tableflow.default TO `your_user@example.com`;
+   ```
+2. Or use a service principal with broader permissions
+3. Or skip bridge table creation (properties and comments still work)
+
+**Common cause**: Personal tokens inherit your user permissions. Service principals need explicit grants.
 
 ### Lineage push succeeds but properties don't appear
 
-**Cause**: SQL warehouse may be serverless with delayed metadata sync
+**What it means**: Metadata sync is delayed (serverless warehouses can take 30-60 seconds).
 
-**Fix**: Wait 30-60 seconds and re-query, or use a classic SQL warehouse
+**How to fix**:
+1. Wait 60 seconds and re-query:
+   ```sql
+   SHOW TBLPROPERTIES confluent_tableflow.lkc_abc123.orders_v1;
+   ```
+2. Or switch to a classic SQL warehouse (faster metadata sync)
+
+**Common cause**: Serverless warehouses have asynchronous metadata updates.
+
+### Tables appear but lineage discovery is empty
+
+**What it means**: UC lineage tracking isn't enabled or has no downstream tables.
+
+**How to fix**:
+1. Check workspace settings: **Admin Console** → **Workspace Settings** → **Lineage Tracking** (must be ON)
+2. Verify you have downstream tables:
+   ```sql
+   SELECT * FROM system.access.table_lineage
+   WHERE source_table_full_name = 'confluent_tableflow.lkc_abc123.orders_v1';
+   ```
+3. If empty, create a derived table:
+   ```sql
+   CREATE TABLE gold.orders_summary AS
+   SELECT order_date, COUNT(*) as count
+   FROM confluent_tableflow.lkc_abc123.orders_v1
+   GROUP BY order_date;
+   ```
+
+**Common cause**: UC lineage requires explicitly enabled tracking and actual downstream transformations.
+
+## Common Pitfalls
+
+### Pitfall 1: Trailing Slash in Workspace URL
+
+**Problem**: Configuration uses `https://myworkspace.cloud.databricks.com/`
+
+**Symptom**: API calls fail with 404 or redirect errors
+
+**Fix**: Remove the trailing slash
+```bash
+# Wrong
+LINEAGE_BRIDGE_DATABRICKS_WORKSPACE_URL=https://myworkspace.cloud.databricks.com/
+
+# Right
+LINEAGE_BRIDGE_DATABRICKS_WORKSPACE_URL=https://myworkspace.cloud.databricks.com
+```
+
+### Pitfall 2: Personal Token in Production
+
+**Problem**: Using a personal access token that expires or is tied to your user account
+
+**Symptom**: Lineage breaks when you leave the team or token expires
+
+**Fix**: Use a service principal
+```bash
+# Create service principal in Databricks admin console
+# Generate token for the service principal (never expires unless revoked)
+LINEAGE_BRIDGE_DATABRICKS_TOKEN=dapi_service_principal_token_here
+```
+
+### Pitfall 3: Missing Lineage Tracking
+
+**Problem**: Downstream discovery finds no derived tables even though they exist
+
+**Symptom**: Graph only shows Tableflow tables, no transformations
+
+**Fix**: Enable UC lineage tracking
+1. Admin Console → Workspace Settings → Lineage Tracking → ON
+2. Wait 24 hours for historical lineage to populate (or create new transformations)
+
+### Pitfall 4: Wrong Warehouse ID
+
+**Problem**: Lineage push fails with "warehouse not found"
+
+**Symptom**: Table properties and comments don't update
+
+**Fix**: Get the correct warehouse ID from the URL
+```bash
+# Open SQL Warehouse in Databricks UI
+# URL looks like: https://myworkspace.cloud.databricks.com/sql/warehouses/abc123def456
+# Use just the ID part: abc123def456
+LINEAGE_BRIDGE_DATABRICKS_WAREHOUSE_ID=abc123def456
+```
 
 ## Best Practices
 

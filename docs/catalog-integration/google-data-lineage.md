@@ -1,16 +1,42 @@
 # Google Data Lineage Integration
 
-LineageBridge integrates with Google Data Lineage (part of Google Cloud Dataplex) to enrich BigQuery table metadata and push Confluent lineage as native OpenLineage events.
+**What you'll build**: Kafka lineage visible in Google Cloud's Data Lineage UI and BigQuery, using the vendor-neutral OpenLineage standard.
 
-## Overview
+**Why this matters**: Your data platform runs on Google Cloud. Analysts query BigQuery, governance uses Dataplex, and compliance needs to trace data from Kafka to warehouse. Google Data Lineage natively understands OpenLineage, making this a first-class integration.
+
+## Data Flow
+
+Here's how Kafka topics become BigQuery tables with lineage:
+
+```mermaid
+graph LR
+    A[Kafka Topic<br/>orders.v1] --> B[Confluent Tableflow]
+    B --> C[BigQuery Table<br/>project.dataset.orders_v1]
+    C --> D[BigQuery API]
+    D --> E[Schema & Stats]
+    E --> F[LineageBridge Graph]
+    F --> G[OpenLineage Translator]
+    G --> H[Data Lineage API]
+    H --> I[Dataplex UI]
+    H --> J[Data Catalog]
+```
+
+**LineageBridge role**:
+1. Discovers the Tableflow-created BigQuery table
+2. Enriches it with schema, size, and metadata from BigQuery API
+3. Translates the graph to OpenLineage events (vendor-neutral format)
+4. Pushes events to Google Data Lineage API for indexing
+5. Makes lineage queryable in Dataplex and Data Catalog
+
+**What makes this unique**: No custom metadata format — LineageBridge speaks OpenLineage, which Google natively understands.
+
+## Capabilities
 
 The `GoogleLineageProvider` offers native OpenLineage integration:
 
 - **Build Nodes**: Creates `GOOGLE_TABLE` nodes from Tableflow catalog integrations
 - **Enrich Metadata**: Fetches table schema, size, and metadata via the BigQuery API
 - **Push Lineage**: Sends OpenLineage events to the Data Lineage API (no custom metadata format needed)
-
-Google Data Lineage is unique among catalog providers because it natively speaks the OpenLineage standard, making it a natural integration point for stream lineage.
 
 ## Prerequisites
 
@@ -58,18 +84,79 @@ export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
 
 ## Configuration
 
-Add the following to your `.env` file:
+=== "Environment Variables"
 
-```env
-# Google Cloud Platform
-LINEAGE_BRIDGE_GCP_PROJECT_ID=my-project
-LINEAGE_BRIDGE_GCP_LOCATION=us  # or us-central1, europe-west1, etc.
-```
+    ```bash
+    # Required: GCP project and location
+    export LINEAGE_BRIDGE_GCP_PROJECT_ID=my-project
+    export LINEAGE_BRIDGE_GCP_LOCATION=us  # or us-central1, europe-west1
+    
+    # Option 1: Use Application Default Credentials (local dev)
+    gcloud auth application-default login
+    
+    # Option 2: Use service account key
+    export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
+    ```
 
-**Authentication**: LineageBridge uses the `google-auth` library, which loads credentials from:
+=== ".env File"
+
+    ```bash
+    # Add to .env in your project root
+    
+    # Required
+    LINEAGE_BRIDGE_GCP_PROJECT_ID=my-project
+    LINEAGE_BRIDGE_GCP_LOCATION=us
+    
+    # Optional: Service account key path
+    GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
+    ```
+
+=== "Service Account (Production)"
+
+    ```bash
+    # 1. Create service account
+    gcloud iam service-accounts create lineage-bridge \
+      --display-name="LineageBridge Service Account"
+    
+    # 2. Grant permissions
+    gcloud projects add-iam-policy-binding my-project \
+      --member="serviceAccount:lineage-bridge@my-project.iam.gserviceaccount.com" \
+      --role="roles/bigquery.dataViewer"
+    
+    gcloud projects add-iam-policy-binding my-project \
+      --member="serviceAccount:lineage-bridge@my-project.iam.gserviceaccount.com" \
+      --role="roles/datalineage.admin"
+    
+    # 3. Create key
+    gcloud iam service-accounts keys create lineage-bridge-key.json \
+      --iam-account=lineage-bridge@my-project.iam.gserviceaccount.com
+    
+    # 4. Set credentials
+    export GOOGLE_APPLICATION_CREDENTIALS=/path/to/lineage-bridge-key.json
+    export LINEAGE_BRIDGE_GCP_PROJECT_ID=my-project
+    export LINEAGE_BRIDGE_GCP_LOCATION=us
+    ```
+
+=== "GKE/Cloud Run (Production)"
+
+    ```bash
+    # Use Workload Identity (no key file needed)
+    # Just set project and location
+    export LINEAGE_BRIDGE_GCP_PROJECT_ID=my-project
+    export LINEAGE_BRIDGE_GCP_LOCATION=us
+    
+    # Bind Kubernetes service account to GCP service account
+    gcloud iam service-accounts add-iam-policy-binding \
+      lineage-bridge@my-project.iam.gserviceaccount.com \
+      --role roles/iam.workloadIdentityUser \
+      --member "serviceAccount:my-project.svc.id.goog[namespace/ksa-name]"
+    ```
+
+**Credential Resolution Order** (google-auth standard):
 1. `GOOGLE_APPLICATION_CREDENTIALS` environment variable (service account key)
 2. Application Default Credentials (via `gcloud auth application-default login`)
-3. Compute Engine metadata service (when running on GCE, GKE, Cloud Run)
+3. Compute Engine metadata service (GCE, GKE, Cloud Run)
+4. Workload Identity (GKE only)
 
 ## Features
 
@@ -239,49 +326,122 @@ WHERE table_name = 'orders_v1';
 
 ### Error: "BigQuery API returned 404"
 
-**Cause**: Table does not exist in BigQuery
+**What it means**: The BigQuery table doesn't exist yet.
 
-**Fix**:
-1. Verify Tableflow sync is running: `confluent tableflow connection list`
-2. Check table exists: `bq show my-project:lkc_abc123.orders_v1`
-3. Confirm project/dataset/table names in Tableflow config match BigQuery
+**How to fix**:
+1. Verify Tableflow is running:
+   ```bash
+   confluent tableflow connection list
+   ```
+2. Check the table exists in BigQuery:
+   ```bash
+   bq show my-project:lkc_abc123.orders_v1
+   ```
+3. Check Tableflow config matches BigQuery naming:
+   - Project ID (from Tableflow config or `LINEAGE_BRIDGE_GCP_PROJECT_ID`)
+   - Dataset ID (default: cluster ID normalized as `lkc_abc123`)
+   - Table name (topic name with dots → underscores)
+
+**Common cause**: Tableflow sync hasn't completed. Wait a few minutes after creating the integration.
 
 ### Error: "BigQuery API returned 403"
 
-**Cause**: Service account lacks `bigquery.tables.get` permission
+**What it means**: Your credentials lack BigQuery read permissions.
 
-**Fix**:
-1. Grant `roles/bigquery.dataViewer` to the service account
-2. Or add custom role with `bigquery.tables.get` permission
-3. Test: `gcloud auth application-default print-access-token` (should succeed)
+**How to fix**:
+1. Grant `roles/bigquery.dataViewer`:
+   ```bash
+   gcloud projects add-iam-policy-binding my-project \
+     --member="serviceAccount:lineage-bridge@my-project.iam.gserviceaccount.com" \
+     --role="roles/bigquery.dataViewer"
+   ```
+2. Or create a custom role with `bigquery.tables.get` permission
+3. Test authentication:
+   ```bash
+   gcloud auth application-default print-access-token
+   ```
+
+**Common cause**: Service account exists but lacks permissions.
 
 ### Error: "Data Lineage API returned 403"
 
-**Cause**: Service account lacks `datalineage.runs.create` permission
+**What it means**: Your credentials lack Data Lineage write permissions.
 
-**Fix**:
-1. Grant `roles/datalineage.admin` to the service account
-2. Verify Data Lineage API is enabled: `gcloud services list --enabled | grep datalineage`
-3. Check quota limits in the GCP Console
+**How to fix**:
+1. Enable Data Lineage API:
+   ```bash
+   gcloud services enable datalineage.googleapis.com --project=my-project
+   ```
+2. Grant `roles/datalineage.admin`:
+   ```bash
+   gcloud projects add-iam-policy-binding my-project \
+     --member="serviceAccount:lineage-bridge@my-project.iam.gserviceaccount.com" \
+     --role="roles/datalineage.admin"
+   ```
+3. Check API is enabled:
+   ```bash
+   gcloud services list --enabled --project=my-project | grep datalineage
+   ```
+
+**Common cause**: Data Lineage API not enabled or service account lacks permission.
 
 ### Error: "google-auth not available or no ADC configured"
 
-**Cause**: `google-auth` library not installed or Application Default Credentials not configured
+**What it means**: The `google-auth` library isn't installed or you haven't authenticated.
 
-**Fix**:
-```bash
-# Install google-auth (should be included in dependencies)
-uv pip install google-auth
+**How to fix**:
+1. Ensure `google-auth` is installed (should be automatic):
+   ```bash
+   uv pip install google-auth google-auth-httplib2 google-auth-oauthlib
+   ```
+2. Configure Application Default Credentials:
+   ```bash
+   gcloud auth application-default login
+   ```
+3. Or set service account key:
+   ```bash
+   export GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json
+   ```
 
-# Configure ADC
-gcloud auth application-default login
-```
+**Common cause**: Fresh install without authentication.
 
-### Lineage events pushed but not visible in UI
+### Lineage events pushed but not visible in Data Lineage UI
 
-**Cause**: Data Lineage indexing can take 5-15 minutes
+**What it means**: Events are indexed asynchronously (can take 5-15 minutes).
 
-**Fix**: Wait and refresh the Data Lineage UI. Events are indexed asynchronously.
+**How to fix**:
+1. Wait 15 minutes and refresh the Data Lineage UI
+2. Search for your table:
+   - Navigate to **Dataplex** → **Data Lineage**
+   - Search: `my-project.lkc_abc123.orders_v1`
+3. Or query via gcloud:
+   ```bash
+   gcloud dataplex data-lineage search-links \
+     --location=us \
+     --project=my-project \
+     --target="bigquery:my-project.lkc_abc123.orders_v1"
+   ```
+
+**Common cause**: Google indexes lineage asynchronously — this is normal behavior.
+
+### Table exists in BigQuery but enrichment returns empty metadata
+
+**What it means**: Possible permissions issue or table type mismatch.
+
+**How to fix**:
+1. Check table type (views behave differently):
+   ```sql
+   SELECT table_type FROM `my-project.lkc_abc123.INFORMATION_SCHEMA.TABLES`
+   WHERE table_name = 'orders_v1';
+   ```
+2. Verify permissions include `bigquery.tables.getData`:
+   ```bash
+   gcloud projects get-iam-policy my-project \
+     --flatten="bindings[].members" \
+     --filter="bindings.members:serviceAccount:lineage-bridge@my-project.iam.gserviceaccount.com"
+   ```
+
+**Common cause**: Table is a view or external table with limited metadata.
 
 ## Integration with Google Services
 
@@ -292,6 +452,91 @@ Google Data Lineage integrates with:
 - **Dataplex**: Unified data governance and lineage
 - **Cloud Composer (Airflow)**: Airflow DAGs can emit OpenLineage events
 - **Dataflow**: Dataflow jobs emit lineage automatically
+
+## Common Pitfalls
+
+### Pitfall 1: Wrong Location (Multi-Region vs Region)
+
+**Problem**: Using `us-central1` when BigQuery dataset is in `US` (multi-region)
+
+**Symptom**: Lineage push succeeds but events don't appear in UI
+
+**Fix**: Match BigQuery dataset location
+```bash
+# Check dataset location
+bq show --format=prettyjson my-project:lkc_abc123 | grep location
+
+# If output is "US" (multi-region)
+LINEAGE_BRIDGE_GCP_LOCATION=us  # Not us-central1
+
+# If output is "us-central1" (region)
+LINEAGE_BRIDGE_GCP_LOCATION=us-central1
+```
+
+### Pitfall 2: Data Lineage API Not Enabled
+
+**Problem**: API calls fail with "API not enabled"
+
+**Symptom**: 403 errors during lineage push
+
+**Fix**: Enable the API
+```bash
+# Enable for your project
+gcloud services enable datalineage.googleapis.com --project=my-project
+
+# Verify
+gcloud services list --enabled --project=my-project | grep datalineage
+```
+
+### Pitfall 3: Waiting for Lineage to Appear
+
+**Problem**: Lineage push reports success but nothing in UI
+
+**Symptom**: Confusion about whether push worked
+
+**Reality**: Google indexes lineage asynchronously (5-15 minutes is normal)
+```bash
+# Push succeeds immediately
+curl -X POST .../lineage/push ...
+# ✓ Success: 5 events pushed
+
+# Wait 15 minutes, then search in Dataplex → Data Lineage
+# Events will appear after indexing completes
+```
+
+### Pitfall 4: Service Account Lacks BigQuery Access
+
+**Problem**: Service account has `datalineage.admin` but not `bigquery.dataViewer`
+
+**Symptom**: Enrichment fails, push works but metadata is incomplete
+
+**Fix**: Grant both roles
+```bash
+# Need both roles
+gcloud projects add-iam-policy-binding my-project \
+  --member="serviceAccount:lineage-bridge@my-project.iam.gserviceaccount.com" \
+  --role="roles/bigquery.dataViewer"
+
+gcloud projects add-iam-policy-binding my-project \
+  --member="serviceAccount:lineage-bridge@my-project.iam.gserviceaccount.com" \
+  --role="roles/datalineage.admin"
+```
+
+### Pitfall 5: Confusing OpenLineage with Custom Format
+
+**Problem**: Expecting to see custom table properties like Databricks/Glue
+
+**Symptom**: Looking for `lineage_bridge.*` metadata in BigQuery
+
+**Reality**: Google uses native OpenLineage — lineage is separate from table metadata
+```bash
+# Lineage is NOT in table properties
+bq show my-project:lkc_abc123.orders_v1  # Won't show Kafka source
+
+# Lineage is in Data Lineage API
+gcloud dataplex data-lineage search-links \
+  --target="bigquery:my-project.lkc_abc123.orders_v1"  # Shows Kafka source
+```
 
 ## Best Practices
 
