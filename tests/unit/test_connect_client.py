@@ -81,6 +81,9 @@ class TestClassifyConnector:
     def test_sink_by_jdbc_sink(self):
         assert _classify_connector("io.confluent.connect.jdbc.JdbcSinkConnector") == "sink"
 
+    def test_sink_by_bigquery_storage_sink(self):
+        assert _classify_connector("BigQueryStorageSink") == "sink"
+
     def test_unknown_when_no_match(self):
         assert _classify_connector("com.example.SomeTransformer") == "unknown"
 
@@ -148,6 +151,14 @@ class TestInferExternalDataset:
     def test_bigquery_project_and_dataset(self):
         config = {"project": "my-gcp-project", "defaultDataset": "analytics"}
         assert _infer_external_dataset(config, "BigQuerySink") == "my-gcp-project.analytics"
+
+    def test_bigquery_v2_storage_sink(self):
+        """BigQuery Storage Sink v2 uses 'datasets' (plural) config key."""
+        config = {"project": "my-gcp-project", "datasets": "lineage_bridge"}
+        assert (
+            _infer_external_dataset(config, "BigQueryStorageSink")
+            == "my-gcp-project.lineage_bridge"
+        )
 
     def test_snowflake_db_and_schema(self):
         config = {"snowflake.database.name": "MYDB", "snowflake.schema.name": "PUBLIC"}

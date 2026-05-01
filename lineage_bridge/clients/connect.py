@@ -37,7 +37,7 @@ _SOURCE_PATTERNS: list[re.Pattern[str]] = [
 _SINK_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"(?i)S3Sink"),
     re.compile(r"(?i)GcsSink"),
-    re.compile(r"(?i)BigQuerySink"),
+    re.compile(r"(?i)BigQuery(?:Storage)?Sink"),
     re.compile(r"(?i)ElasticsearchSink"),
     re.compile(r"(?i)JdbcSink"),
     re.compile(r"(?i)SnowflakeSink"),
@@ -90,7 +90,7 @@ def _infer_external_dataset(config: dict[str, str], connector_class: str) -> str
 
     # BigQuery
     project = config.get("project")
-    dataset = config.get("defaultDataset", config.get("dataset"))
+    dataset = config.get("defaultDataset", config.get("dataset", config.get("datasets")))
     if project and dataset:
         return f"{project}.{dataset}"
 

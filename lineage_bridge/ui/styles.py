@@ -18,6 +18,7 @@ NODE_COLORS: dict[NodeType, str] = {
     NodeType.TABLEFLOW_TABLE: "#1565C0",  # Confluent medium blue
     NodeType.UC_TABLE: "#F9A825",  # Databricks amber/yellow
     NodeType.GLUE_TABLE: "#E65100",  # AWS orange
+    NodeType.GOOGLE_TABLE: "#4285F4",  # Google blue
     NodeType.SCHEMA: "#90CAF9",  # Confluent pale blue
     NodeType.EXTERNAL_DATASET: "#757575",  # neutral gray
     NodeType.CONSUMER_GROUP: "#2196F3",  # Confluent mid blue
@@ -32,6 +33,7 @@ NODE_SIZES: dict[NodeType, int] = {
     NodeType.TABLEFLOW_TABLE: 36,
     NodeType.UC_TABLE: 36,
     NodeType.GLUE_TABLE: 36,
+    NodeType.GOOGLE_TABLE: 36,
     NodeType.SCHEMA: 28,
     NodeType.EXTERNAL_DATASET: 34,
     NodeType.CONSUMER_GROUP: 30,
@@ -76,6 +78,7 @@ NODE_TYPE_LABELS: dict[NodeType, str] = {
     NodeType.TABLEFLOW_TABLE: "Tableflow Table",
     NodeType.UC_TABLE: "Unity Catalog Table",
     NodeType.GLUE_TABLE: "AWS Glue Table",
+    NodeType.GOOGLE_TABLE: "Google BigQuery Table",
     NodeType.SCHEMA: "Schema",
     NodeType.EXTERNAL_DATASET: "External Dataset",
     NodeType.CONSUMER_GROUP: "Consumer Group",
@@ -99,6 +102,7 @@ NODE_SHAPES: dict[NodeType, str] = {
     NodeType.TABLEFLOW_TABLE: "image",
     NodeType.UC_TABLE: "image",
     NodeType.GLUE_TABLE: "image",
+    NodeType.GOOGLE_TABLE: "image",
     NodeType.SCHEMA: "image",
     NodeType.EXTERNAL_DATASET: "image",
     NodeType.CONSUMER_GROUP: "image",
@@ -196,6 +200,16 @@ _SYMBOLS: dict[NodeType, str] = {
     ),
     # Glue Table — database cylinder (classic DB icon)
     NodeType.GLUE_TABLE: (
+        '<ellipse cx="0" cy="-9" rx="13" ry="6" fill="#fff"/>'
+        '<rect x="-13" y="-9" width="26" height="16" fill="#fff"/>'
+        '<ellipse cx="0" cy="7" rx="13" ry="6" fill="#fff"/>'
+        '<ellipse cx="0" cy="-9" rx="13" ry="6" fill="none" '
+        'stroke="rgba(0,0,0,0.2)" stroke-width="1"/>'
+        '<ellipse cx="0" cy="-2" rx="13" ry="5" fill="none" '
+        'stroke="rgba(0,0,0,0.12)" stroke-width="0.8"/>'
+    ),
+    # Google Table — database cylinder (classic DB icon)
+    NodeType.GOOGLE_TABLE: (
         '<ellipse cx="0" cy="-9" rx="13" ry="6" fill="#fff"/>'
         '<rect x="-13" y="-9" width="26" height="16" fill="#fff"/>'
         '<ellipse cx="0" cy="7" rx="13" ry="6" fill="#fff"/>'
@@ -353,6 +367,7 @@ NODE_TYPE_EMOJI: dict[NodeType, str] = {
     NodeType.TABLEFLOW_TABLE: "\u2637",  # ☷ (grid)
     NodeType.UC_TABLE: "\u26c1",  # ⛁ (database)
     NodeType.GLUE_TABLE: "\u26c1",  # ⛁ (database)
+    NodeType.GOOGLE_TABLE: "\u26c1",  # ⛁ (database)
     NodeType.SCHEMA: "\u2637",  # ☷ (document)
     NodeType.EXTERNAL_DATASET: "\u2601",  # ☁ (cloud)
     NodeType.CONSUMER_GROUP: "\u2638",  # ☸ (group)
@@ -436,12 +451,15 @@ def build_node_url(node: Any) -> str | None:
     """Build a URL for any node type — dispatches to catalog providers for catalog nodes."""
     from lineage_bridge.catalogs.aws_glue import GlueCatalogProvider
     from lineage_bridge.catalogs.databricks_uc import DatabricksUCProvider
+    from lineage_bridge.catalogs.google_lineage import GoogleLineageProvider
     from lineage_bridge.models.graph import NodeType
 
     if node.node_type == NodeType.UC_TABLE:
         return DatabricksUCProvider().build_url(node)
     if node.node_type == NodeType.GLUE_TABLE:
         return GlueCatalogProvider().build_url(node)
+    if node.node_type == NodeType.GOOGLE_TABLE:
+        return GoogleLineageProvider().build_url(node)
     return build_confluent_cloud_url(node)
 
 

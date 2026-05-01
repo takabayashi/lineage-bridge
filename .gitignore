@@ -60,3 +60,7 @@ pytest-of-*/
 *.tfstate.*.backup
 .terraform.lock.hcl
 terraform.tfvars
+tfplan
+
+# GCP service account keys
+gcp-sa-key.json

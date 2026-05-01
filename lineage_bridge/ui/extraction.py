@@ -72,47 +72,55 @@ def _run_enrichment_on_graph(settings, graph, params: dict):
     return _run_async(_do_enrich())
 
 
-def _run_lineage_push(settings, graph, params: dict):
-    """Push lineage metadata to Databricks UC tables. Returns PushResult."""
-    from lineage_bridge.extractors.orchestrator import run_lineage_push
-
+def _run_push(async_fn, settings, graph, params: dict):
+    """Generic push wrapper — runs an orchestrator push function with UI progress logging."""
     log = st.session_state.extraction_log
 
     def on_progress(phase: str, detail: str = "") -> None:
         log.append(f"**{phase}** {detail}")
 
     async def _do_push():
-        return await run_lineage_push(
-            settings,
-            graph,
-            set_properties=params.get("push_properties", True),
-            set_comments=params.get("push_comments", True),
-            create_bridge_table=params.get("push_bridge_table", False),
-            on_progress=on_progress,
-        )
+        return await async_fn(settings, graph, on_progress=on_progress, **params)
 
     return _run_async(_do_push())
+
+
+def _run_lineage_push(settings, graph, params: dict):
+    """Push lineage metadata to Databricks UC tables. Returns PushResult."""
+    from lineage_bridge.extractors.orchestrator import run_lineage_push
+
+    return _run_push(
+        run_lineage_push,
+        settings,
+        graph,
+        {
+            "set_properties": params.get("push_properties", True),
+            "set_comments": params.get("push_comments", True),
+            "create_bridge_table": params.get("push_bridge_table", False),
+        },
+    )
 
 
 def _run_glue_push(settings, graph, params: dict):
     """Push lineage metadata to AWS Glue tables. Returns PushResult."""
     from lineage_bridge.extractors.orchestrator import run_glue_push
 
-    log = st.session_state.extraction_log
+    return _run_push(
+        run_glue_push,
+        settings,
+        graph,
+        {
+            "set_parameters": params.get("push_parameters", True),
+            "set_description": params.get("push_description", True),
+        },
+    )
 
-    def on_progress(phase: str, detail: str = "") -> None:
-        log.append(f"**{phase}** {detail}")
 
-    async def _do_push():
-        return await run_glue_push(
-            settings,
-            graph,
-            set_parameters=params.get("push_parameters", True),
-            set_description=params.get("push_description", True),
-            on_progress=on_progress,
-        )
+def _run_google_push(settings, graph, params: dict):
+    """Push lineage as OpenLineage events to Google Data Lineage. Returns PushResult."""
+    from lineage_bridge.extractors.orchestrator import run_google_push
 
-    return _run_async(_do_push())
+    return _run_push(run_google_push, settings, graph, {})
 
 
 def _run_extraction_with_params(settings, params: dict):

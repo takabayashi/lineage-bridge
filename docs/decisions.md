@@ -157,3 +157,25 @@ Living document. Every significant design or implementation decision made by the
 - **Alternatives:** (1) Kafka consumer on audit log cluster — rejected due to private cluster + 2-key limit. (2) Webhook/event-driven — no Confluent Cloud webhook API available. (3) `asyncio` task — rejected because Streamlit's sync context creates a new event loop per call.
 - **Tradeoff:** REST polling is lightweight and requires no additional credentials, but can only detect state changes (not who/when/why). 10-second poll interval + 30-second cooldown means changes are reflected within ~40 seconds. Polling adds minimal API load (4 lightweight list endpoints per poll). The audit log consumer code is retained in `models/audit_event.py` for potential future use if audit log access becomes available.
 - **Files:** `watcher/engine.py`, `watcher/cli.py`, `clients/audit_consumer.py`, `models/audit_event.py`, `ui/watcher.py`
+
+## ADR-015: OpenLineage-compatible REST API
+
+- **Status:** Accepted
+- **Date:** 2026-04-14
+- **Decided by:** Blueprint, Forge
+- **Context:** Confluent Cloud has no lineage API. External catalogs (UC, Google Data Lineage, Glue, Atlan, etc.) that speak OpenLineage cannot consume Confluent stream lineage natively. LineageBridge extracts this lineage but has no standard API to serve it.
+- **Decision:** Build a FastAPI REST API that speaks OpenLineage natively. The API is bidirectional: it serves Confluent stream lineage as OpenLineage RunEvents outward AND accepts OpenLineage events from external catalogs inward. Two graph views: Confluent-only (pure stream lineage) and enriched (cross-platform). In-memory stores (GraphStore, EventStore, TaskStore) — no external database dependency.
+- **Alternatives:** (1) Custom proprietary API — would require every consumer to learn a new format. (2) GraphQL — more flexible but higher complexity, less tooling ecosystem. (3) gRPC — better performance but less accessible for debugging and integration.
+- **Tradeoff:** OpenLineage is the emerging standard adopted by Databricks, Google, Marquez, and others. Native compatibility means zero translation cost for consumers. REST + JSON is universally accessible. In-memory stores keep deployment simple (single binary, no database) but data is lost on restart. Acceptable for a bridge tool — the source of truth is the upstream systems.
+- **Files:** `api/app.py`, `api/openlineage/models.py`, `api/openlineage/translator.py`, `api/openlineage/store.py`, `api/routers/`
+
+## ADR-016: Google Data Lineage provider
+
+- **Status:** Accepted
+- **Date:** 2026-04-14
+- **Decided by:** Blueprint, Weaver
+- **Context:** Google Data Lineage (part of Dataplex) natively speaks OpenLineage via its `ProcessOpenLineageRunEvent` endpoint. This makes it a natural integration point and proof that the OpenLineage API works end-to-end.
+- **Decision:** Add `GoogleLineageProvider` implementing `CatalogProvider` protocol. Uses BigQuery REST API for metadata enrichment and Google Data Lineage API for pushing lineage. Auth via Application Default Credentials (google-auth library). New enum values: `NodeType.GOOGLE_TABLE`, `SystemType.GOOGLE`.
+- **Alternatives:** (1) BigQuery-only integration without Data Lineage — would miss the lineage push capability. (2) Client library (google-cloud-datacatalog) — heavy dependency for a few REST calls.
+- **Tradeoff:** Follows the same pattern as UC and Glue providers (httpx + lazy import). google-auth is optional — the provider gracefully skips enrichment/push if no credentials are configured. Separate `GOOGLE_TABLE` node type (see ADR-006) enables type-safe filtering and per-type styling.
+- **Files:** `catalogs/google_lineage.py`, `catalogs/__init__.py`, `models/graph.py`

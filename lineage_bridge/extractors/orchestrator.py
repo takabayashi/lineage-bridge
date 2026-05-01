@@ -116,6 +116,17 @@ async def _safe_extract(
 ProgressCallback = Any  # typing: Callable[[str, str], None] | None
 
 
+def _make_progress(on_progress: ProgressCallback = None):
+    """Return a progress callback that logs and optionally forwards to the UI."""
+
+    def _progress(phase: str, detail: str = "") -> None:
+        logger.info("%s %s", phase, detail)
+        if on_progress:
+            on_progress(phase, detail)
+
+    return _progress
+
+
 # ── main orchestration ──────────────────────────────────────────────────
 
 
@@ -142,11 +153,7 @@ async def run_enrichment(
         metrics_lookback_hours: Lookback window for metrics.
         on_progress: Optional callback for UI progress updates.
     """
-
-    def _progress(phase: str, detail: str = "") -> None:
-        logger.info("%s %s", phase, detail)
-        if on_progress:
-            on_progress(phase, detail)
+    _progress = _make_progress(on_progress)
 
     # ── Catalog enrichment ────────────────────────────────────────────
     if enable_catalog:
@@ -163,6 +170,13 @@ async def run_enrichment(
                     from lineage_bridge.catalogs.aws_glue import GlueCatalogProvider
 
                     provider = GlueCatalogProvider(region=settings.aws_region)
+                elif provider.catalog_type == "GOOGLE_DATA_LINEAGE":
+                    from lineage_bridge.catalogs.google_lineage import GoogleLineageProvider
+
+                    provider = GoogleLineageProvider(
+                        project_id=settings.gcp_project_id,
+                        location=settings.gcp_location,
+                    )
                 try:
                     await provider.enrich(graph)
                 except Exception:
@@ -217,10 +231,7 @@ async def run_lineage_push(
     """
     from lineage_bridge.clients.databricks_sql import DatabricksSQLClient
 
-    def _progress(phase: str, detail: str = "") -> None:
-        logger.info("%s %s", phase, detail)
-        if on_progress:
-            on_progress(phase, detail)
+    _progress = _make_progress(on_progress)
 
     if not settings.databricks_workspace_url:
         _progress("Push skipped", "No Databricks workspace URL configured")
@@ -295,10 +306,7 @@ async def run_glue_push(
     """Push lineage metadata to AWS Glue tables in the graph."""
     from lineage_bridge.catalogs.aws_glue import GlueCatalogProvider
 
-    def _progress(phase: str, detail: str = "") -> None:
-        logger.info("%s %s", phase, detail)
-        if on_progress:
-            on_progress(phase, detail)
+    _progress = _make_progress(on_progress)
 
     provider = GlueCatalogProvider(region=settings.aws_region)
     result = await provider.push_lineage(
@@ -312,6 +320,38 @@ async def run_glue_push(
         "Glue push done",
         f"{result.tables_updated} tables updated, "
         f"{result.properties_set} parameters, {result.comments_set} descriptions"
+        + (f", {len(result.errors)} error(s)" if result.errors else ""),
+    )
+    return result
+
+
+async def run_google_push(
+    settings: Settings,
+    graph: LineageGraph,
+    *,
+    on_progress: ProgressCallback = None,
+) -> PushResult:
+    """Push lineage as OpenLineage events to Google Data Lineage API."""
+    from lineage_bridge.catalogs.google_lineage import GoogleLineageProvider
+
+    _progress = _make_progress(on_progress)
+
+    if not settings.gcp_project_id:
+        _progress("Push skipped", "No GCP project ID configured")
+        return PushResult(errors=["No GCP project ID configured"])
+
+    provider = GoogleLineageProvider(
+        project_id=settings.gcp_project_id,
+        location=settings.gcp_location,
+    )
+    result = await provider.push_lineage(
+        graph,
+        on_progress=on_progress,
+    )
+
+    _progress(
+        "Google push done",
+        f"{result.tables_updated} events pushed"
         + (f", {len(result.errors)} error(s)" if result.errors else ""),
     )
     return result
@@ -354,10 +394,7 @@ async def run_extraction(
         settings.confluent_cloud_api_secret,
     )
 
-    def _progress(phase: str, detail: str = "") -> None:
-        logger.info("%s %s", phase, detail)
-        if on_progress:
-            on_progress(phase, detail)
+    _progress = _make_progress(on_progress)
 
     try:
         for env_id in environment_ids:

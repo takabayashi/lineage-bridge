@@ -57,3 +57,24 @@ variable "aws_region" {
   type        = string
   default     = "us-east-1"
 }
+
+# ── GCP / BigQuery (optional — leave empty to skip) ─────────────────────────
+
+variable "gcp_project_id" {
+  description = "GCP project ID for BigQuery sink connector (leave empty to skip)"
+  type        = string
+  default     = ""
+}
+
+variable "gcp_sa_key_json" {
+  description = "GCP service account JSON key content for BigQuery connector"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "bigquery_dataset" {
+  description = "BigQuery dataset name for sink connector"
+  type        = string
+  default     = "lineage_bridge"
+}

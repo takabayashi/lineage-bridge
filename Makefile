@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: install extract watch ui test lint format clean docker-build docker-extract docker-watch docker-ui docker-down demo-setup demo-up demo-down help
+.PHONY: install extract watch api openapi ui test lint format clean docker-build docker-extract docker-watch docker-ui docker-down demo-setup demo-up demo-down demo-uc-up demo-uc-down demo-glue-up demo-glue-down demo-bq-up demo-bq-down help
 
 install: ## Install project with dev dependencies
 	@test -x .venv/bin/python || uv venv
@@ -11,6 +11,15 @@ extract: ## Run lineage extraction CLI
 
 watch: ## Run change-detection watcher CLI
 	uv run lineage-bridge-watch
+
+api: ## Start the REST API server
+	uv run lineage-bridge-api
+
+openapi: ## Export OpenAPI spec to docs/openapi.yaml
+	uv run python -c "import yaml; from lineage_bridge.api.app import create_app; \
+		app = create_app(); spec = app.openapi(); \
+		open('docs/openapi.yaml', 'w').write(yaml.dump(spec, sort_keys=False, allow_unicode=True))"
+	@echo "OpenAPI spec written to docs/openapi.yaml"
 
 ui: ## Start the Streamlit UI (auto-provisions Cloud API key if missing)
 	@bash scripts/ensure-cloud-key.sh
@@ -50,17 +59,38 @@ docker-ui: ## Start UI via Docker
 docker-down: ## Stop all Docker services
 	$(COMPOSE) --profile extract --profile ui --profile watch down
 
-# ── Demo Infrastructure ────────────────────────────────────────────────────
+# ── Demo Infrastructure (per catalog) ─────────────────────────────────────
 
-demo-setup: ## Interactive credential setup for demo infrastructure
-	$(MAKE) -C infra/demo setup
-
-demo-up: ## Provision demo infrastructure and start UI
-	$(MAKE) -C infra/demo demo-up
+demo-uc-up: ## Provision UC demo (Tableflow -> Unity Catalog) and start UI
+	$(MAKE) -C infra/demos/uc demo-up
 	$(MAKE) ui
 
-demo-down: ## Tear down demo infrastructure
-	$(MAKE) -C infra/demo demo-down
+demo-uc-down: ## Tear down UC demo
+	$(MAKE) -C infra/demos/uc demo-down
+
+demo-glue-up: ## Provision Glue demo (Tableflow -> AWS Glue) and start UI
+	$(MAKE) -C infra/demos/glue demo-up
+	$(MAKE) ui
+
+demo-glue-down: ## Tear down Glue demo
+	$(MAKE) -C infra/demos/glue demo-down
+
+demo-bq-up: ## Provision BigQuery demo (Connector -> BigQuery) and start UI
+	$(MAKE) -C infra/demos/bigquery demo-up
+	$(MAKE) ui
+
+demo-bq-down: ## Tear down BigQuery demo
+	$(MAKE) -C infra/demos/bigquery demo-down
+
+# Legacy aliases (point to UC demo as default)
+demo-setup: ## (legacy) Interactive credential setup — same as UC demo
+	$(MAKE) -C infra/demos/uc setup
+
+demo-up: ## (legacy) Provision demo — same as demo-uc-up
+	$(MAKE) demo-uc-up
+
+demo-down: ## (legacy) Tear down demo — same as demo-uc-down
+	$(MAKE) demo-uc-down
 
 # ── Help ───────────────────────────────────────────────────────────────────
 

@@ -176,17 +176,68 @@ Committed in 3 commits. 304 tests, all passing.
 
 ---
 
+## OpenLineage API (COMPLETED 2026-04-14)
+
+**Goal:** Expose Confluent stream lineage as an OpenLineage-compatible REST API. Bridge the gap between Confluent's lack of a lineage API and external catalogs that speak OpenLineage.
+
+**What was built:**
+
+### Phase A: OpenLineage Foundation
+- OpenLineage Pydantic v2 models (RunEvent, Job, Dataset, Facets)
+- Bidirectional translator: `graph_to_events()` / `events_to_graph()`
+- Custom Confluent facets (ConfluentKafkaDatasetFacet, ConfluentConnectorJobFacet)
+
+### Phase B: API Core
+- FastAPI app factory with optional API key auth
+- In-memory stores: GraphStore, EventStore
+- 6 routers: meta, lineage, datasets, jobs, graphs, tasks
+- 25 endpoints covering CRUD, traversal, views, and OpenLineage events
+- Two graph views: Confluent-only and enriched (cross-platform)
+
+### Phase C: Bidirectional Ingestion
+- POST /lineage/events accepts OpenLineage events from external catalogs
+- Events are merged into graph store via events_to_graph translator
+- Supports glob-pattern filtering on namespace and job name
+
+### Phase D: Google Data Lineage Provider
+- GoogleLineageProvider implementing CatalogProvider protocol
+- BigQuery REST API for metadata enrichment
+- Google Data Lineage API for pushing lineage (ProcessOpenLineageRunEvent)
+- Auth via Application Default Credentials (google-auth)
+- New enums: NodeType.GOOGLE_TABLE, SystemType.GOOGLE
+- UI styles, icons, colors, and sample data for Google tables
+
+### Phase E: Async Task System
+- TaskStore for tracking extraction/enrichment operations
+- POST /tasks/extract and POST /tasks/enrich (return 202 + task_id)
+- Background asyncio tasks with progress tracking
+- GET /tasks/{task_id} for polling status
+
+### Phase F: Documentation & Polish
+- API guide: docs/api-guide.md (use cases, endpoint reference, curl examples)
+- OpenAPI spec: docs/openapi.yaml (25 endpoints, 39 schemas)
+- ADR-015 (OpenLineage API) and ADR-016 (Google Data Lineage)
+- Makefile: `api` and `openapi` targets
+- 609 tests, all passing
+
+**Key design decisions:**
+- ADR-015: OpenLineage-compatible REST API (see docs/decisions.md)
+- ADR-016: Google Data Lineage provider (see docs/decisions.md)
+
+---
+
 ## What's Next
 
 Potential improvement areas, roughly ordered by impact:
 
 | Area | Priority | Description |
 |------|----------|-------------|
-| **Test coverage** | High | Flink/ksqlDB SQL parsers (726 LOC, complex regex, no direct tests), sidebar.py (1,077 LOC), app.py (629 LOC) |
+| **Test coverage** | High | Flink/ksqlDB SQL parsers (726 LOC, complex regex, no direct tests), sidebar.py (1,077 LOC) |
 | **Proxy-safe tests** | Medium | Strip proxy env vars in conftest.py — tests fail when ALL_PROXY is set |
 | **Sidebar decomposition** | Medium | sidebar.py (1,077 LOC) is the new monolith after app.py was split |
 | **Watcher circuit breaker** | Medium | No backoff when Confluent API is consistently failing |
-| **Sample data drift** | Low | sample_data.py may not reflect current node/edge types |
+| **Docker API service** | Medium | Add API service to docker-compose for containerized deployment |
+| **Persistence** | Low | Optional SQLite/PostgreSQL backend for EventStore (currently in-memory only) |
 
 ---
 
@@ -209,4 +260,7 @@ Post-v0.2.0 (DONE) ──> UC fixes, Databricks push, Glue enrichment, watcher, 
                         │
                         v
 v0.3.0 Housekeeping ──> Version sync, ADR cleanup, Terraform fixes, Docker healthchecks
+                        │
+                        v
+OpenLineage API (DONE) ──> REST API, Google provider, tasks, docs ──> 609 tests
 ```

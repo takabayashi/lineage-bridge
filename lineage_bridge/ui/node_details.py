@@ -284,6 +284,37 @@ def render_node_details(graph: LineageGraph) -> None:
                 unsafe_allow_html=True,
             )
 
+    elif ntype == NodeType.GOOGLE_TABLE:
+        st.markdown("**Google BigQuery Table**")
+        gcol1, gcol2 = st.columns(2)
+        with gcol1:
+            if a.get("project_id"):
+                st.markdown(f"**Project:** {a['project_id']}")
+            if a.get("dataset_id"):
+                st.markdown(f"**Dataset:** {a['dataset_id']}")
+        with gcol2:
+            if a.get("table_name"):
+                st.markdown(f"**Table:** {a['table_name']}")
+            if a.get("location"):
+                st.markdown(f"**Location:** {a['location']}")
+        if a.get("num_rows"):
+            rcol1, rcol2 = st.columns(2)
+            with rcol1:
+                st.metric("Rows", f"{int(a['num_rows']):,}")
+            with rcol2:
+                if a.get("num_bytes"):
+                    st.metric("Size", _fmt_bytes_ui(float(a["num_bytes"])))
+        if a.get("description"):
+            st.markdown(f"**Description:** {a['description']}")
+        google_url = build_node_url(sel_node)
+        if google_url:
+            st.markdown(
+                f"**Console:** <a href='{google_url}' "
+                f"target='_blank' style='color:{ncolor};'>"
+                f"Open in BigQuery &#x2197;</a>",
+                unsafe_allow_html=True,
+            )
+
     elif ntype == NodeType.SCHEMA:
         st.markdown("**Schema Details**")
         scol1, scol2, scol3 = st.columns(3)
@@ -453,6 +484,17 @@ def render_node_details(graph: LineageGraph) -> None:
         "workspace_url",
         "catalog_type",
         "database",
+        "project_id",
+        "dataset_id",
+        "location",
+        "num_rows",
+        "num_bytes",
+        "creation_time",
+        "last_modified_time",
+        "labels",
+        "columns",
+        "table_type",
+        "aws_region",
         "schema_type",
         "version",
         "field_count",

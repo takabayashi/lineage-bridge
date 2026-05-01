@@ -78,6 +78,11 @@ output "ksqldb_api_secret" {
   sensitive   = true
 }
 
+output "bigquery_connector_id" {
+  description = "BigQuery sink connector ID (disabled — requires GCP-hosted cluster)"
+  value       = ""
+}
+
 output "demo_env_file" {
   description = "Suggested .env contents for LineageBridge"
   value       = <<-EOT

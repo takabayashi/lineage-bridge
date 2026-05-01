@@ -68,7 +68,8 @@ class DatabricksUCProvider:
         uc_cfg = ci_config.get("unity_catalog", ci_config)
         catalog_name = uc_cfg.get("catalog_name", "confluent_tableflow")
         workspace_url = uc_cfg.get("workspace_endpoint") or uc_cfg.get("workspace_url")
-        # Confluent replaces dots with underscores in UC table names
+        # Tableflow normalizes dots → underscores in table names, but keeps
+        # the raw cluster ID (with hyphens) as the schema name.
         uc_table_name = topic_name.replace(".", "_")
         qualified = f"{catalog_name}.{cluster_id}.{uc_table_name}"
         uc_id = f"databricks:uc_table:{environment_id}:{qualified}"

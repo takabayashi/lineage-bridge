@@ -1,0 +1,14 @@
+{
+  "type": "record",
+  "name": "Order",
+  "namespace": "com.lineagebridge.demo",
+  "fields": [
+    {"name": "order_id", "type": "string", "arg.properties": {"regex": "ORD-[0-9]{6}"}},
+    {"name": "customer_id", "type": "string", "arg.properties": {"regex": "CUST-[0-9]{4}"}},
+    {"name": "product_name", "type": "string", "arg.properties": {"options": ["Laptop Pro", "Wireless Mouse", "USB-C Hub", "Mechanical Keyboard", "Monitor 27in", "Webcam HD", "Headphones", "SSD 1TB", "RAM 16GB", "Phone Case"]}},
+    {"name": "quantity", "type": "int", "arg.properties": {"range": {"min": 1, "max": 20}}},
+    {"name": "price", "type": {"type": "bytes", "logicalType": "decimal", "precision": 10, "scale": 2}},
+    {"name": "order_status", "type": {"type": "enum", "name": "Status", "symbols": ["PENDING", "SHIPPED", "DELIVERED"]}},
+    {"name": "created_at", "type": {"type": "long", "logicalType": "timestamp-millis"}}
+  ]
+}

@@ -93,6 +93,20 @@ class TestBuildNode:
         node, _ = provider.build_node({"aws_glue": {}}, "tf-id", "orders", "lkc-abc123", "env-abc")
         assert node.attributes["database"] == "lkc-abc123"
 
+    def test_dots_preserved_in_table_name(self):
+        """Tableflow uses the raw topic name (with dots) as the Glue table name."""
+        provider = GlueCatalogProvider()
+        node, _ = provider.build_node(
+            {"aws_glue": {"database_name": "my_db"}},
+            "tf-id",
+            "lineage_bridge.order_stats",
+            "lkc-abc123",
+            "env-abc",
+        )
+        assert node.attributes["table_name"] == "lineage_bridge.order_stats"
+        assert node.display_name == "my_db.lineage_bridge.order_stats (glue)"
+        assert "lineage_bridge.order_stats" in node.qualified_name
+
 
 class TestBuildUrl:
     def test_returns_url_with_database_and_table(self):

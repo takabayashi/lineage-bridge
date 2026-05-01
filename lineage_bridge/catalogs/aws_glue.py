@@ -47,6 +47,7 @@ class GlueCatalogProvider:
         """Create a GLUE_TABLE node and MATERIALIZES edge from the tableflow node."""
         glue_cfg = ci_config.get("aws_glue", ci_config)
         database = glue_cfg.get("database_name", cluster_id)
+        # Tableflow uses the raw topic name (including dots) as the Glue table name.
         qualified = f"glue://{database}/{topic_name}"
         glue_id = f"aws:glue_table:{environment_id}:{qualified}"
 

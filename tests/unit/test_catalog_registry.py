@@ -7,6 +7,7 @@ from __future__ import annotations
 from lineage_bridge.catalogs import get_active_providers, get_provider
 from lineage_bridge.catalogs.aws_glue import GlueCatalogProvider
 from lineage_bridge.catalogs.databricks_uc import DatabricksUCProvider
+from lineage_bridge.catalogs.google_lineage import GoogleLineageProvider
 from lineage_bridge.models.graph import (
     LineageGraph,
     LineageNode,
@@ -25,6 +26,11 @@ class TestGetProvider:
         provider = get_provider("AWS_GLUE")
         assert provider is not None
         assert isinstance(provider, GlueCatalogProvider)
+
+    def test_google_returns_google_provider(self):
+        provider = get_provider("GOOGLE_DATA_LINEAGE")
+        assert provider is not None
+        assert isinstance(provider, GoogleLineageProvider)
 
     def test_unknown_returns_none(self):
         assert get_provider("UNKNOWN") is None
@@ -58,6 +64,22 @@ class TestGetActiveProviders:
         providers = get_active_providers(graph)
         types = {p.catalog_type for p in providers}
         assert types == {"UNITY_CATALOG", "AWS_GLUE"}
+
+    def test_google_nodes_detected(self):
+        graph = LineageGraph()
+        graph.add_node(
+            LineageNode(
+                node_id="google:google_table:env:p.d.t",
+                system=SystemType.GOOGLE,
+                node_type=NodeType.GOOGLE_TABLE,
+                qualified_name="p.d.t",
+                display_name="p.d.t",
+            )
+        )
+
+        providers = get_active_providers(graph)
+        assert len(providers) == 1
+        assert providers[0].catalog_type == "GOOGLE_DATA_LINEAGE"
 
     def test_only_uc_nodes(self):
         graph = LineageGraph()

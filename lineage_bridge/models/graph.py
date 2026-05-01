@@ -26,6 +26,7 @@ class NodeType(StrEnum):
     TABLEFLOW_TABLE = "tableflow_table"
     UC_TABLE = "uc_table"
     GLUE_TABLE = "glue_table"
+    GOOGLE_TABLE = "google_table"
     SCHEMA = "schema"
     EXTERNAL_DATASET = "external_dataset"
     CONSUMER_GROUP = "consumer_group"
@@ -48,6 +49,7 @@ class SystemType(StrEnum):
     CONFLUENT = "confluent"
     DATABRICKS = "databricks"
     AWS = "aws"
+    GOOGLE = "google"
     EXTERNAL = "external"
 
 
