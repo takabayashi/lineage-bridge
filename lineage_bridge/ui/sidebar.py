@@ -99,13 +99,13 @@ def _render_sidebar():
                 with st.expander("Databricks", expanded=False):
                     _render_sidebar_databricks()
 
-                with st.expander("AWS Glue", expanded=False):
-                    _render_sidebar_aws_glue()
+                with st.expander("AWS", expanded=False):
+                    _render_sidebar_aws()
 
                 with st.expander("Google Data Lineage", expanded=False):
                     _render_sidebar_google()
 
-                _render_sidebar_publish()
+                _render_sidebar_push_log()
 
         # ══════════════════════════════════════════════════════════════
         #  GRAPH
@@ -475,7 +475,7 @@ def _render_sidebar_extractors():
 
 
 def _render_sidebar_databricks():
-    """Databricks warehouse discovery and push settings."""
+    """Databricks warehouse discovery, push settings, and Push to UC button."""
     settings = _try_load_settings()
     if not settings or not settings.databricks_workspace_url:
         st.caption("Set `LINEAGE_BRIDGE_DATABRICKS_WORKSPACE_URL` in .env to enable.")
@@ -534,9 +534,48 @@ def _render_sidebar_databricks():
     st.checkbox("Set table comments", value=True, key="push_comments")
     st.checkbox("Create bridge table", value=False, key="push_bridge_table")
 
+    # ── Push to UC button ─────────────────────────────────────────────
+    graph = st.session_state.get("graph")
+    has_uc_tables = graph is not None and len(graph.filter_by_type(NodeType.UC_TABLE)) > 0
+    st.divider()
+    if not has_uc_tables:
+        st.caption("No UC tables in current graph — extract with Tableflow enabled.")
+        return
 
-def _render_sidebar_aws_glue():
-    """AWS Glue metadata display and push settings."""
+    if st.button(
+        "⤴ Push to UC",
+        key="push_btn",
+        type="primary",
+        width="stretch",
+        help="Push lineage metadata to Databricks Unity Catalog",
+    ):
+        params = dict(st.session_state.last_extraction_params or {})
+        params["push_properties"] = st.session_state.get("push_properties", True)
+        params["push_comments"] = st.session_state.get("push_comments", True)
+        params["push_bridge_table"] = st.session_state.get("push_bridge_table", False)
+        wh_id = st.session_state.get("databricks_selected_warehouse_id")
+        if wh_id:
+            settings = settings.model_copy(update={"databricks_warehouse_id": wh_id})
+        st.session_state.extraction_log = []
+        st.session_state._log_source = "publish"
+        with st.status("Pushing lineage to UC...", expanded=True) as status:
+            try:
+                push_result = _run_lineage_push(settings, st.session_state.graph, params)
+                msg = (
+                    f"Pushed — {push_result.tables_updated} tables, "
+                    f"{push_result.properties_set} properties, "
+                    f"{push_result.comments_set} comments"
+                )
+                if push_result.errors:
+                    msg += f" ({len(push_result.errors)} error(s))"
+                status.update(label=msg, state="complete")
+                st.rerun()
+            except Exception as exc:
+                status.update(label=f"Failed: {exc}", state="error")
+
+
+def _render_sidebar_aws():
+    """AWS Glue + DataZone publish settings and push buttons."""
     settings = _try_load_settings()
     if not settings:
         st.caption("Configure `.env` to enable.")
@@ -546,19 +585,82 @@ def _render_sidebar_aws_glue():
     st.caption("Credentials: AWS default credential chain")
 
     graph = st.session_state.get("graph")
-    if graph is not None:
-        from lineage_bridge.models.graph import NodeType
+    glue_tables = graph.filter_by_type(NodeType.GLUE_TABLE) if graph else []
+    kafka_topics = graph.filter_by_type(NodeType.KAFKA_TOPIC) if graph else []
+    has_glue_tables = bool(glue_tables)
 
-        glue_tables = graph.filter_by_type(NodeType.GLUE_TABLE)
-        if glue_tables:
-            enriched = sum(1 for n in glue_tables if n.attributes.get("columns"))
-            st.info(f"{len(glue_tables)} Glue table(s), {enriched} enriched")
-        else:
-            st.caption("No Glue tables in current graph.")
+    if has_glue_tables:
+        enriched = sum(1 for n in glue_tables if n.attributes.get("columns"))
+        st.info(f"{len(glue_tables)} Glue table(s), {enriched} enriched")
+    elif graph is not None:
+        st.caption("No Glue tables in current graph.")
 
-    # Push options
+    # ── Glue push options + button ───────────────────────────────────
+    st.markdown("**Glue**")
     st.checkbox("Set table parameters", value=True, key="glue_push_parameters")
     st.checkbox("Set table description", value=True, key="glue_push_description")
+    if has_glue_tables and st.button(
+        "⤴ Push to Glue",
+        key="glue_push_btn",
+        type="primary",
+        width="stretch",
+        help="Push lineage metadata to AWS Glue table parameters and description",
+    ):
+        params = {
+            "push_parameters": st.session_state.get("glue_push_parameters", True),
+            "push_description": st.session_state.get("glue_push_description", True),
+        }
+        st.session_state.extraction_log = []
+        st.session_state._log_source = "publish"
+        with st.status("Pushing lineage to Glue...", expanded=True) as status:
+            try:
+                push_result = _run_glue_push(settings, st.session_state.graph, params)
+                msg = (
+                    f"Pushed — {push_result.tables_updated} Glue tables, "
+                    f"{push_result.properties_set} parameters, "
+                    f"{push_result.comments_set} descriptions"
+                )
+                if push_result.errors:
+                    msg += f" ({len(push_result.errors)} error(s))"
+                status.update(label=msg, state="complete")
+                st.rerun()
+            except Exception as exc:
+                status.update(label=f"Failed: {exc}", state="error")
+
+    # ── DataZone push button ─────────────────────────────────────────
+    st.divider()
+    st.markdown("**DataZone**")
+    if not (settings.aws_datazone_domain_id and settings.aws_datazone_project_id):
+        st.caption(
+            "Set `LINEAGE_BRIDGE_AWS_DATAZONE_DOMAIN_ID` + `..._PROJECT_ID` in .env "
+            "to enable. (Auto-wired by `make demo-glue-up` when a domain exists.)"
+        )
+        return
+
+    st.caption(f"Domain: `{settings.aws_datazone_domain_id}`")
+    st.caption(f"Project: `{settings.aws_datazone_project_id}`")
+    if not kafka_topics:
+        st.caption("No Kafka topics in current graph — extract first.")
+        return
+    if st.button(
+        "⤴ Push to DataZone",
+        key="datazone_push_btn",
+        type="primary",
+        width="stretch",
+        help="Register Kafka topics as DataZone assets and post OpenLineage events",
+    ):
+        st.session_state.extraction_log = []
+        st.session_state._log_source = "publish"
+        with st.status("Pushing lineage to DataZone...", expanded=True) as status:
+            try:
+                push_result = _run_datazone_push(settings, st.session_state.graph, {})
+                msg = f"Pushed — {push_result.tables_updated} events"
+                if push_result.errors:
+                    msg += f" ({len(push_result.errors)} error(s))"
+                status.update(label=msg, state="complete")
+                st.rerun()
+            except Exception as exc:
+                status.update(label=f"Failed: {exc}", state="error")
 
 
 def _render_sidebar_google():
@@ -577,13 +679,41 @@ def _render_sidebar_google():
     st.caption("Credentials: Application Default Credentials (ADC)")
 
     graph = st.session_state.get("graph")
-    if graph is not None:
-        google_tables = graph.filter_by_type(NodeType.GOOGLE_TABLE)
-        if google_tables:
-            enriched = sum(1 for n in google_tables if n.attributes.get("columns"))
-            st.info(f"{len(google_tables)} BigQuery table(s), {enriched} enriched")
-        else:
-            st.caption("No Google tables in current graph.")
+    google_tables = graph.filter_by_type(NodeType.GOOGLE_TABLE) if graph else []
+    if google_tables:
+        enriched = sum(1 for n in google_tables if n.attributes.get("columns"))
+        st.info(f"{len(google_tables)} BigQuery table(s), {enriched} enriched")
+    elif graph is not None:
+        st.caption("No Google tables in current graph.")
+
+    # ── Push to Google button ─────────────────────────────────────────
+    st.divider()
+    if not google_tables:
+        st.caption("No Google tables to push — extract a BQ-targeting connector first.")
+        return
+
+    if st.button(
+        "⤴ Push to Google",
+        key="google_push_btn",
+        type="primary",
+        width="stretch",
+        help=(
+            "Push lineage as OpenLineage events to Google Data Lineage and register "
+            "Kafka topics as Dataplex Catalog entries (with schema)"
+        ),
+    ):
+        st.session_state.extraction_log = []
+        st.session_state._log_source = "publish"
+        with st.status("Pushing lineage to Google...", expanded=True) as status:
+            try:
+                push_result = _run_google_push(settings, st.session_state.graph, {})
+                msg = f"Pushed — {push_result.tables_updated} events"
+                if push_result.errors:
+                    msg += f" ({len(push_result.errors)} error(s))"
+                status.update(label=msg, state="complete")
+                st.rerun()
+            except Exception as exc:
+                status.update(label=f"Failed: {exc}", state="error")
 
 
 def _resolve_extraction_context():
@@ -789,160 +919,8 @@ def _render_sidebar_actions():
             _render_extraction_log()
 
 
-def _render_sidebar_publish():
-    """Push lineage metadata to external catalogs."""
-    settings = _try_load_settings()
-    if not settings:
-        return
-
-    graph = st.session_state.graph
-    if graph is None:
-        return
-
-    has_uc_tables = len(graph.filter_by_type(NodeType.UC_TABLE)) > 0
-    has_glue_tables = len(graph.filter_by_type(NodeType.GLUE_TABLE)) > 0
-    has_google_tables = len(graph.filter_by_type(NodeType.GOOGLE_TABLE)) > 0
-    # DataZone push works on any graph with Kafka topics; gate on the AWS
-    # DataZone settings being present (domain + project ID).
-    has_datazone = bool(
-        getattr(settings, "aws_datazone_domain_id", None)
-        and getattr(settings, "aws_datazone_project_id", None)
-        and len(graph.filter_by_type(NodeType.KAFKA_TOPIC)) > 0
-    )
-
-    if not has_uc_tables and not has_glue_tables and not has_google_tables and not has_datazone:
-        st.caption("No catalog tables to publish to. Run extraction with Tableflow enabled.")
-        return
-
-    action = None
-    num_buttons = sum([has_uc_tables, has_glue_tables, has_google_tables, has_datazone])
-    cols = st.columns(num_buttons) if num_buttons > 1 else [st.columns(1)[0]]
-    col_idx = 0
-
-    if has_uc_tables:
-        with cols[col_idx]:
-            if st.button(
-                "\u2934 Push to UC",
-                key="push_btn",
-                type="secondary",
-                width="stretch",
-                help="Push lineage metadata to Databricks Unity Catalog",
-            ):
-                action = "push_uc"
-        col_idx += 1
-
-    if has_glue_tables:
-        with cols[min(col_idx, len(cols) - 1)]:
-            if st.button(
-                "\u2934 Push to Glue",
-                key="glue_push_btn",
-                type="secondary",
-                width="stretch",
-                help="Push lineage metadata to AWS Glue",
-            ):
-                action = "push_glue"
-        col_idx += 1
-
-    if has_google_tables:
-        with cols[min(col_idx, len(cols) - 1)]:
-            if st.button(
-                "\u2934 Push to Google",
-                key="google_push_btn",
-                type="secondary",
-                width="stretch",
-                help="Push lineage as OpenLineage events to Google Data Lineage",
-            ):
-                action = "push_google"
-        col_idx += 1
-
-    if has_datazone:
-        with cols[min(col_idx, len(cols) - 1)]:
-            if st.button(
-                "\u2934 Push to DataZone",
-                key="datazone_push_btn",
-                type="secondary",
-                width="stretch",
-                help="Register Kafka topics as DataZone assets and post OpenLineage events",
-            ):
-                action = "push_datazone"
-
-    # Full-width status widgets
-    if action == "push_uc":
-        params = dict(st.session_state.last_extraction_params or {})
-        params["push_properties"] = st.session_state.get("push_properties", True)
-        params["push_comments"] = st.session_state.get("push_comments", True)
-        params["push_bridge_table"] = st.session_state.get("push_bridge_table", False)
-        wh_id = st.session_state.get("databricks_selected_warehouse_id")
-        if wh_id:
-            settings = settings.model_copy(update={"databricks_warehouse_id": wh_id})
-        st.session_state.extraction_log = []
-        st.session_state._log_source = "publish"
-        with st.status("Pushing lineage to UC...", expanded=True) as status:
-            try:
-                push_result = _run_lineage_push(settings, st.session_state.graph, params)
-                msg = (
-                    f"Pushed — {push_result.tables_updated} tables, "
-                    f"{push_result.properties_set} properties, "
-                    f"{push_result.comments_set} comments"
-                )
-                if push_result.errors:
-                    msg += f" ({len(push_result.errors)} error(s))"
-                status.update(label=msg, state="complete")
-                st.rerun()
-            except Exception as exc:
-                status.update(label=f"Failed: {exc}", state="error")
-
-    elif action == "push_glue":
-        params = {
-            "push_parameters": st.session_state.get("glue_push_parameters", True),
-            "push_description": st.session_state.get("glue_push_description", True),
-        }
-        st.session_state.extraction_log = []
-        st.session_state._log_source = "publish"
-        with st.status("Pushing lineage to Glue...", expanded=True) as status:
-            try:
-                push_result = _run_glue_push(settings, st.session_state.graph, params)
-                msg = (
-                    f"Pushed — {push_result.tables_updated} Glue tables, "
-                    f"{push_result.properties_set} parameters, "
-                    f"{push_result.comments_set} descriptions"
-                )
-                if push_result.errors:
-                    msg += f" ({len(push_result.errors)} error(s))"
-                status.update(label=msg, state="complete")
-                st.rerun()
-            except Exception as exc:
-                status.update(label=f"Failed: {exc}", state="error")
-
-    elif action == "push_google":
-        st.session_state.extraction_log = []
-        st.session_state._log_source = "publish"
-        with st.status("Pushing lineage to Google...", expanded=True) as status:
-            try:
-                push_result = _run_google_push(settings, st.session_state.graph, {})
-                msg = f"Pushed — {push_result.tables_updated} events"
-                if push_result.errors:
-                    msg += f" ({len(push_result.errors)} error(s))"
-                status.update(label=msg, state="complete")
-                st.rerun()
-            except Exception as exc:
-                status.update(label=f"Failed: {exc}", state="error")
-
-    elif action == "push_datazone":
-        st.session_state.extraction_log = []
-        st.session_state._log_source = "publish"
-        with st.status("Pushing lineage to DataZone...", expanded=True) as status:
-            try:
-                push_result = _run_datazone_push(settings, st.session_state.graph, {})
-                msg = f"Pushed — {push_result.tables_updated} events"
-                if push_result.errors:
-                    msg += f" ({len(push_result.errors)} error(s))"
-                status.update(label=msg, state="complete")
-                st.rerun()
-            except Exception as exc:
-                status.update(label=f"Failed: {exc}", state="error")
-
-    # Show push log (only if this section produced it)
+def _render_sidebar_push_log():
+    """Render the shared Push Log expander (populated by per-platform push buttons)."""
     if st.session_state.extraction_log and st.session_state.get("_log_source") == "publish":
         with st.expander("Push Log", expanded=False):
             _render_extraction_log()
