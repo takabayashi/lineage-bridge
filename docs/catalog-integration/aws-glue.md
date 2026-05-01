@@ -189,6 +189,7 @@ Push Confluent lineage metadata back to Glue via the `update_table` API:
 parameters = {
   "lineage_bridge.source_topics": "orders.v1",
   "lineage_bridge.source_connectors": "MySqlSourceConnector",
+  "lineage_bridge.upstream_chain": '[{"hop":1,"kind":"topic","qualified_name":"orders.v1","schema_fields":[{"name":"order_id","type":"long"}]},{"hop":2,"kind":"flink_job","qualified_name":"enrich_orders","sql":"SELECT * FROM ..."},{"hop":3,"kind":"connector","qualified_name":"debezium-mysql","connector_class":"DebeziumMysqlConnector"}]',
   "lineage_bridge.pipeline_type": "tableflow",
   "lineage_bridge.last_synced": "2026-04-30T12:34:56.789Z",
   "lineage_bridge.environment_id": "env-abc123",
@@ -196,15 +197,32 @@ parameters = {
 }
 ```
 
+`lineage_bridge.upstream_chain` is the **multi-hop chain** as a JSON array, ordered by hop distance from the Glue table. Each hop carries `kind` (topic / flink_job / ksqldb_query / connector / external_dataset / tableflow_table), the qualified name, optional `sql` for Flink/ksqlDB, optional `connector_class`, and `schema_fields` for topics that have a `HAS_SCHEMA` edge. The flat `source_topics` / `source_connectors` keys are kept for backwards compatibility.
+
+Glue Parameter values cap at 512 KB; the chain JSON is capped at 64 KB to keep table descriptions sane. If the chain is truncated, `lineage_bridge.upstream_truncated = "true"` is also set.
+
+Query the chain from Athena:
+
+```sql
+SELECT t.parameters['lineage_bridge.upstream_chain'] AS chain
+FROM information_schema.tables t
+WHERE t.table_schema = 'my_database' AND t.table_name = 'orders_v1';
+```
+
 **Table Description**:
 
 ```
-Materialized from Kafka topic "orders.v1" via Confluent Tableflow.
-Sources: MySqlSourceConnector
+Upstream lineage:
+- connector: debezium-mysql [DebeziumMysqlConnector]
+  - topic: orders.v1 [3 columns]
+    - flink_job: enrich_orders [SQL: SELECT * FROM ...]
+  → orders_v1
 Environment: env-abc123
 Last synced: 2026-04-30T12:34:56.789Z
 Managed by LineageBridge
 ```
+
+The description renders the chain as an indented tree, walking from the farthest upstream toward the table — visible in the Glue console table detail and in Athena's query catalog browser.
 
 **Implementation Details**:
 - Fetches existing table definition to preserve `StorageDescriptor` and other read-only fields

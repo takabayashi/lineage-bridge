@@ -123,6 +123,13 @@ def _run_google_push(settings, graph, params: dict):
     return _run_push(run_google_push, settings, graph, {})
 
 
+def _run_datazone_push(settings, graph, params: dict):
+    """Register Kafka assets + push OpenLineage events to AWS DataZone. Returns PushResult."""
+    from lineage_bridge.extractors.orchestrator import run_datazone_push
+
+    return _run_push(run_datazone_push, settings, graph, {})
+
+
 def _run_extraction_with_params(settings, params: dict):
     """Run extraction with a params dict. Returns the graph or raises."""
     from lineage_bridge.extractors.orchestrator import run_extraction

@@ -18,6 +18,7 @@ from lineage_bridge.ui.discovery import (
     _try_load_settings,
 )
 from lineage_bridge.ui.extraction import (
+    _run_datazone_push,
     _run_enrichment_on_graph,
     _run_extraction_with_params,
     _run_glue_push,
@@ -801,13 +802,20 @@ def _render_sidebar_publish():
     has_uc_tables = len(graph.filter_by_type(NodeType.UC_TABLE)) > 0
     has_glue_tables = len(graph.filter_by_type(NodeType.GLUE_TABLE)) > 0
     has_google_tables = len(graph.filter_by_type(NodeType.GOOGLE_TABLE)) > 0
+    # DataZone push works on any graph with Kafka topics; gate on the AWS
+    # DataZone settings being present (domain + project ID).
+    has_datazone = bool(
+        getattr(settings, "aws_datazone_domain_id", None)
+        and getattr(settings, "aws_datazone_project_id", None)
+        and len(graph.filter_by_type(NodeType.KAFKA_TOPIC)) > 0
+    )
 
-    if not has_uc_tables and not has_glue_tables and not has_google_tables:
+    if not has_uc_tables and not has_glue_tables and not has_google_tables and not has_datazone:
         st.caption("No catalog tables to publish to. Run extraction with Tableflow enabled.")
         return
 
     action = None
-    num_buttons = sum([has_uc_tables, has_glue_tables, has_google_tables])
+    num_buttons = sum([has_uc_tables, has_glue_tables, has_google_tables, has_datazone])
     cols = st.columns(num_buttons) if num_buttons > 1 else [st.columns(1)[0]]
     col_idx = 0
 
@@ -845,6 +853,18 @@ def _render_sidebar_publish():
                 help="Push lineage as OpenLineage events to Google Data Lineage",
             ):
                 action = "push_google"
+        col_idx += 1
+
+    if has_datazone:
+        with cols[min(col_idx, len(cols) - 1)]:
+            if st.button(
+                "\u2934 Push to DataZone",
+                key="datazone_push_btn",
+                type="secondary",
+                width="stretch",
+                help="Register Kafka topics as DataZone assets and post OpenLineage events",
+            ):
+                action = "push_datazone"
 
     # Full-width status widgets
     if action == "push_uc":
@@ -900,6 +920,20 @@ def _render_sidebar_publish():
         with st.status("Pushing lineage to Google...", expanded=True) as status:
             try:
                 push_result = _run_google_push(settings, st.session_state.graph, {})
+                msg = f"Pushed — {push_result.tables_updated} events"
+                if push_result.errors:
+                    msg += f" ({len(push_result.errors)} error(s))"
+                status.update(label=msg, state="complete")
+                st.rerun()
+            except Exception as exc:
+                status.update(label=f"Failed: {exc}", state="error")
+
+    elif action == "push_datazone":
+        st.session_state.extraction_log = []
+        st.session_state._log_source = "publish"
+        with st.status("Pushing lineage to DataZone...", expanded=True) as status:
+            try:
+                push_result = _run_datazone_push(settings, st.session_state.graph, {})
                 msg = f"Pushed — {push_result.tables_updated} events"
                 if push_result.errors:
                     msg += f" ({len(push_result.errors)} error(s))"

@@ -82,6 +82,14 @@ class Settings(BaseSettings):
         default="us-east-1",
         description="AWS region for Glue Data Catalog",
     )
+    aws_datazone_domain_id: str | None = Field(
+        default=None,
+        description="AWS DataZone domain ID — enables Push to DataZone",
+    )
+    aws_datazone_project_id: str | None = Field(
+        default=None,
+        description="AWS DataZone owning project ID for registered assets",
+    )
 
     # ── Google Cloud ─────────────────────────────────────────────────────
     gcp_project_id: str | None = Field(

@@ -172,3 +172,58 @@ class TestPushLineage:
         result = await provider.push_lineage(graph)
         # No Google nodes → no errors about tables, but might have auth error
         assert result.tables_updated == 0
+
+
+class TestNormalizeEventForGoogle:
+    """Locks in the namespace mapping that lets Google's processor accept events."""
+
+    @staticmethod
+    def _make_event(inputs, outputs):
+        # Minimal duck-typed event matching what graph_to_events produces.
+        from types import SimpleNamespace
+
+        def ds(ns, name):
+            return SimpleNamespace(namespace=ns, name=name)
+
+        return SimpleNamespace(
+            inputs=[ds(ns, name) for ns, name in inputs],
+            outputs=[ds(ns, name) for ns, name in outputs],
+        )
+
+    def test_confluent_input_rewritten_to_kafka(self):
+        event = self._make_event(
+            inputs=[("confluent://env-1/lkc-abc", "my_topic")],
+            outputs=[("google://proj/ds", "proj.ds.tbl")],
+        )
+        GoogleLineageProvider._normalize_event_for_google(event)
+        assert event.inputs[0].namespace == "kafka://lkc-abc"
+        assert event.inputs[0].name == "my_topic"
+        assert event.outputs[0].namespace == "bigquery"
+        assert event.outputs[0].name == "proj.ds.tbl"
+
+    def test_kafka_to_kafka_event_preserved(self):
+        """Flink/ksqlDB-style events (kafka in, kafka out) survive normalization."""
+        event = self._make_event(
+            inputs=[("confluent://env-1/lkc-abc", "src_topic")],
+            outputs=[("confluent://env-1/lkc-abc", "dst_topic")],
+        )
+        GoogleLineageProvider._normalize_event_for_google(event)
+        assert len(event.inputs) == 1 and len(event.outputs) == 1
+        assert event.inputs[0].namespace == "kafka://lkc-abc"
+        assert event.outputs[0].namespace == "kafka://lkc-abc"
+
+    def test_unrecognized_datasets_dropped(self):
+        """UC/Glue/EXTERNAL datasets get dropped — Google can't link them."""
+        event = self._make_event(
+            inputs=[
+                ("confluent://env-1/lkc-abc", "topic"),
+                ("aws://us-east-1/db", "glue_table"),
+            ],
+            outputs=[
+                ("databricks://workspace", "uc.tbl"),
+                ("google://proj/ds", "proj.ds.tbl"),
+            ],
+        )
+        GoogleLineageProvider._normalize_event_for_google(event)
+        assert [d.namespace for d in event.inputs] == ["kafka://lkc-abc"]
+        assert [d.namespace for d in event.outputs] == ["bigquery"]

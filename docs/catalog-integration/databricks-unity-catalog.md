@@ -206,6 +206,7 @@ Push Confluent lineage metadata back to UC via the Databricks Statement Executio
 ALTER TABLE confluent_tableflow.lkc-abc123.orders_v1 SET TBLPROPERTIES (
   'lineage_bridge.source_topics' = 'orders.v1',
   'lineage_bridge.source_connectors' = 'MySqlSourceConnector',
+  'lineage_bridge.upstream_chain' = '[{"hop":1,"kind":"topic","qualified_name":"orders.v1","display_name":"orders.v1","schema_fields":[{"name":"order_id","type":"long"}]},{"hop":2,"kind":"flink_job","qualified_name":"enrich_orders","display_name":"enrich_orders","sql":"SELECT * FROM ..."},{"hop":3,"kind":"connector","qualified_name":"debezium-mysql","display_name":"debezium-mysql","connector_class":"DebeziumMysqlConnector"}]',
   'lineage_bridge.pipeline_type' = 'tableflow',
   'lineage_bridge.last_synced' = '2026-04-30T12:34:56.789Z',
   'lineage_bridge.environment_id' = 'env-abc123',
@@ -213,16 +214,25 @@ ALTER TABLE confluent_tableflow.lkc-abc123.orders_v1 SET TBLPROPERTIES (
 )
 ```
 
+The new `lineage_bridge.upstream_chain` property is the **multi-hop chain** as a JSON array, ordered by hop distance from the UC table. Each hop carries `kind` (topic / flink_job / ksqldb_query / connector / external_dataset / tableflow_table), the qualified name, optional `sql` for Flink/ksqlDB, optional `connector_class`, and `schema_fields` for topics that have a `HAS_SCHEMA` edge. The flat `source_topics` / `source_connectors` props are kept for backwards compatibility.
+
+Databricks caps individual TBLPROPERTIES values at ~4 KB. The chain JSON is capped at ~3 KB to leave headroom; if truncation kicks in, `lineage_bridge.upstream_truncated = 'true'` is also set so consumers know to discount the partial chain.
+
 **Table Comment** (set via `COMMENT ON TABLE`):
 
 ```sql
-COMMENT ON TABLE confluent_tableflow.lkc-abc123.orders_v1 IS 
-'Materialized from Kafka topic "orders.v1" via Confluent Tableflow.
-Sources: MySqlSourceConnector
+COMMENT ON TABLE confluent_tableflow.lkc-abc123.orders_v1 IS
+'Upstream lineage:
+- connector: debezium-mysql [DebeziumMysqlConnector]
+  - topic: orders.v1 [3 columns]
+    - flink_job: enrich_orders [SQL: SELECT * FROM ...]
+  → orders_v1
 Environment: env-abc123
 Last synced: 2026-04-30T12:34:56.789Z
 Managed by LineageBridge'
 ```
+
+The comment now renders the chain as an indented tree, walking from the farthest upstream toward the table — readable at a glance in the Databricks Catalog Explorer.
 
 **Bridge Table** (optional, for querying lineage):
 
@@ -239,11 +249,20 @@ CREATE TABLE IF NOT EXISTS confluent_tableflow.default.confluent_lineage (
   cluster_id STRING,
   hop_distance INT,
   full_path STRING,
+  chain_json STRING,
   synced_at TIMESTAMP
 )
 ```
 
-Each UC table gets one row per upstream node (topic, connector, etc.).
+Each UC table gets one row per upstream node (topic, connector, etc.). The `chain_json` column carries the **full upstream chain** as JSON (same shape as the `lineage_bridge.upstream_chain` TBLPROPERTY) — duplicated across all rows for that UC table so downstream queries can drill into the pipeline without joining back to LineageBridge or re-walking the graph.
+
+Example query — find all UC tables fed by a specific source connector:
+
+```sql
+SELECT DISTINCT uc_table
+FROM confluent_tableflow.default.confluent_lineage
+WHERE chain_json LIKE '%"connector_class":"DebeziumMysqlConnector"%';
+```
 
 **Usage Example** (UI):
 

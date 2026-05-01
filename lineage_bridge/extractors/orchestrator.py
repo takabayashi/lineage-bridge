@@ -357,6 +357,37 @@ async def run_google_push(
     return result
 
 
+async def run_datazone_push(
+    settings: Settings,
+    graph: LineageGraph,
+    *,
+    on_progress: ProgressCallback = None,
+) -> PushResult:
+    """Register Kafka assets in AWS DataZone and post OpenLineage events."""
+    from lineage_bridge.catalogs.aws_datazone import AWSDataZoneProvider
+
+    _progress = _make_progress(on_progress)
+
+    if not settings.aws_datazone_domain_id or not settings.aws_datazone_project_id:
+        _progress("Push skipped", "DataZone domain_id / project_id not configured")
+        return PushResult(
+            errors=["DataZone domain_id / project_id not configured"]
+        )
+
+    provider = AWSDataZoneProvider(
+        domain_id=settings.aws_datazone_domain_id,
+        project_id=settings.aws_datazone_project_id,
+        region=settings.aws_region,
+    )
+    result = await provider.push_lineage(graph, on_progress=on_progress)
+    _progress(
+        "DataZone push done",
+        f"{result.tables_updated} events posted"
+        + (f", {len(result.errors)} error(s)" if result.errors else ""),
+    )
+    return result
+
+
 async def run_extraction(
     settings: Settings,
     *,

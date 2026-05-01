@@ -32,10 +32,22 @@ class RunEventType(StrEnum):
 # ── Facets ─────────────────────────────────────────────────────────────────
 
 
-class BaseFacet(BaseModel):
-    """Base class for all OpenLineage facets."""
+PRODUCER_URI = "https://github.com/takabayashi/lineage-bridge"
 
-    model_config = {"extra": "allow"}
+
+class BaseFacet(BaseModel):
+    """Base class for all OpenLineage facets.
+
+    Per the OpenLineage spec, every facet must include ``_producer`` (the URI
+    of the producer that emitted it) and ``_schemaURL`` (the URL of the JSON
+    schema describing the facet). Without these, spec-conformant consumers
+    silently drop the facet's payload.
+    """
+
+    producer: str = Field(default=PRODUCER_URI, alias="_producer")
+    schema_url: str | None = Field(default=None, alias="_schemaURL")
+
+    model_config = {"extra": "allow", "populate_by_name": True}
 
 
 class SchemaField(BaseModel):
@@ -46,15 +58,24 @@ class SchemaField(BaseModel):
     description: str | None = None
 
 
+_FACET_BASE = "https://openlineage.io/spec/facets"
+
+
 class SchemaDatasetFacet(BaseFacet):
     """Schema information for a dataset."""
 
+    schema_url: str | None = Field(
+        default=f"{_FACET_BASE}/1-0-1/SchemaDatasetFacet.json", alias="_schemaURL"
+    )
     fields: list[SchemaField] = Field(default_factory=list)
 
 
 class DataSourceDatasetFacet(BaseFacet):
     """Data source connection details for a dataset."""
 
+    schema_url: str | None = Field(
+        default=f"{_FACET_BASE}/1-0-0/DataSourceDatasetFacet.json", alias="_schemaURL"
+    )
     name: str | None = None
     uri: str | None = None
 
@@ -62,24 +83,36 @@ class DataSourceDatasetFacet(BaseFacet):
 class SqlJobFacet(BaseFacet):
     """SQL query associated with a job."""
 
+    schema_url: str | None = Field(
+        default=f"{_FACET_BASE}/1-0-0/SQLJobFacet.json", alias="_schemaURL"
+    )
     query: str
 
 
 class DocumentationDatasetFacet(BaseFacet):
     """Human-readable documentation for a dataset."""
 
+    schema_url: str | None = Field(
+        default=f"{_FACET_BASE}/1-0-0/DocumentationDatasetFacet.json", alias="_schemaURL"
+    )
     description: str
 
 
 class DocumentationJobFacet(BaseFacet):
     """Human-readable documentation for a job."""
 
+    schema_url: str | None = Field(
+        default=f"{_FACET_BASE}/1-0-0/DocumentationJobFacet.json", alias="_schemaURL"
+    )
     description: str
 
 
 class SourceCodeLocationJobFacet(BaseFacet):
     """Source code location for a job."""
 
+    schema_url: str | None = Field(
+        default=f"{_FACET_BASE}/1-0-0/SourceCodeLocationJobFacet.json", alias="_schemaURL"
+    )
     type: str | None = None
     url: str | None = None
 
@@ -87,19 +120,23 @@ class SourceCodeLocationJobFacet(BaseFacet):
 class DataQualityMetricsInputDatasetFacet(BaseFacet):
     """Data quality metrics for an input dataset."""
 
+    schema_url: str | None = Field(
+        default=f"{_FACET_BASE}/1-0-0/DataQualityMetricsInputDatasetFacet.json",
+        alias="_schemaURL",
+    )
     row_count: int | None = Field(default=None, alias="rowCount")
     bytes: int | None = None
-
-    model_config = {"extra": "allow", "populate_by_name": True}
 
 
 class OutputStatisticsOutputDatasetFacet(BaseFacet):
     """Output statistics for a dataset."""
 
+    schema_url: str | None = Field(
+        default=f"{_FACET_BASE}/1-0-0/OutputStatisticsOutputDatasetFacet.json",
+        alias="_schemaURL",
+    )
     row_count: int | None = Field(default=None, alias="rowCount")
     bytes: int | None = None
-
-    model_config = {"extra": "allow", "populate_by_name": True}
 
 
 # ── Custom Facets (LineageBridge-specific) ─────────────────────────────────

@@ -77,6 +77,7 @@ nav:
       - Overview: catalog-integration/index.md
       - Databricks Unity Catalog: catalog-integration/databricks-unity-catalog.md
       - AWS Glue: catalog-integration/aws-glue.md
+      - AWS DataZone: catalog-integration/aws-datazone.md
       - Google Data Lineage: catalog-integration/google-data-lineage.md
       - Adding New Catalogs: catalog-integration/adding-new-catalogs.md
   - API Reference:

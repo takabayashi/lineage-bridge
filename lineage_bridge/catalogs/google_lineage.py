@@ -73,7 +73,7 @@ class GoogleLineageProvider:
         google_cfg = ci_config.get("google_bigquery", ci_config)
         project_id = google_cfg.get("project_id", self._project_id or "unknown")
         dataset_id = google_cfg.get("dataset_id", cluster_id)
-        table_name = topic_name.replace(".", "_").replace("-", "_")
+        table_name = topic_name.split(".")[-1].replace("-", "_")
         qualified = f"{project_id}.{dataset_id}.{table_name}"
         google_id = f"google:google_table:{environment_id}:{qualified}"
 
@@ -229,16 +229,38 @@ class GoogleLineageProvider:
         if on_progress:
             on_progress("Push", f"Found {len(google_nodes)} Google tables to update")
 
-        # Convert the graph to OpenLineage events and push each one
+        # Register Kafka topics in Dataplex Catalog so the BQ Lineage tab can
+        # show schema for the upstream Confluent nodes — the OpenLineage
+        # processor itself drops every facet at storage time, so the Catalog
+        # entry is the only path to surface column metadata. Failures are
+        # non-fatal: missing entries just mean the schema panel stays empty.
+        try:
+            from lineage_bridge.catalogs.google_dataplex import DataplexAssetRegistrar
+
+            registrar = DataplexAssetRegistrar(self._project_id, self._location, headers)
+            registered, registrar_errors = await registrar.register_kafka_assets(
+                graph, on_progress=on_progress
+            )
+            if registered and on_progress:
+                on_progress("Catalog", f"Registered {registered} Kafka entries in Dataplex")
+            for err in registrar_errors:
+                result.errors.append(err)
+        except Exception as exc:
+            logger.warning("Dataplex registration skipped: %s", exc, exc_info=True)
+            result.errors.append(f"Dataplex registration skipped: {exc}")
+
+        # Convert the graph to OpenLineage events. Push the entire upstream
+        # chain (source connectors → topics → Flink/ksqlDB → topics → sink →
+        # BigQuery) so Google can walk transitively from the BQ table back to
+        # the source topics. Each event's namespaces are rewritten to formats
+        # Google's processor recognizes; events that end up with no recognized
+        # datasets after normalization are dropped.
         from lineage_bridge.api.openlineage.translator import graph_to_events
 
         events = graph_to_events(graph)
-        # Filter to events that touch a BigQuery output, then rewrite dataset
-        # namespaces to formats Google's processor recognizes (the project's
-        # internal `confluent://` / `google://` namespaces are rejected).
-        events = [e for e in events if any(self._is_bq_output(o) for o in e.outputs)]
         for event in events:
             self._normalize_event_for_google(event)
+        events = [e for e in events if e.inputs or e.outputs]
         now = datetime.now(UTC).isoformat()
 
         parent = f"projects/{self._project_id}/locations/{self._location}"
@@ -246,7 +268,7 @@ class GoogleLineageProvider:
 
         async with httpx.AsyncClient(headers=headers, timeout=30.0) as client:
             for event in events:
-                event_dict = event.model_dump(mode="json", exclude_none=True)
+                event_dict = event.model_dump(mode="json", exclude_none=True, by_alias=True)
                 for attempt in range(_MAX_RETRIES):
                     try:
                         resp = await client.post(url, json=event_dict)
@@ -320,45 +342,16 @@ class GoogleLineageProvider:
     # ── OpenLineage event normalization for Google Data Lineage ─────────
 
     @staticmethod
-    def _is_bq_output(dataset: Any) -> bool:
-        """True if a dataset looks like a BigQuery target (project.dataset.table)."""
-        ns = getattr(dataset, "namespace", "") or ""
-        name = getattr(dataset, "name", "") or ""
-        return ns.startswith("google://") or ns == "bigquery" or name.count(".") >= 2
-
-    @staticmethod
     def _normalize_event_for_google(event: Any) -> None:
         """Rewrite dataset namespaces in-place so Google's processor accepts them.
 
-        Google requires recognized FQN formats — our internal namespaces
-        (``confluent://env/cluster``, ``google://project/dataset``) are rejected.
-        Mapping: kafka_topic → ``kafka://<cluster>``; google_table → ``bigquery``.
-        Datasets in unrecognized namespaces (UC/Glue/EXTERNAL) are dropped from
-        the event since Google can't link them either.
+        Delegates to the shared normalizer with Google's allowlist (BigQuery
+        on output; Kafka on both sides). UC/Glue/EXTERNAL datasets are
+        dropped — Google can't link them.
         """
-        kept_inputs = []
-        for ds in event.inputs:
-            ns = ds.namespace or ""
-            if ns.startswith("confluent://"):
-                # confluent://env-id/cluster-id -> kafka://cluster-id
-                cluster = ns.rsplit("/", 1)[-1] or "unknown"
-                ds.namespace = f"kafka://{cluster}"
-                kept_inputs.append(ds)
-            elif ns.startswith("kafka://") or ns == "bigquery":
-                kept_inputs.append(ds)
-            # else: unrecognized (uc/glue/external) — drop
-        event.inputs = kept_inputs
+        from lineage_bridge.api.openlineage.normalize import normalize_event
 
-        kept_outputs = []
-        for ds in event.outputs:
-            ns = ds.namespace or ""
-            if ns.startswith("google://") or ds.name.count(".") >= 2:
-                ds.namespace = "bigquery"
-                kept_outputs.append(ds)
-            elif ns == "bigquery":
-                kept_outputs.append(ds)
-            # else: drop — only BigQuery outputs make sense for Google push
-        event.outputs = kept_outputs
+        normalize_event(event, allow={"bigquery"})
 
     def build_url(self, node: LineageNode) -> str | None:
         """Build a deep link to the table in the Google Cloud console."""

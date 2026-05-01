@@ -46,6 +46,12 @@ test-integration-bigquery: ## Run BigQuery demo integration tests (requires prov
 test-integration-bigquery-skip-docker: ## Run BigQuery integration tests (skip Docker build)
 	bash scripts/integration-test-bigquery.sh --skip-docker
 
+test-integration-dataplex: ## Run Dataplex Catalog live-API tests (needs LINEAGE_BRIDGE_GCP_PROJECT_ID + ADC)
+	LINEAGE_BRIDGE_GCP_INTEGRATION=1 uv run pytest tests/integration/test_gcp_dataplex_integration.py -v
+
+test-integration-datazone: ## Run AWS DataZone live-API tests (needs domain/project IDs + AWS creds)
+	LINEAGE_BRIDGE_AWS_DATAZONE_INTEGRATION=1 uv run pytest tests/integration/test_aws_datazone_integration.py -v
+
 test-integration-all: ## Run all integration tests (UC, Glue, BigQuery)
 	@echo "Running all integration tests..."
 	@bash scripts/integration-test-uc.sh --skip-docker || true

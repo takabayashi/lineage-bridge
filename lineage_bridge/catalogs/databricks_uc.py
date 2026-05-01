@@ -304,14 +304,14 @@ class DatabricksUCProvider:
                 continue
 
             if set_properties:
-                await self._set_table_properties(sql_client, node, upstream, now, result)
+                await self._set_table_properties(sql_client, node, upstream, graph, now, result)
 
             if set_comments:
-                await self._set_table_comment(sql_client, node, upstream, now, result)
+                await self._set_table_comment(sql_client, node, upstream, graph, now, result)
 
             if create_bridge_table:
                 await self._insert_bridge_rows(
-                    sql_client, bridge_table_name, node, upstream, now, result
+                    sql_client, bridge_table_name, node, upstream, graph, now, result
                 )
 
             result.tables_updated += 1
@@ -328,10 +328,13 @@ class DatabricksUCProvider:
         sql_client: Any,
         node: LineageNode,
         upstream: list,
+        graph: LineageGraph,
         now: str,
         result: PushResult,
     ) -> None:
         """Set lineage_bridge.* table properties on a UC table."""
+        from lineage_bridge.catalogs.upstream_chain import build_upstream_chain, chain_to_json
+
         source_topics = []
         source_connectors = []
         for up_node, _edge, _hop in upstream:
@@ -340,19 +343,28 @@ class DatabricksUCProvider:
             elif up_node.node_type == NodeType.CONNECTOR:
                 source_connectors.append(up_node.display_name)
 
+        # Rich multi-hop chain (Flink/ksqlDB/intermediate topics/external sources).
+        # Capped at ~3 KB to leave headroom under Databricks' 4 KB per-property limit.
+        chain = build_upstream_chain(graph, node.node_id)
+        chain_json, truncated = chain_to_json(chain, max_bytes=3 * 1024)
+
         props = {
             "lineage_bridge.source_topics": ",".join(source_topics) if source_topics else "",
             "lineage_bridge.source_connectors": (
                 ",".join(source_connectors) if source_connectors else ""
             ),
+            "lineage_bridge.upstream_chain": chain_json if chain else "",
+            "lineage_bridge.upstream_truncated": "true" if truncated else "",
             "lineage_bridge.pipeline_type": "tableflow",
             "lineage_bridge.last_synced": now,
             "lineage_bridge.environment_id": node.environment_id or "",
             "lineage_bridge.cluster_id": node.cluster_id or "",
         }
 
-        # Build SET TBLPROPERTIES SQL
-        prop_pairs = ", ".join(f"'{k}' = '{v}'" for k, v in props.items() if v)
+        # Escape single quotes inside SQL string literals.
+        prop_pairs = ", ".join(
+            f"'{k}' = '{v.replace(chr(39), chr(39) * 2)}'" for k, v in props.items() if v
+        )
         if not prop_pairs:
             return
 
@@ -373,25 +385,22 @@ class DatabricksUCProvider:
         sql_client: Any,
         node: LineageNode,
         upstream: list,
+        graph: LineageGraph,
         now: str,
         result: PushResult,
     ) -> None:
         """Set a human-readable lineage comment on a UC table."""
-        source_topics = []
-        source_connectors = []
-        for up_node, _edge, _hop in upstream:
-            if up_node.node_type == NodeType.KAFKA_TOPIC:
-                source_topics.append(up_node.qualified_name)
-            elif up_node.node_type == NodeType.CONNECTOR:
-                source_connectors.append(up_node.display_name)
+        from lineage_bridge.catalogs.upstream_chain import (
+            build_upstream_chain,
+            format_chain_summary,
+        )
+
+        chain = build_upstream_chain(graph, node.node_id)
 
         lines = []
-        if source_topics:
-            topic_list = ", ".join(f'"{t}"' for t in source_topics)
-            lines.append(f"Materialized from Kafka topic {topic_list} via Confluent Tableflow.")
-        if source_connectors:
-            conn_list = ", ".join(source_connectors)
-            lines.append(f"Sources: {conn_list}")
+        summary = format_chain_summary(chain, node.display_name or node.qualified_name)
+        if summary:
+            lines.append(summary)
         if node.environment_id:
             lines.append(f"Environment: {node.environment_id}")
         lines.append(f"Last synced: {now}")
@@ -414,7 +423,13 @@ class DatabricksUCProvider:
     async def _create_bridge_table(
         self, sql_client: Any, bridge_table_name: str, result: PushResult
     ) -> None:
-        """Create the lineage bridge table if it doesn't exist."""
+        """Create the lineage bridge table if it doesn't exist.
+
+        ``chain_json`` carries the full upstream chain (Flink/ksqlDB SQL,
+        intermediate topics, connector classes, schema fields per topic) so
+        downstream queries can drill into the pipeline without joining back
+        to LineageBridge.
+        """
         sql = f"""CREATE TABLE IF NOT EXISTS {bridge_table_name} (
     uc_table STRING,
     source_type STRING,
@@ -425,6 +440,7 @@ class DatabricksUCProvider:
     cluster_id STRING,
     hop_distance INT,
     full_path STRING,
+    chain_json STRING,
     synced_at TIMESTAMP
 )"""
         try:
@@ -441,10 +457,21 @@ class DatabricksUCProvider:
         bridge_table_name: str,
         node: LineageNode,
         upstream: list,
+        graph: LineageGraph,
         now: str,
         result: PushResult,
     ) -> None:
-        """Insert lineage rows into the bridge table."""
+        """Insert lineage rows into the bridge table.
+
+        Each row gets the same ``chain_json`` payload so the full pipeline is
+        queryable from any single hop without re-walking the graph.
+        """
+        from lineage_bridge.catalogs.upstream_chain import build_upstream_chain, chain_to_json
+
+        chain = build_upstream_chain(graph, node.node_id)
+        chain_json, _ = chain_to_json(chain)
+        chain_json_sql = chain_json.replace("'", "''")
+
         values = []
         for up_node, edge, hop in upstream:
             # Use raw qualified_name in VALUES (string literal, no quoting needed)
@@ -452,7 +479,7 @@ class DatabricksUCProvider:
                 f"('{node.qualified_name}', '{up_node.node_type.value}', "
                 f"'{up_node.qualified_name}', '{up_node.system.value}', "
                 f"'{edge.edge_type.value}', '{node.environment_id or ''}', "
-                f"'{node.cluster_id or ''}', {hop}, '', TIMESTAMP '{now}')"
+                f"'{node.cluster_id or ''}', {hop}, '', '{chain_json_sql}', TIMESTAMP '{now}')"
             )
         if not values:
             return

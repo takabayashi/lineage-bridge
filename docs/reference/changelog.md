@@ -4,6 +4,24 @@ All notable changes to LineageBridge are documented here. The format follows [Ke
 
 ## [Unreleased]
 
+**New catalog integrations and richer push payloads.**
+
+### Added
+
+- **AWS DataZone provider** (`AWSDataZoneProvider`, `DataZoneAssetRegistrar`): registers Kafka topics as DataZone assets with schema and posts OpenLineage events via `post_lineage_event`. Mirrors the Google Dataplex / Data Lineage architecture for AWS.
+- **Dataplex Catalog asset registration** (`DataplexAssetRegistrar`): each Kafka topic becomes a Dataplex entry with the same FQN as the lineage event, so the BigQuery Lineage tab shows column metadata on upstream Confluent nodes (events alone don't carry schema — Google strips facets at storage).
+- **Rich `lineage_bridge.upstream_chain` payload** in UC TBLPROPERTIES, UC bridge table (`chain_json` column), Glue Parameters, and Glue Description: full multi-hop chain including Flink/ksqlDB SQL, intermediate topics, source connectors, and per-topic schema fields. Capped per catalog's value-size limit.
+- **Multi-hop OpenLineage push** for Google: every Job-event (source connectors, Flink, ksqlDB, sinks) is pushed so the Lineage tab can walk transitively from a BQ table back to the source topics.
+- **Live integration tests**: `tests/integration/test_gcp_dataplex_integration.py` (gated by `LINEAGE_BRIDGE_GCP_INTEGRATION=1`) and `tests/integration/test_aws_datazone_integration.py` (gated by `LINEAGE_BRIDGE_AWS_DATAZONE_INTEGRATION=1`). Run via `make test-integration-dataplex` / `make test-integration-datazone`.
+- **"Push to DataZone" button** in the Streamlit publish panel, gated on `LINEAGE_BRIDGE_AWS_DATAZONE_DOMAIN_ID` + `LINEAGE_BRIDGE_AWS_DATAZONE_PROJECT_ID`.
+
+### Changed
+
+- Shared OpenLineage namespace normalizer (`api/openlineage/normalize.py`) — used by both Google and DataZone providers, parametrised by allowlist (`{bigquery}` for Google, `{kafka, aws}` and `{bigquery, aws}` for DataZone).
+- Shared upstream-chain builder (`catalogs/upstream_chain.py`) — single source of truth for chain shape, used by all four catalogs.
+- `google-auth` is now a hard dependency (was previously imported lazily and silently failed if missing).
+- BigQuery sink connectors synthesise per-topic `GOOGLE_TABLE` nodes in `clients/connect.py` so the publish UI surfaces them and Tableflow isn't required for the BQ demo.
+
 See the [latest commits](https://github.com/takabayashi/lineage-bridge/commits/main) for work in progress.
 
 ## [0.4.0] - 2024-12-15

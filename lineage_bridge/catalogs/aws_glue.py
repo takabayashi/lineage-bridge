@@ -210,7 +210,14 @@ class GlueCatalogProvider:
             if not database or not table_name:
                 continue
 
-            # Build lineage metadata
+            from lineage_bridge.catalogs.upstream_chain import (
+                build_upstream_chain,
+                chain_to_json,
+                format_chain_summary,
+            )
+
+            # Build lineage metadata — flat lists kept for back-compat consumers,
+            # plus the rich multi-hop chain JSON for catalog UIs / downstream tooling.
             source_topics = []
             source_connectors = []
             for up_node, _edge, _hop in upstream:
@@ -218,6 +225,11 @@ class GlueCatalogProvider:
                     source_topics.append(up_node.qualified_name)
                 elif up_node.node_type == NodeType.CONNECTOR:
                     source_connectors.append(up_node.display_name)
+
+            chain = build_upstream_chain(graph, node.node_id)
+            # Glue Parameter values cap at 512 KB; 64 KB is plenty for any
+            # realistic chain and avoids accidentally bloating CloudFormation.
+            chain_json, truncated = chain_to_json(chain, max_bytes=64 * 1024)
 
             # Fetch existing table to preserve StorageDescriptor
             try:
@@ -238,6 +250,10 @@ class GlueCatalogProvider:
                 params["lineage_bridge.source_connectors"] = (
                     ",".join(source_connectors) if source_connectors else ""
                 )
+                if chain:
+                    params["lineage_bridge.upstream_chain"] = chain_json
+                    if truncated:
+                        params["lineage_bridge.upstream_truncated"] = "true"
                 params["lineage_bridge.pipeline_type"] = "tableflow"
                 params["lineage_bridge.last_synced"] = now
                 params["lineage_bridge.environment_id"] = node.environment_id or ""
@@ -245,14 +261,9 @@ class GlueCatalogProvider:
 
             if set_description:
                 lines = []
-                if source_topics:
-                    topic_list = ", ".join(f'"{t}"' for t in source_topics)
-                    lines.append(
-                        f"Materialized from Kafka topic {topic_list} via Confluent Tableflow."
-                    )
-                if source_connectors:
-                    conn_list = ", ".join(source_connectors)
-                    lines.append(f"Sources: {conn_list}")
+                summary = format_chain_summary(chain, node.display_name or node.qualified_name)
+                if summary:
+                    lines.append(summary)
                 if node.environment_id:
                     lines.append(f"Environment: {node.environment_id}")
                 lines.append(f"Last synced: {now}")

@@ -8,7 +8,18 @@ LineageBridge bridges Confluent stream lineage into external data catalogs, maki
 |---------|----------|-------------|--------|
 | **Databricks Unity Catalog** | `DatabricksUCProvider` | Lakehouse architectures with Databricks, teams using Delta Lake and downstream transformations | Production |
 | **AWS Glue Data Catalog** | `GlueCatalogProvider` | AWS-centric data platforms with S3, Athena, Redshift Spectrum, or EMR | Production |
-| **Google Data Lineage** | `GoogleLineageProvider` | Google Cloud platforms using BigQuery, Data Catalog, or Dataplex | Production |
+| **Google Data Lineage** | `GoogleLineageProvider` (+ `DataplexAssetRegistrar`) | Google Cloud platforms using BigQuery; Dataplex Catalog for Kafka schema visibility | Production |
+| **AWS DataZone** | `AWSDataZoneProvider` | AWS data mesh / governance using DataZone domains; mirrors the Google integration for AWS | Production |
+
+### Rich upstream chain (all catalogs)
+
+Every push writes a JSON-encoded `lineage_bridge.upstream_chain` payload that walks the **full multi-hop pipeline** — source connectors → topics (with schema fields) → Flink/ksqlDB jobs (with SQL) → intermediate topics → sink. Visible in:
+
+- **UC**: `SHOW TBLPROPERTIES my_catalog.schema.table` and the `chain_json` column of the optional bridge table
+- **Glue**: `aws glue get-table` → `Parameters['lineage_bridge.upstream_chain']`
+- **DataZone**: asset description + posted OpenLineage events
+
+The flat `lineage_bridge.source_topics` / `source_connectors` props are still written for backwards compatibility.
 
 ## How Catalog Integration Works
 
@@ -55,9 +66,10 @@ After all tableflow nodes are built, each provider's `enrich()` method runs in p
 
 After extraction completes, you can push lineage metadata back to the catalog via the UI or API:
 
-- **Databricks UC**: Sets table properties (`lineage_bridge.*`), comments, and optionally creates a bridge table
-- **AWS Glue**: Updates table parameters and description
-- **Google Data Lineage**: Pushes OpenLineage events to the Data Lineage API
+- **Databricks UC**: Sets table properties (`lineage_bridge.*`), human-readable comment with the chain summary, and optionally a bridge table with a `chain_json` column
+- **AWS Glue**: Updates table parameters (including the chain JSON) and description
+- **Google Data Lineage**: Pushes OpenLineage events for the full chain (source connectors → Flink → BQ) and registers each Kafka topic as a Dataplex Catalog entry with its schema, so the BigQuery Lineage tab shows columns on upstream Kafka nodes
+- **AWS DataZone**: Registers each Kafka topic as a custom DataZone asset with schema, then posts OpenLineage events via `post_lineage_event`
 
 **Use case**: Your data governance team needs to see Kafka sources directly in the catalog UI without switching tools.
 
@@ -155,19 +167,21 @@ Choose your catalog and jump right in:
 
 ## Feature Matrix
 
-| Feature | Databricks UC | AWS Glue | Google Lineage |
-|---------|--------------|----------|----------------|
-| **Build Node** | UC_TABLE | GLUE_TABLE | GOOGLE_TABLE |
-| **Enrich Metadata** | Tables API | get_table | BigQuery API |
-| **Push Lineage** | SQL (properties, comments, bridge table) | update_table (parameters, description) | OpenLineage events |
-| **Discover Derived Tables** | Yes (lineage API) | No | No |
-| **Deep Links** | Yes | Yes | Yes |
-| **Authentication** | Token | boto3 / IAM | Application Default Credentials |
-| **Best For** | Lakehouse + transformations | AWS-native platforms | Multi-cloud OpenLineage |
+| Feature | Databricks UC | AWS Glue | Google Lineage | AWS DataZone |
+|---------|--------------|----------|----------------|--------------|
+| **Build Node** | UC_TABLE | GLUE_TABLE | GOOGLE_TABLE | (uses Kafka + Glue nodes from graph) |
+| **Enrich Metadata** | Tables API | get_table | BigQuery API | n/a (asset registration only) |
+| **Rich upstream chain** | TBLPROPERTIES + COMMENT + bridge `chain_json` | Parameters + Description | OpenLineage events to Data Lineage API | OpenLineage events to `post_lineage_event` |
+| **Schema on Kafka nodes in catalog UI** | n/a (no external entry concept) | n/a (no lineage UI) | Dataplex Catalog entries with schema aspect | DataZone custom assets with schema form |
+| **Discover Derived Tables** | Yes (lineage API) | No | No | No |
+| **Deep Links** | Yes | Yes | Yes | n/a |
+| **Authentication** | Token | boto3 / IAM | Application Default Credentials | boto3 / IAM |
+| **Best For** | Lakehouse + transformations | AWS-native platforms | GCP with BigQuery + Dataplex | AWS data mesh / DataZone |
 
 ## Next Steps
 
 - [Databricks Unity Catalog Setup](databricks-unity-catalog.md) - Configure UC integration
 - [AWS Glue Setup](aws-glue.md) - Configure Glue integration
-- [Google Data Lineage Setup](google-data-lineage.md) - Configure Google integration
+- [Google Data Lineage Setup](google-data-lineage.md) - Configure Google + Dataplex integration
+- [AWS DataZone Setup](aws-datazone.md) - Configure DataZone domain + asset registration
 - [Adding New Catalogs](adding-new-catalogs.md) - Developer guide for custom providers

@@ -213,9 +213,48 @@ Push Confluent lineage as OpenLineage events to the Data Lineage API:
 **Endpoint**: `POST https://datalineage.googleapis.com/v1/projects/{project}/locations/{location}:processOpenLineageRunEvent`
 
 **How It Works**:
-1. Convert the LineageBridge graph to OpenLineage events using `graph_to_events()` translator
-2. For each event, POST to the Data Lineage API
-3. Google indexes the events and makes them queryable via the Data Lineage UI
+1. Convert the LineageBridge graph to OpenLineage events using `graph_to_events()` translator (one event per Job-type node — connectors, Flink jobs, ksqlDB queries)
+2. Normalize each event's namespaces to formats Google's processor recognizes — `confluent://env/cluster` becomes `kafka://<cluster>`, `google://project/dataset` becomes `bigquery`. Unrecognized namespaces (UC/Glue/EXTERNAL) are dropped from events because Google can't link them either. Logic lives in `lineage_bridge/api/openlineage/normalize.py` and is shared with the AWS DataZone provider.
+3. POST each remaining event to the Data Lineage API. Empty events (no surviving inputs/outputs) are skipped.
+4. Google indexes the events; both immediate and transitive walks become queryable via `searchLinks` and the BigQuery Lineage tab.
+
+**Multi-hop chain**: every Job-type event is pushed (not just the BigQuery sink). Source connectors (Datagen, Debezium) → topics → Flink jobs → intermediate topics → BigQuery sinks all get OpenLineage events, so clicking a BigQuery table's Lineage tab walks back through the entire Confluent pipeline to the source topics.
+
+### 4. Dataplex Catalog asset registration (register_kafka_assets)
+
+`processOpenLineageRunEvent` stores **only the link FQNs** — every facet (schema, columnLineage, custom) gets discarded. To surface column metadata on upstream Kafka nodes in the BigQuery Lineage tab, each Kafka topic gets registered as a Dataplex Catalog entry whose FQN matches the lineage event reference.
+
+**Implemented by**: `lineage_bridge/catalogs/google_dataplex.py::DataplexAssetRegistrar`. Runs automatically as part of `push_lineage`.
+
+**What gets created (idempotent — created once, reused on every push)**:
+
+| Resource | ID | Purpose |
+|---|---|---|
+| Entry group | `lineage-bridge` | Container for all LineageBridge-managed entries |
+| Entry type | `lineage-bridge-kafka-topic` | Custom type marking entries as Kafka topics |
+| Aspect type | `lineage-bridge-schema` | Schema field schema (record array of name/type/description) |
+| Per-topic entry | `<cluster>-<topic>` | Carries the FQN + schema aspect |
+
+**Per-topic upsert**:
+- FQN format: `kafka:lkc-yr5dok.\`lineage_bridge.enriched_orders\`` (backtick-escaped when topic contains dots — matches Google's auto-derived FQN from `kafka://<bootstrap>` + topic name)
+- Schema fields pulled from `HAS_SCHEMA`-linked SCHEMA nodes (same lookup as the upstream chain builder)
+- POST → 200 on first run; 409 on re-runs → falls back to PATCH `aspects` so the schema stays current
+
+**Required IAM permissions for the Dataplex registrar** (in addition to the Data Lineage permissions above):
+```
+dataplex.entryGroups.get
+dataplex.entryGroups.create
+dataplex.entryTypes.get
+dataplex.entryTypes.create
+dataplex.aspectTypes.get
+dataplex.aspectTypes.create
+dataplex.entries.create
+dataplex.entries.update
+```
+
+The first push needs all of these. Subsequent pushes only need `entries.create` / `entries.update`.
+
+**What you see in the UI after this lands**: navigate BigQuery Studio → click a sink table → Lineage tab → click an upstream Kafka node. The asset detail panel shows the schema fields (name + type) plus `system: Confluent Cloud, platform: kafka` from the entry source.
 
 **OpenLineage Format**:
 

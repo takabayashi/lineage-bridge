@@ -61,3 +61,6 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "integration: live-API tests; require credentials and are skipped by default in CI",
+]
