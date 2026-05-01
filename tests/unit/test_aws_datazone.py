@@ -137,6 +137,24 @@ class TestRegistrar:
         assert len(errors) == 1
         assert "lb.orders" in errors[0]
 
+    async def test_iam_denied_on_form_type_skips_gracefully(self, registrar):
+        """Missing datazone:CreateFormType / CreateAssetType should NOT crash the push.
+
+        Lineage events still post elsewhere; only schema-on-asset display is
+        lost. The caller surfaces this as info, so registrar returns (0, []).
+        """
+        not_found = type("ResourceNotFoundException", (Exception,), {})("not found")
+        registrar._client.get_asset_type.side_effect = not_found
+        registrar._client.get_form_type.side_effect = not_found
+        denied = type("AccessDeniedException", (Exception,), {})("not permitted")
+        registrar._client.create_form_type.side_effect = denied
+
+        count, errors = await registrar.register_kafka_assets(_graph_with_topic_and_schema())
+        assert count == 0
+        # Errors list stays empty — IAM block is informational, not failure.
+        assert errors == []
+        registrar._client.create_asset.assert_not_called()
+
 
 class TestProvider:
     async def test_skips_without_config(self):

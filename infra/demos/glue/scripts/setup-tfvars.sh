@@ -218,13 +218,27 @@ if [ -n "$DZ_DOMAIN_ID" ] && [ -z "$DZ_PROJECT_ID" ] && command -v aws &>/dev/nu
         --region "$AWS_REGION" --query 'items[].{id:id, name:name}' \
         --output json 2>/dev/null || echo "[]")
     DZ_PROJECT_COUNT=$(echo "$DZ_PROJECTS_JSON" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 0)
-    if [ "$DZ_PROJECT_COUNT" = "1" ]; then
+
+    # Prefer a project literally named `lineage-bridge` if present — that's the
+    # one this demo creates / expects. Falls back to single-match auto-pick;
+    # multiple unnamed matches prompt; zero matches skips DataZone entirely.
+    DZ_PREFERRED_ID=$(echo "$DZ_PROJECTS_JSON" \
+        | python3 -c "import sys,json; m=[p for p in json.load(sys.stdin) if p['name']=='lineage-bridge']; print(m[0]['id'] if m else '')" 2>/dev/null || echo "")
+
+    if [ -n "$DZ_PREFERRED_ID" ]; then
+        DZ_PROJECT_ID="$DZ_PREFERRED_ID"
+        echo "  Detected DataZone project: $DZ_PROJECT_ID (lineage-bridge)"
+    elif [ "$DZ_PROJECT_COUNT" = "1" ]; then
         DZ_PROJECT_ID=$(echo "$DZ_PROJECTS_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['id'])")
         DZ_PROJECT_NAME=$(echo "$DZ_PROJECTS_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['name'])")
         echo "  Detected DataZone project: $DZ_PROJECT_ID ($DZ_PROJECT_NAME)"
     elif [ "$DZ_PROJECT_COUNT" -gt 1 ]; then
-        echo "  Multiple DataZone projects in $DZ_DOMAIN_ID:"
+        echo "  Multiple DataZone projects in $DZ_DOMAIN_ID (no project named 'lineage-bridge'):"
         echo "$DZ_PROJECTS_JSON" | python3 -c "import sys,json; [print(f\"    - {p['id']}  {p['name']}\") for p in json.load(sys.stdin)]"
+        echo ""
+        echo "  Tip: create one named 'lineage-bridge' to skip this prompt next time:"
+        echo "       aws datazone create-project --domain-identifier $DZ_DOMAIN_ID \\"
+        echo "         --name lineage-bridge --region $AWS_REGION"
         echo ""
         read -rp "  DataZone project ID (blank to skip DataZone wiring): " DZ_PROJECT_ID
     else

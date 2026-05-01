@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 # Custom asset type we own. Created on first use, idempotent.
 ASSET_TYPE_NAME = "LineageBridgeKafkaTopic"
+FORM_TYPE_NAME = "LineageBridgeKafkaSchemaForm"
 
 # DataZone asset external IDs are alphanumeric/_/-; topic names with dots get sanitized.
 _EXT_ID_RE = re.compile(r"[^a-zA-Z0-9._-]")
@@ -47,6 +48,15 @@ def _ext_id(cluster_id: str, topic: str) -> str:
     """Deterministic DataZone-legal ID derived from cluster + topic."""
     raw = f"{cluster_id}-{topic}"
     return _EXT_ID_RE.sub("_", raw).lower()[:200]
+
+
+class _AssetBootstrapSkippedError(Exception):
+    """Raised when bootstrapping the FormType / AssetType is blocked by IAM.
+
+    This is recoverable: the caller falls back to lineage-events-only mode and
+    surfaces an info message so the user knows schema-on-asset display is
+    missing but the lineage view still works.
+    """
 
 
 class DataZoneAssetRegistrar:
@@ -89,6 +99,16 @@ class DataZoneAssetRegistrar:
         errors: list[str] = []
         try:
             asset_type_id = await asyncio.to_thread(self._ensure_asset_type)
+        except _AssetBootstrapSkippedError as exc:
+            # IAM-level skip: lineage events still post; only schema-on-asset
+            # display is missing. Surface as info, not error.
+            if on_progress:
+                on_progress(
+                    "Catalog",
+                    f"DataZone asset registration skipped — {exc}. "
+                    "Lineage events still post normally.",
+                )
+            return 0, []
         except Exception as exc:
             msg = f"DataZone asset-type bootstrap failed: {exc}"
             logger.warning(msg)
@@ -111,45 +131,106 @@ class DataZoneAssetRegistrar:
     # ── asset type bootstrap ────────────────────────────────────────────
 
     def _ensure_asset_type(self) -> str:
-        """Get-or-create a custom asset type with a minimal schema form.
+        """Idempotently bootstrap the FormType + AssetType pair.
 
-        Returns the type identifier (name) usable in ``create_asset``.
+        DataZone V2 needs three things to register a custom asset:
+        1. A FormType (Smithy model) describing the schema-payload shape.
+        2. An AssetType referencing the form by name + revision.
+        3. The asset itself, with a `formsInput` entry matching the form name.
+
+        Returns the asset-type name on success.
+
+        Raises ``_AssetBootstrapSkippedError`` when the caller's IAM lacks
+        ``datazone:CreateFormType`` / ``CreateAssetType`` — a recoverable
+        condition: lineage events still post; only schema-on-asset display
+        is lost. The caller should surface this as info, not error.
         """
+        # Fast path: asset type already exists, nothing to bootstrap.
         try:
-            self.client.get_asset_type(domainIdentifier=self._domain_id, identifier=ASSET_TYPE_NAME)
+            self.client.get_asset_type(
+                domainIdentifier=self._domain_id, identifier=ASSET_TYPE_NAME
+            )
             return ASSET_TYPE_NAME
         except Exception as exc:
-            err_name = repr(type(exc).__name__)
+            err_name = type(exc).__name__
             if "ResourceNotFoundException" not in err_name and "not found" not in str(exc).lower():
-                # Re-raise unexpected errors (auth, throttling, etc.).
                 raise
 
-        # Minimal Smithy form — one string field carries a JSON schema dump.
-        smithy = (
-            '$version: "2"\n'
-            "namespace lineage_bridge\n\n"
-            "structure KafkaSchemaForm {\n"
-            '    @documentation("Schema fields (JSON), sourced from Confluent Schema Registry")\n'
-            "    fieldsJson: String\n"
-            '    @documentation("Cluster ID (lkc-XXXXXX)")\n'
-            "    clusterId: String\n"
-            '    @documentation("Confluent environment ID")\n'
-            "    environmentId: String\n"
-            "}\n"
-        )
+        # Step 1: ensure form type exists (creates if missing).
+        form_revision = self._ensure_form_type()
+
+        # Step 2: create the asset type referencing the form by name+revision.
         try:
             self.client.create_asset_type(
                 domainIdentifier=self._domain_id,
                 name=ASSET_TYPE_NAME,
                 description="Kafka topics registered by LineageBridge for cross-system lineage",
                 owningProjectIdentifier=self._project_id,
-                formsInput={"KafkaSchemaForm": {"smithyModel": smithy, "required": False}},
+                formsInput={
+                    FORM_TYPE_NAME: {
+                        "typeIdentifier": FORM_TYPE_NAME,
+                        "typeRevision": form_revision,
+                        "required": False,
+                    },
+                },
             )
         except Exception as exc:
-            # ConflictException → another push won the race; safe to proceed.
-            if "ConflictException" not in repr(type(exc).__name__):
+            err_name = type(exc).__name__
+            if "ConflictException" in err_name:
+                # Another push won the race; safe to proceed.
+                pass
+            elif "AccessDeniedException" in err_name:
+                raise _AssetBootstrapSkippedError(
+                    "your IAM lacks datazone:CreateAssetType "
+                    f"(needed once to register the {ASSET_TYPE_NAME} type)"
+                ) from exc
+            else:
                 raise
         return ASSET_TYPE_NAME
+
+    def _ensure_form_type(self) -> str:
+        """Get-or-create the form type. Returns its revision string."""
+        try:
+            existing = self.client.get_form_type(
+                domainIdentifier=self._domain_id, formTypeIdentifier=FORM_TYPE_NAME
+            )
+            return existing.get("revision", "1")
+        except Exception as exc:
+            err_name = type(exc).__name__
+            if "ResourceNotFoundException" not in err_name and "not found" not in str(exc).lower():
+                raise
+
+        # One Smithy structure: JSON schema string + cluster + env IDs (all
+        # @amazon.datazone#searchable so the DataZone search picks them up).
+        smithy = (
+            '$version: "2"\n'
+            "namespace lineage_bridge\n\n"
+            "structure " + FORM_TYPE_NAME + " {\n"
+            "    @amazon.datazone#searchable\n"
+            "    fieldsJson: String\n"
+            "    @amazon.datazone#searchable\n"
+            "    clusterId: String\n"
+            "    environmentId: String\n"
+            "}\n"
+        )
+        try:
+            r = self.client.create_form_type(
+                domainIdentifier=self._domain_id,
+                name=FORM_TYPE_NAME,
+                model={"smithy": smithy},
+                owningProjectIdentifier=self._project_id,
+                status="ENABLED",
+                description="Schema fields from Confluent Schema Registry",
+            )
+            return r.get("revision", "1")
+        except Exception as exc:
+            err_name = type(exc).__name__
+            if "AccessDeniedException" in err_name:
+                raise _AssetBootstrapSkippedError(
+                    "your IAM lacks datazone:CreateFormType "
+                    f"(needed once to define the {FORM_TYPE_NAME} schema)"
+                ) from exc
+            raise
 
     # ── per-topic upsert ────────────────────────────────────────────────
 
@@ -165,8 +246,8 @@ class DataZoneAssetRegistrar:
         description = self._build_description(topic, fields)
         forms_input = [
             {
-                "formName": "KafkaSchemaForm",
-                "typeIdentifier": "KafkaSchemaForm",
+                "formName": FORM_TYPE_NAME,
+                "typeIdentifier": FORM_TYPE_NAME,
                 "content": json.dumps(
                     {
                         "fieldsJson": fields_json,
