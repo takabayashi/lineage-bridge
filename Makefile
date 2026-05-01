@@ -95,7 +95,7 @@ demo-down: ## (legacy) Tear down demo — same as demo-uc-down
 # ── Documentation ──────────────────────────────────────────────────────────
 
 docs-serve: ## Serve docs locally with live reload
-	uv run mkdocs serve
+	uv run mkdocs serve --dev-addr localhost:8001
 
 docs-build: ## Build static docs site
 	uv run mkdocs build --strict
