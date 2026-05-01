@@ -146,23 +146,26 @@ class GlueCatalogProvider:
             except client.exceptions.AccessDeniedException:
                 logger.warning("Glue access denied for %s.%s — skipping", database, table_name)
                 return
-            except Exception:
+            except Exception as exc:
                 if attempt < _MAX_RETRIES - 1:
                     delay = _BACKOFF_BASE * (2**attempt)
                     logger.debug(
-                        "Glue API error for %s.%s (attempt %d) — retrying in %.1fs",
+                        "Glue API error for %s.%s (attempt %d): %s — retrying in %.1fs",
                         database,
                         table_name,
                         attempt + 1,
+                        exc,
                         delay,
                     )
                     await asyncio.sleep(delay)
                 else:
                     logger.warning(
-                        "Glue enrichment failed for %s.%s after %d attempts",
+                        "Glue enrichment failed for %s.%s after %d attempts: %s",
                         database,
                         table_name,
                         _MAX_RETRIES,
+                        exc,
+                        exc_info=True,
                     )
 
     async def push_lineage(

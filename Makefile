@@ -28,6 +28,30 @@ ui: ## Start the Streamlit UI (auto-provisions Cloud API key if missing)
 test: ## Run tests
 	uv run pytest tests/ -v
 
+test-integration-uc: ## Run UC demo integration tests (requires provisioned UC demo)
+	bash scripts/integration-test-uc.sh
+
+test-integration-uc-skip-docker: ## Run UC integration tests (skip Docker build)
+	bash scripts/integration-test-uc.sh --skip-docker
+
+test-integration-glue: ## Run AWS Glue demo integration tests (requires provisioned Glue demo)
+	bash scripts/integration-test-glue.sh
+
+test-integration-glue-skip-docker: ## Run Glue integration tests (skip Docker build)
+	bash scripts/integration-test-glue.sh --skip-docker
+
+test-integration-bigquery: ## Run BigQuery demo integration tests (requires provisioned BigQuery demo)
+	bash scripts/integration-test-bigquery.sh
+
+test-integration-bigquery-skip-docker: ## Run BigQuery integration tests (skip Docker build)
+	bash scripts/integration-test-bigquery.sh --skip-docker
+
+test-integration-all: ## Run all integration tests (UC, Glue, BigQuery)
+	@echo "Running all integration tests..."
+	@bash scripts/integration-test-uc.sh --skip-docker || true
+	@bash scripts/integration-test-glue.sh --skip-docker || true
+	@bash scripts/integration-test-bigquery.sh --skip-docker || true
+
 lint: ## Run linter
 	uv run ruff check .
 

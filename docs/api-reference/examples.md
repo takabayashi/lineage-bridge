@@ -801,16 +801,22 @@ Start an async lineage extraction from Confluent Cloud. This pulls topics, conne
 
 **When you'd use this:** You want to refresh the lineage graph on-demand (like after deploying new connectors), or you're building an automated pipeline that runs every hour.
 
+!!! tip "Auto-Discovery"
+    If you don't specify `environment_ids`, the API automatically discovers and extracts from **all** Confluent Cloud environments your credentials have access to!
+
 === "cURL"
     ```bash
-    # Extract all environments
+    # Extract ALL environments (auto-discovery)
     curl -X POST http://localhost:8000/api/v1/tasks/extract
     # Response: {"task_id":"abc-123","status":"pending"}
     
-    # Extract specific environments
+    # Extract specific environments (recommended for large orgs)
     curl -X POST http://localhost:8000/api/v1/tasks/extract \
       -H "Content-Type: application/json" \
-      -d '["env-abc", "env-xyz"]'
+      -d '{"environment_ids": ["env-abc123", "env-xyz789"]}'
+    
+    # Via query parameters
+    curl -X POST "http://localhost:8000/api/v1/tasks/extract?environment_ids=env-abc123&environment_ids=env-xyz789"
     ```
 
 === "Python (httpx)"
@@ -819,13 +825,16 @@ Start an async lineage extraction from Confluent Cloud. This pulls topics, conne
     
     client = httpx.Client(base_url="http://localhost:8000/api/v1")
     
-    # Extract all environments
+    # Extract all environments (auto-discovery)
     response = client.post("/tasks/extract")
     task_id = response.json()["task_id"]
     print(f"Started extraction: {task_id}")
     
     # Extract specific environments
-    response = client.post("/tasks/extract", json=["env-abc", "env-xyz"])
+    response = client.post(
+        "/tasks/extract",
+        json={"environment_ids": ["env-abc123", "env-xyz789"]}
+    )
     task_id = response.json()["task_id"]
     ```
 
@@ -833,7 +842,7 @@ Start an async lineage extraction from Confluent Cloud. This pulls topics, conne
     ```python
     import requests
     
-    # Extract all environments
+    # Extract all environments (auto-discovery)
     response = requests.post("http://localhost:8000/api/v1/tasks/extract")
     task_id = response.json()["task_id"]
     print(f"Started extraction: {task_id}")
@@ -841,12 +850,14 @@ Start an async lineage extraction from Confluent Cloud. This pulls topics, conne
     # Extract specific environments
     response = requests.post(
         "http://localhost:8000/api/v1/tasks/extract",
-        json=["env-abc", "env-xyz"]
+        json={"environment_ids": ["env-abc123", "env-xyz789"]}
     )
     task_id = response.json()["task_id"]
     ```
 
-**Response:** You get a `task_id` immediately. The extraction runs in the background (typically 30-60 seconds). Poll the task endpoint to check status.
+**Response:** You get a `task_id` immediately. The extraction runs in the background (typically 30-60 seconds for a single environment). Poll the task endpoint to check status.
+
+**Note:** Enrichment is enabled by default, so UC/Glue/Google catalog metadata will be added automatically if you have those credentials configured.
 
 ### Trigger Enrichment
 

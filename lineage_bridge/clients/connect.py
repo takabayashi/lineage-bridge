@@ -189,7 +189,10 @@ class ConnectClient(ConfluentClient):
                     qualified_name=ext_name,
                     display_name=ext_name,
                     environment_id=self.environment_id,
-                    attributes={"inferred_from": cname},
+                    attributes={
+                        "inferred_from": cname,
+                        "connector_class": connector_class,
+                    },
                 )
             )
 

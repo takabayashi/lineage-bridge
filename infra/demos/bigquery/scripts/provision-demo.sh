@@ -187,6 +187,18 @@ terraform output -raw demo_env_file 2>/dev/null \
 
 echo "  Written to $ENV_FILE"
 
+# Persist this demo's credentials into the local encrypted cache so the UI
+# retains keys for prior demos when multiple are provisioned in sequence.
+CACHE_ENV_ID=$(terraform output -raw confluent_environment_id 2>/dev/null || echo "")
+CACHE_CLUSTER_ID=$(terraform output -raw confluent_cluster_id 2>/dev/null || echo "")
+if [[ -n "$CACHE_ENV_ID" && -n "$CACHE_CLUSTER_ID" ]]; then
+  ( cd "$PROJECT_DIR" && uv run python scripts/cache_demo_credentials.py \
+      --env-file "$ENV_FILE" \
+      --env-id "$CACHE_ENV_ID" \
+      --cluster-id "$CACHE_CLUSTER_ID" \
+      --demo-name bigquery ) || echo "  Warning: failed to update local credential cache"
+fi
+
 echo ""
 echo "══════════════════════════════════════════════════════════════════"
 echo "  BigQuery Demo provisioned successfully!"

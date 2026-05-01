@@ -125,7 +125,14 @@ The sidebar is organized into sections:
 
 ```
 Connected — 3 environment(s)
+Credentials: HCG5... (prefix)
+[Disconnect]
 ```
+
+Click **Disconnect** to clear credentials and reset the connection. This is useful when:
+- Switching between different Confluent Cloud accounts
+- Troubleshooting authentication issues
+- Testing with different credential sets
 
 **Status when disconnected:**
 
@@ -135,7 +142,7 @@ LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_KEY=...
 LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_SECRET=...
 ```
 
-Expand to view masked credentials or reconnect.
+Expand to view masked credentials or reconnect. The UI shows the first 8 characters of your API key for verification.
 
 #### Infrastructure
 

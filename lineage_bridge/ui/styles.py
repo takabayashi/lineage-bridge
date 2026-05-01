@@ -447,6 +447,23 @@ def build_confluent_cloud_url(node: Any) -> str | None:
     return None
 
 
+def _build_external_dataset_url(node: Any) -> str | None:
+    """Build a deep link for an EXTERNAL_DATASET node, when its source is recognised."""
+    attrs = getattr(node, "attributes", {}) or {}
+    connector_class = (attrs.get("connector_class") or "").lower()
+    inferred_from = (attrs.get("inferred_from") or "").lower()
+    qname = getattr(node, "qualified_name", "") or ""
+
+    is_bigquery = "bigquery" in connector_class or "bigquery" in inferred_from
+    if is_bigquery and "." in qname and "://" not in qname:
+        project, dataset = qname.split(".", 1)
+        return (
+            "https://console.cloud.google.com/bigquery"
+            f"?project={project}&p={project}&d={dataset}&page=dataset"
+        )
+    return None
+
+
 def build_node_url(node: Any) -> str | None:
     """Build a URL for any node type — dispatches to catalog providers for catalog nodes."""
     from lineage_bridge.catalogs.aws_glue import GlueCatalogProvider
@@ -460,6 +477,8 @@ def build_node_url(node: Any) -> str | None:
         return GlueCatalogProvider().build_url(node)
     if node.node_type == NodeType.GOOGLE_TABLE:
         return GoogleLineageProvider().build_url(node)
+    if node.node_type == NodeType.EXTERNAL_DATASET:
+        return _build_external_dataset_url(node)
     return build_confluent_cloud_url(node)
 
 

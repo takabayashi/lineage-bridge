@@ -53,6 +53,7 @@ output "demo_env_file" {
     LINEAGE_BRIDGE_SCHEMA_REGISTRY_API_SECRET=${module.core.schema_registry_api_key_secret}
     LINEAGE_BRIDGE_FLINK_API_KEY=${module.core.flink_api_key_id}
     LINEAGE_BRIDGE_FLINK_API_SECRET=${module.core.flink_api_key_secret}
+    LINEAGE_BRIDGE_GCP_PROJECT_ID=${var.gcp_project_id}
   EOT
   sensitive   = true
 }
