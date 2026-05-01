@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI
 
 from lineage_bridge.api.auth import configure_auth
@@ -12,6 +14,8 @@ from lineage_bridge.api.state import GraphStore
 from lineage_bridge.api.task_store import TaskStore
 from lineage_bridge.openlineage.store import EventStore
 from lineage_bridge.storage import Repositories, make_repositories
+
+logger = logging.getLogger(__name__)
 
 
 def create_app(
@@ -44,24 +48,7 @@ def create_app(
     configure_auth(api_key)
 
     if repositories is None:
-        # Best-effort: if Settings can't load (missing required Confluent
-        # creds in test environments), fall back to memory-only.
-        try:
-            from lineage_bridge.config.settings import Settings
-
-            repositories = make_repositories(Settings())  # type: ignore[call-arg]
-        except Exception:
-            from lineage_bridge.storage.backends.memory import (
-                MemoryEventRepository,
-                MemoryGraphRepository,
-                MemoryTaskRepository,
-            )
-
-            repositories = Repositories(
-                graphs=MemoryGraphRepository(),
-                tasks=MemoryTaskRepository(),
-                events=MemoryEventRepository(),
-            )
+        repositories = _build_repositories_or_fallback()
 
     app.state.graph_store = GraphStore(repositories.graphs)
     app.state.event_store = EventStore(repositories.events)
@@ -77,3 +64,41 @@ def create_app(
     app.include_router(push.router, prefix="/api/v1/push", tags=["push"])
 
     return app
+
+
+def _memory_bundle() -> Repositories:
+    from lineage_bridge.storage.backends.memory import (
+        MemoryEventRepository,
+        MemoryGraphRepository,
+        MemoryTaskRepository,
+    )
+
+    return Repositories(
+        graphs=MemoryGraphRepository(),
+        tasks=MemoryTaskRepository(),
+        events=MemoryEventRepository(),
+    )
+
+
+def _build_repositories_or_fallback() -> Repositories:
+    """Build the storage bundle from Settings; fall back to memory with a logged warning.
+
+    Two failure modes get the same fallback so the API still boots:
+      - Settings can't load (missing Confluent creds in test envs)
+      - storage backend misconfigured (`LINEAGE_BRIDGE_STORAGE__BACKEND=fyle`)
+
+    Each fallback is logged at WARNING so the operator can see in the API
+    logs that they're running on a memory store when they expected file or
+    sqlite. This was previously silent — see the Phase 1C review notes.
+    """
+    try:
+        from lineage_bridge.config.settings import Settings
+
+        return make_repositories(Settings())  # type: ignore[call-arg]
+    except Exception as exc:
+        logger.warning(
+            "Storage configuration failed (%s); falling back to in-memory store. "
+            "Graphs / tasks / events will not survive process restart.",
+            exc,
+        )
+        return _memory_bundle()

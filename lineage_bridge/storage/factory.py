@@ -40,10 +40,10 @@ class Repositories:
 def make_repositories(settings: Settings) -> Repositories:
     """Build a `Repositories` bundle from `settings.storage.{backend, path}`.
 
-    Falls back to memory if the backend is unrecognised — defensive choice
-    because storage misconfiguration shouldn't take the API down on startup
-    (the API would be unusable anyway, but at least it boots so its
-    `/api/v1/health` could be hit for debugging).
+    Raises `ValueError` (unknown backend) or `NotImplementedError` (sqlite,
+    pre-Phase-2F) on misconfiguration — fail-loud is the right default for
+    storage. `create_app()` decides whether to surface the failure or fall
+    back to memory.
     """
     storage = settings.storage
     backend = storage.backend.lower()

@@ -42,12 +42,17 @@ logger = logging.getLogger(__name__)
 
 
 def _atomic_write_json(path: Path, payload: Any) -> None:
-    """Write *payload* to *path* atomically (tempfile + rename)."""
+    """Write *payload* to *path* atomically (tempfile + rename).
+
+    Callers must hand in a fully JSON-safe payload; we deliberately don't pass
+    a `default=` to `json.dump` so a stray non-serialisable object surfaces as
+    a TypeError rather than silently coercing to its `str()` form.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_path = tempfile.mkstemp(prefix=".tmp-", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(payload, f, default=str)
+            json.dump(payload, f)
         os.replace(tmp_path, path)
     except Exception:
         # Best-effort cleanup of the tempfile if rename never happened
@@ -120,19 +125,22 @@ class FileGraphRepository:
         return graph, meta
 
     def list_meta(self) -> list[GraphMeta]:
-        out: list[GraphMeta] = []
+        return [meta for _, meta in self.list_with_graphs()]
+
+    def list_with_graphs(self) -> list[tuple[LineageGraph, GraphMeta]]:
+        out: list[tuple[LineageGraph, GraphMeta]] = []
         for path in self._root.glob("*.json"):
             data = _read_json(path)
             if data is None:
                 continue
             m = data["meta"]
-            out.append(
-                GraphMeta(
-                    graph_id=m["graph_id"],
-                    created_at=datetime.fromisoformat(m["created_at"]),
-                    last_modified=datetime.fromisoformat(m["last_modified"]),
-                )
+            meta = GraphMeta(
+                graph_id=m["graph_id"],
+                created_at=datetime.fromisoformat(m["created_at"]),
+                last_modified=datetime.fromisoformat(m["last_modified"]),
             )
+            graph = LineageGraph.from_dict(data["graph"])
+            out.append((graph, meta))
         return out
 
     def delete(self, graph_id: str) -> bool:

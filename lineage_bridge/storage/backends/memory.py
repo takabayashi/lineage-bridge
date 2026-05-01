@@ -37,6 +37,9 @@ class MemoryGraphRepository:
     def list_meta(self) -> list[GraphMeta]:
         return list(self._meta.values())
 
+    def list_with_graphs(self) -> list[tuple[LineageGraph, GraphMeta]]:
+        return [(self._graphs[gid], self._meta[gid]) for gid in self._graphs]
+
     def delete(self, graph_id: str) -> bool:
         if graph_id in self._graphs:
             del self._graphs[graph_id]

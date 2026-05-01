@@ -92,6 +92,22 @@ def test_graph_save_overwrites_existing(graph_repo, graph_factory):
     assert g.node_count == 5
 
 
+def test_graph_list_with_graphs_returns_pairs(graph_repo, graph_factory):
+    """list_with_graphs returns every (graph, meta) pair so list_all is one pass."""
+    graph_repo.save("g1", graph_factory(node_count=2), GraphMeta.now("g1"))
+    graph_repo.save("g2", graph_factory(node_count=4), GraphMeta.now("g2"))
+
+    pairs = graph_repo.list_with_graphs()
+
+    by_id = {meta.graph_id: graph for graph, meta in pairs}
+    assert by_id["g1"].node_count == 2
+    assert by_id["g2"].node_count == 4
+
+
+def test_graph_list_with_graphs_empty(graph_repo):
+    assert graph_repo.list_with_graphs() == []
+
+
 # ── TaskRepository ──────────────────────────────────────────────────────
 
 

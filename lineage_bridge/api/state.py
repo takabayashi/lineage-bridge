@@ -10,6 +10,7 @@ delegated to whichever backend the factory builds (see ADR-022 + Phase 1C).
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 from pydantic import BaseModel
 
@@ -26,10 +27,8 @@ class GraphEntry(BaseModel):
     """
 
     graph_id: str
-    created_at: object  # datetime; loose type to avoid Pydantic v2 coercion fights
-    last_modified: object
-
-    model_config = {"arbitrary_types_allowed": True}
+    created_at: datetime
+    last_modified: datetime
 
 
 class GraphSummary(BaseModel):
@@ -39,10 +38,8 @@ class GraphSummary(BaseModel):
     node_count: int
     edge_count: int
     pipeline_count: int
-    created_at: object
-    last_modified: object
-
-    model_config = {"arbitrary_types_allowed": True}
+    created_at: datetime
+    last_modified: datetime
 
 
 class GraphStore:
@@ -80,23 +77,17 @@ class GraphStore:
         self._repo.touch(graph_id)
 
     def list_all(self) -> list[GraphSummary]:
-        result: list[GraphSummary] = []
-        for meta in self._repo.list_meta():
-            loaded = self._repo.get(meta.graph_id)
-            if loaded is None:
-                continue
-            graph, _ = loaded
-            result.append(
-                GraphSummary(
-                    graph_id=meta.graph_id,
-                    node_count=graph.node_count,
-                    edge_count=graph.edge_count,
-                    pipeline_count=graph.pipeline_count,
-                    created_at=meta.created_at,
-                    last_modified=meta.last_modified,
-                )
+        return [
+            GraphSummary(
+                graph_id=meta.graph_id,
+                node_count=graph.node_count,
+                edge_count=graph.edge_count,
+                pipeline_count=graph.pipeline_count,
+                created_at=meta.created_at,
+                last_modified=meta.last_modified,
             )
-        return result
+            for graph, meta in self._repo.list_with_graphs()
+        ]
 
     @property
     def count(self) -> int:
