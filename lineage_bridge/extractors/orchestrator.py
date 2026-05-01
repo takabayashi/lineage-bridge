@@ -14,8 +14,8 @@ Per-environment phase ordering (driven by `PhaseRunner`):
   4. Tableflow            — bridge to UC/Glue (depends on topic nodes).
 
 Post-extraction (in `run_enrichment`):
-  4b. CatalogEnrichmentPhase — providers enrich their own nodes.
-  5.  MetricsPhase           — live throughput data (optional).
+  4b. run_catalog_enrichment — providers enrich their own nodes.
+  5.  run_metrics_enrichment — live throughput data (optional).
 
 Push functions (`run_lineage_push`, `run_glue_push`, `run_google_push`,
 `run_datazone_push`) live here for now; Phase 1A will collapse them into a
@@ -35,20 +35,18 @@ from lineage_bridge.config.settings import Settings
 from lineage_bridge.extractors.context import ExtractionContext, ProgressCallback
 from lineage_bridge.extractors.phase import PhaseRunner, merge_into, safe_extract
 from lineage_bridge.extractors.phases import (
-    CatalogEnrichmentPhase,
     KafkaAdminPhase,
-    MetricsPhase,
     ProcessingPhase,
     SchemaEnrichmentPhase,
     TableflowPhase,
+    run_catalog_enrichment,
+    run_metrics_enrichment,
 )
 from lineage_bridge.models.graph import LineageGraph, PushResult
 
 logger = logging.getLogger(__name__)
 
 
-# Re-exported for backward compatibility — callers (and tests) historically
-# imported these from this module.
 __all__ = [
     "ProgressCallback",
     "main",
@@ -61,10 +59,6 @@ __all__ = [
     "run_lineage_push",
     "safe_extract",
 ]
-
-# Legacy aliases — older code expected the underscore-prefixed names.
-_merge_into = merge_into
-_safe_extract = safe_extract
 
 
 def _make_progress(on_progress: ProgressCallback = None):
@@ -98,10 +92,10 @@ async def run_enrichment(
     _progress = _make_progress(on_progress)
 
     if enable_catalog:
-        await CatalogEnrichmentPhase().run(settings, graph, on_progress=_progress)
+        await run_catalog_enrichment(settings, graph, on_progress=_progress)
 
     if enable_metrics:
-        await MetricsPhase().run(
+        await run_metrics_enrichment(
             settings,
             graph,
             lookback_hours=metrics_lookback_hours,

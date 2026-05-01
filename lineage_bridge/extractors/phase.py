@@ -18,13 +18,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
-from lineage_bridge.models.graph import LineageEdge, LineageNode
+from lineage_bridge.models.graph import LineageEdge, LineageGraph, LineageNode
 
 if TYPE_CHECKING:
     from lineage_bridge.extractors.context import ExtractionContext
+
+ProgressFn = Callable[[str, str], None]
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +67,9 @@ _EXTRACTOR_TIMEOUT = 120  # seconds — per-extractor ceiling
 
 
 async def safe_extract(
-    label: str, coro: Any, on_progress: Any = None
+    label: str,
+    coro: Coroutine[Any, Any, tuple[list[LineageNode], list[LineageEdge]]],
+    on_progress: ProgressFn | None = None,
 ) -> tuple[list[LineageNode], list[LineageEdge]]:
     """Run an extractor coroutine, returning empty on failure or timeout.
 
@@ -107,7 +112,7 @@ async def safe_extract(
 
 
 def merge_into(
-    graph: Any,
+    graph: LineageGraph,
     nodes: list[LineageNode],
     edges: list[LineageEdge],
 ) -> None:

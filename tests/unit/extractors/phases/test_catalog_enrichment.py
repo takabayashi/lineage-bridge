@@ -1,12 +1,12 @@
 # Copyright 2026 Daniel Takabayashi
 # Licensed under the Apache License, Version 2.0
-"""Unit tests for CatalogEnrichmentPhase (Phase 4b)."""
+"""Unit tests for run_catalog_enrichment (Phase 4b)."""
 
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
-from lineage_bridge.extractors.phases.catalog_enrichment import CatalogEnrichmentPhase
+from lineage_bridge.extractors.phases.catalog_enrichment import run_catalog_enrichment
 from lineage_bridge.models.graph import LineageGraph, LineageNode, NodeType, SystemType
 from tests.unit.extractors.conftest import make_settings
 
@@ -29,7 +29,7 @@ async def test_catalog_enrichment_no_active_providers_is_a_noop(no_sleep):
     settings = make_settings()
     graph = LineageGraph()
 
-    count = await CatalogEnrichmentPhase().run(settings, graph)
+    count = await run_catalog_enrichment(settings, graph)
 
     assert count == 0
 
@@ -51,7 +51,7 @@ async def test_catalog_enrichment_constructs_uc_provider_with_credentials(no_sle
         mock_provider.enrich = AsyncMock()
         MockUC.return_value = mock_provider
 
-        await CatalogEnrichmentPhase().run(settings, graph)
+        await run_catalog_enrichment(settings, graph)
 
     MockUC.assert_called_once_with(
         workspace_url="https://myworkspace.databricks.com",
@@ -78,7 +78,7 @@ async def test_catalog_enrichment_provider_failure_is_swallowed(no_sleep):
         MockUC.return_value = mock_provider
 
         # Should not raise
-        count = await CatalogEnrichmentPhase().run(settings, graph)
+        count = await run_catalog_enrichment(settings, graph)
 
     mock_provider.enrich.assert_awaited_once()
     assert count == 1  # provider was attempted
@@ -103,6 +103,6 @@ async def test_catalog_enrichment_emits_progress_messages(
         mock_provider.enrich = AsyncMock()
         MockUC.return_value = mock_provider
 
-        await CatalogEnrichmentPhase().run(settings, graph, on_progress=progress_callback)
+        await run_catalog_enrichment(settings, graph, on_progress=progress_callback)
 
     assert any("catalog provider" in m[1] for m in progress_log)

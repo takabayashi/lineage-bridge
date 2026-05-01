@@ -7,6 +7,12 @@ sets are disjoint — Connect emits connector + external dataset nodes, ksqlDB
 emits query nodes, Flink emits job nodes; none of them touch each other's
 node IDs. Topic nodes are read-only (added by Phase 1).
 
+**Merge order:** results from all parallel extractors are accumulated, then
+returned as a single PhaseResult. PhaseRunner adds every node before any edge,
+so cross-extractor edges (e.g. a Flink job referencing a connector node Connect
+emitted) resolve cleanly. The original sequential per-extractor merge dropped
+those edges as dangling — the new behaviour is strictly more permissive.
+
 Flink needs an organization ID, which the cluster payload usually carries but
 sometimes doesn't (older API versions, regional brownouts). This module walks
 three locations in the cluster spec, then falls back to fetching the env

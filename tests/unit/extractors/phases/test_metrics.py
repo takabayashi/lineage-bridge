@@ -1,12 +1,12 @@
 # Copyright 2026 Daniel Takabayashi
 # Licensed under the Apache License, Version 2.0
-"""Unit tests for MetricsPhase (Phase 5)."""
+"""Unit tests for run_metrics_enrichment (Phase 5)."""
 
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
-from lineage_bridge.extractors.phases.metrics import MetricsPhase
+from lineage_bridge.extractors.phases.metrics import run_metrics_enrichment
 from lineage_bridge.models.graph import LineageGraph, LineageNode, NodeType, SystemType
 from tests.unit.extractors.conftest import make_settings
 
@@ -37,7 +37,7 @@ async def test_metrics_phase_calls_enrich_per_cluster(no_sleep):
         metrics_inst.__aexit__ = AsyncMock(return_value=False)
         MockMetrics.return_value = metrics_inst
 
-        total = await MetricsPhase().run(settings, graph)
+        total = await run_metrics_enrichment(settings, graph)
 
     assert metrics_inst.enrich.await_count == 2
     assert total == 6  # 3 per cluster x 2 clusters
@@ -57,7 +57,7 @@ async def test_metrics_phase_swallows_per_cluster_failures(no_sleep):
         MockMetrics.return_value = metrics_inst
 
         # Should not raise
-        total = await MetricsPhase().run(settings, graph)
+        total = await run_metrics_enrichment(settings, graph)
 
     assert total == 0
 
@@ -83,6 +83,6 @@ async def test_metrics_phase_skips_nodes_without_cluster_id(no_sleep):
         metrics_inst.__aexit__ = AsyncMock(return_value=False)
         MockMetrics.return_value = metrics_inst
 
-        await MetricsPhase().run(settings, graph)
+        await run_metrics_enrichment(settings, graph)
 
     metrics_inst.enrich.assert_not_called()

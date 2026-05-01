@@ -6,7 +6,9 @@ SchemaRegistry adds SCHEMA nodes + HAS_SCHEMA edges. StreamCatalog mutates
 existing topic nodes in place with tags and business metadata, and returns
 no new nodes — its `enrich()` method writes directly to `ctx.graph`.
 
-Both run in parallel; both share the env's discovered SR endpoint.
+Both run in parallel; both share the env's discovered SR endpoint. As in
+Phase 2, results are accumulated and merged in a single nodes-then-edges
+pass by PhaseRunner.
 """
 
 from __future__ import annotations

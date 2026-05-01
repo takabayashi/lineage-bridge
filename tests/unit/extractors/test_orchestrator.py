@@ -338,7 +338,7 @@ async def test_extract_environment_runs_phases_in_order(no_sleep):
 
 
 async def test_run_enrichment_dispatches_metrics_phase(no_sleep):
-    """run_enrichment with enable_metrics=True calls MetricsPhase via Confluent API."""
+    """run_enrichment with enable_metrics=True calls run_metrics_enrichment via Confluent API."""
     settings = make_settings()
     graph = LineageGraph()
     graph.add_node(
