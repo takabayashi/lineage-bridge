@@ -8,7 +8,7 @@ from fastapi import FastAPI
 
 from lineage_bridge.api.auth import configure_auth
 from lineage_bridge.api.openlineage.store import EventStore
-from lineage_bridge.api.routers import datasets, graphs, jobs, lineage, meta, tasks
+from lineage_bridge.api.routers import datasets, graphs, jobs, lineage, meta, push, tasks
 from lineage_bridge.api.state import GraphStore
 from lineage_bridge.api.task_store import TaskStore
 
@@ -47,5 +47,6 @@ def create_app(*, api_key: str | None = None) -> FastAPI:
     app.include_router(jobs.router, prefix="/api/v1/lineage", tags=["jobs"])
     app.include_router(graphs.router, prefix="/api/v1/graphs", tags=["graphs"])
     app.include_router(tasks.router, prefix="/api/v1/tasks", tags=["tasks"])
+    app.include_router(push.router, prefix="/api/v1/push", tags=["push"])
 
     return app
