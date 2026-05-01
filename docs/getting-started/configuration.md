@@ -1,117 +1,117 @@
 # Configuration
 
-LineageBridge uses environment variables for credential management. This guide covers all configuration options and best practices.
+Let's get your credentials set up. LineageBridge uses environment variables for all the sensitive stuff—API keys, tokens, secrets. This keeps your credentials out of code and version control.
 
-## Overview
+## How Configuration Works
 
-Configuration follows these principles:
+We keep it simple with a few principles:
 
-- **Credentials only** - Only API keys and secrets go in config (no runtime scope)
-- **Environment variables** - All settings use the `LINEAGE_BRIDGE_` prefix
-- **.env file support** - Store credentials in a `.env` file (never commit this!)
-- **Credential hierarchy** - Falls back from specific to general credentials
+- **Credentials only** - We only store API keys and secrets, not runtime settings
+- **Environment variables** - Everything uses the `LINEAGE_BRIDGE_` prefix
+- **.env file support** - Drop your credentials in a `.env` file and we'll load them automatically
+- **Smart fallbacks** - If you don't provide service-specific keys, we fall back to your cloud-level credentials
 
-## Quick Setup
+## Quick Setup (Start Here!)
 
-### Step 1: Create .env File
+### Step 1: Create Your .env File
 
-Copy the example configuration:
+Copy our example to get started:
 
 ```bash
 cp .env.example .env
 ```
 
-### Step 2: Edit .env File
+### Step 2: Add Your Confluent Cloud Credentials
 
-Open `.env` in your editor and add your Confluent Cloud credentials:
+Open `.env` in your favorite editor and add your credentials:
 
 ```bash
-# Minimum required configuration
+# This is all you need to get started
 LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_KEY=your-cloud-api-key
 LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_SECRET=your-cloud-api-secret
 ```
 
-That's it! LineageBridge will use these cloud-level credentials for all services.
+That's it! LineageBridge will use these cloud-level credentials for everything. You can add more specific credentials later if needed.
 
-!!! warning "Security"
-    Never commit `.env` files to version control. The `.gitignore` file already excludes them.
+!!! warning "Keep Your Secrets Safe"
+    Never commit `.env` files to git. We've already added them to `.gitignore`, but double-check before committing.
 
 ## Confluent Cloud Credentials
 
 ### Cloud-Level API Key (Required)
 
-The cloud-level API key is used to discover environments, clusters, and services. It requires **OrgAdmin** or **EnvironmentAdmin** permissions.
+You need one cloud-level API key to get started. This lets LineageBridge discover your environments, clusters, and services. You'll need **OrgAdmin** or **EnvironmentAdmin** permissions.
 
 ```env
 LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_KEY=ABC123DEF456
 LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_SECRET=xyz789secretABC...
 ```
 
-**How to create:**
+**Here's how to create one:**
 
 1. Log in to [Confluent Cloud](https://confluent.cloud)
-2. Navigate to **Administration → API Keys**
+2. Go to **Administration → API Keys**
 3. Click **+ Add key**
 4. Select **Cloud resource** as the scope
-5. Choose **My account** or create a service account
-6. Save the key and secret immediately (they won't be shown again)
+5. Choose **My account** (or create a service account for production)
+6. **Copy the key and secret immediately**—Confluent won't show them again!
 
 ### Service-Scoped Credentials (Optional)
 
-You can provide dedicated API keys for each Confluent service. If not set, the cloud API key is used as a fallback.
+Want more granular control? You can provide dedicated API keys for each Confluent service. If you don't, we'll just use your cloud API key as a fallback—works great for most cases.
 
-#### Kafka Cluster Access
+=== "Kafka Clusters"
 
-Global Kafka credentials (used for all clusters unless overridden):
+    Global Kafka credentials (applies to all clusters unless you override per-cluster):
 
-```env
-LINEAGE_BRIDGE_KAFKA_API_KEY=kafka-key
-LINEAGE_BRIDGE_KAFKA_API_SECRET=kafka-secret
-```
+    ```env
+    LINEAGE_BRIDGE_KAFKA_API_KEY=kafka-key
+    LINEAGE_BRIDGE_KAFKA_API_SECRET=kafka-secret
+    ```
 
-#### Schema Registry
+=== "Schema Registry"
 
-```env
-LINEAGE_BRIDGE_SCHEMA_REGISTRY_ENDPOINT=https://psrc-xxxxx.us-east-1.aws.confluent.cloud
-LINEAGE_BRIDGE_SCHEMA_REGISTRY_API_KEY=sr-key
-LINEAGE_BRIDGE_SCHEMA_REGISTRY_API_SECRET=sr-secret
-```
+    ```env
+    LINEAGE_BRIDGE_SCHEMA_REGISTRY_ENDPOINT=https://psrc-xxxxx.us-east-1.aws.confluent.cloud
+    LINEAGE_BRIDGE_SCHEMA_REGISTRY_API_KEY=sr-key
+    LINEAGE_BRIDGE_SCHEMA_REGISTRY_API_SECRET=sr-secret
+    ```
 
-!!! tip "Auto-Discovery"
-    The Schema Registry endpoint is auto-discovered if not provided. Only set this if you have multiple Schema Registry clusters.
+    !!! tip "Auto-Discovery"
+        We auto-discover the Schema Registry endpoint, so you usually don't need to set this. Only needed if you have multiple Schema Registry clusters.
 
-#### ksqlDB
+=== "ksqlDB"
 
-```env
-LINEAGE_BRIDGE_KSQLDB_API_KEY=ksql-key
-LINEAGE_BRIDGE_KSQLDB_API_SECRET=ksql-secret
-```
+    ```env
+    LINEAGE_BRIDGE_KSQLDB_API_KEY=ksql-key
+    LINEAGE_BRIDGE_KSQLDB_API_SECRET=ksql-secret
+    ```
 
-The ksqlDB endpoint is auto-discovered from your clusters.
+    We auto-discover ksqlDB endpoints from your clusters.
 
-#### Flink SQL
+=== "Flink SQL"
 
-```env
-LINEAGE_BRIDGE_FLINK_API_KEY=flink-key
-LINEAGE_BRIDGE_FLINK_API_SECRET=flink-secret
-```
+    ```env
+    LINEAGE_BRIDGE_FLINK_API_KEY=flink-key
+    LINEAGE_BRIDGE_FLINK_API_SECRET=flink-secret
+    ```
 
-#### Tableflow
+=== "Tableflow"
 
-```env
-LINEAGE_BRIDGE_TABLEFLOW_API_KEY=tableflow-key
-LINEAGE_BRIDGE_TABLEFLOW_API_SECRET=tableflow-secret
-```
+    ```env
+    LINEAGE_BRIDGE_TABLEFLOW_API_KEY=tableflow-key
+    LINEAGE_BRIDGE_TABLEFLOW_API_SECRET=tableflow-secret
+    ```
 
 ### Per-Cluster Credentials (Advanced)
 
-If each Kafka cluster has its own API key, provide them as a JSON map:
+Got different API keys for each Kafka cluster? No problem. You can provide them as a JSON map:
 
 ```env
 LINEAGE_BRIDGE_CLUSTER_CREDENTIALS={"lkc-abc123":{"api_key":"key1","api_secret":"secret1"},"lkc-def456":{"api_key":"key2","api_secret":"secret2"}}
 ```
 
-**Example formatted for readability:**
+**Here's that same config formatted for readability (don't actually put newlines in your .env):**
 
 ```json
 {
@@ -126,22 +126,31 @@ LINEAGE_BRIDGE_CLUSTER_CREDENTIALS={"lkc-abc123":{"api_key":"key1","api_secret":
 }
 ```
 
-!!! note "UI Alternative"
-    You can also add per-cluster credentials in the Streamlit UI sidebar instead of using this environment variable.
+!!! tip "Easier in the UI"
+    You can also add per-cluster credentials in the Streamlit UI sidebar instead of wrestling with JSON in your .env file.
 
-### Credential Resolution Order
+### How Credential Fallbacks Work
 
-LineageBridge resolves Kafka credentials in this order:
+When LineageBridge needs to talk to a Kafka cluster, it looks for credentials in this order:
 
-1. **Per-cluster credential** - from `CLUSTER_CREDENTIALS` map
+```mermaid
+graph LR
+    A[Per-cluster credential] -->|Not found| B[Global Kafka credential]
+    B -->|Not found| C[Cloud-level credential]
+    C -->|Found!| D[Connect to cluster]
+```
+
+1. **Per-cluster credential** - from the `CLUSTER_CREDENTIALS` JSON map
 2. **Global Kafka credential** - from `KAFKA_API_KEY` / `KAFKA_API_SECRET`
-3. **Cloud-level credential** - from `CONFLUENT_CLOUD_API_KEY` (fallback)
+3. **Cloud-level credential** - from `CONFLUENT_CLOUD_API_KEY` (the ultimate fallback)
 
 ## Data Catalog Credentials
 
+Want to connect lineage to your data catalog? Here's how to set up each one.
+
 ### Databricks Unity Catalog
 
-To enable Databricks UC integration:
+To hook up Databricks UC:
 
 ```env
 LINEAGE_BRIDGE_DATABRICKS_WORKSPACE_URL=https://myworkspace.cloud.databricks.com
@@ -149,32 +158,57 @@ LINEAGE_BRIDGE_DATABRICKS_TOKEN=dapi123456789abcdef
 LINEAGE_BRIDGE_DATABRICKS_WAREHOUSE_ID=abc123def456
 ```
 
-**How to get these:**
+**Where to find these:**
 
-1. **Workspace URL**: Your Databricks workspace URL (e.g., `https://dbc-12345678-abcd.cloud.databricks.com`)
-2. **Token**: Create a personal access token in **User Settings → Developer → Access Tokens**
-3. **Warehouse ID**: Find it in **SQL Warehouses** → select a warehouse → **Connection Details**
+=== "Workspace URL"
+    
+    This is your Databricks workspace URL. It looks like:
+    
+    ```
+    https://dbc-12345678-abcd.cloud.databricks.com
+    ```
+    
+    Just copy it from your browser when you're logged into Databricks.
 
-!!! tip "Service Principal"
-    For production, use a service principal token instead of a personal access token.
+=== "Token"
+    
+    Create a personal access token:
+    
+    1. In Databricks, go to **User Settings** (click your email in top right)
+    2. Click **Developer** → **Access Tokens**
+    3. Click **Generate new token**
+    4. Copy it immediately—you won't see it again!
+
+    !!! warning "Production Tip"
+        For production, use a service principal token instead of your personal token. That way the integration doesn't break when you leave the company.
+
+=== "Warehouse ID"
+    
+    Find your SQL Warehouse ID:
+    
+    1. Go to **SQL Warehouses** in Databricks
+    2. Click on the warehouse you want to use
+    3. Go to **Connection Details**
+    4. Copy the **Server Hostname** - the ID is in there (format: `abc123def456`)
 
 ### AWS Glue
 
-For AWS Glue integration, LineageBridge uses the standard AWS credential chain (environment variables, AWS CLI config, IAM roles):
+For AWS Glue, we use the standard AWS credential chain—same as any other AWS tool:
 
 ```env
 LINEAGE_BRIDGE_AWS_REGION=us-east-1
 ```
 
-**Required AWS permissions:**
+**You'll need these AWS permissions:**
 
 - `glue:GetDatabase`
 - `glue:GetTable`
 - `glue:UpdateTable`
 
-**Setting AWS credentials:**
+**Set up your AWS credentials using one of these methods:**
 
 === "Environment Variables"
+    
     ```env
     AWS_ACCESS_KEY_ID=your-access-key
     AWS_SECRET_ACCESS_KEY=your-secret-key
@@ -182,38 +216,52 @@ LINEAGE_BRIDGE_AWS_REGION=us-east-1
     ```
 
 === "AWS CLI"
+    
+    The easiest way if you have the AWS CLI installed:
+    
     ```bash
     aws configure
     ```
+    
+    Follow the prompts to enter your credentials.
 
 === "IAM Role"
-    Use an IAM instance role or ECS task role (no credentials needed).
+    
+    If you're running on EC2, ECS, or Lambda, use an IAM role. No credentials needed—AWS handles it automatically.
 
 ### Google Data Lineage
 
-For Google Cloud integration:
+For Google Cloud Data Lineage:
 
 ```env
 LINEAGE_BRIDGE_GCP_PROJECT_ID=my-gcp-project
 LINEAGE_BRIDGE_GCP_LOCATION=us-central1
 ```
 
-**Authentication:**
+**Authentication works via Google's Application Default Credentials (ADC):**
 
-Google Cloud uses Application Default Credentials (ADC):
+=== "User Account"
+    
+    Authenticate with your Google account:
+    
+    ```bash
+    gcloud auth application-default login
+    ```
+    
+    Your browser will open and ask you to log in.
 
-```bash
-# Authenticate with your user account
-gcloud auth application-default login
+=== "Service Account"
+    
+    For production, use a service account key:
+    
+    ```bash
+    export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
+    ```
 
-# Or set a service account key
-export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
-```
-
-**Required APIs:**
+**Make sure these APIs are enabled in your GCP project:**
 
 - Data Lineage API
-- BigQuery API (if using BigQuery connectors)
+- BigQuery API (if you're using BigQuery connectors)
 
 ## REST API Configuration
 
@@ -249,57 +297,94 @@ LINEAGE_BRIDGE_LOG_LEVEL=INFO
 
 ## Complete .env Example
 
-Here's a fully-configured example:
+Here's what a fully-configured .env looks like with all the bells and whistles:
 
-```env
-# ============================================================================
-# LineageBridge Configuration
-# ============================================================================
+=== "Minimal (Start Here)"
 
-# ── Confluent Cloud (required) ──────────────────────────────────────────
-LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_KEY=ABC123DEF456
-LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_SECRET=verylongsecretstring123
+    ```env
+    # ============================================================================
+    # LineageBridge - Minimal Configuration
+    # ============================================================================
+    
+    # This is all you need to get started
+    LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_KEY=ABC123DEF456
+    LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_SECRET=verylongsecretstring123
+    
+    # Optional: control log verbosity
+    LINEAGE_BRIDGE_LOG_LEVEL=INFO
+    ```
 
-# ── Confluent Services (optional - falls back to cloud key) ─────────────
-LINEAGE_BRIDGE_KAFKA_API_KEY=kafka-cluster-key
-LINEAGE_BRIDGE_KAFKA_API_SECRET=kafka-cluster-secret
+=== "With Databricks"
 
-LINEAGE_BRIDGE_SCHEMA_REGISTRY_ENDPOINT=https://psrc-xxxxx.us-east-1.aws.confluent.cloud
-LINEAGE_BRIDGE_SCHEMA_REGISTRY_API_KEY=sr-key
-LINEAGE_BRIDGE_SCHEMA_REGISTRY_API_SECRET=sr-secret
+    ```env
+    # ============================================================================
+    # LineageBridge - With Databricks Unity Catalog
+    # ============================================================================
+    
+    # Confluent Cloud (required)
+    LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_KEY=ABC123DEF456
+    LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_SECRET=verylongsecretstring123
+    
+    # Databricks Unity Catalog
+    LINEAGE_BRIDGE_DATABRICKS_WORKSPACE_URL=https://dbc-a1b2c3d4-5678.cloud.databricks.com
+    LINEAGE_BRIDGE_DATABRICKS_TOKEN=dapi123456789abcdef
+    LINEAGE_BRIDGE_DATABRICKS_WAREHOUSE_ID=abc123def456
+    
+    # Logging
+    LINEAGE_BRIDGE_LOG_LEVEL=INFO
+    ```
 
-LINEAGE_BRIDGE_KSQLDB_API_KEY=ksql-key
-LINEAGE_BRIDGE_KSQLDB_API_SECRET=ksql-secret
+=== "Full Configuration"
 
-LINEAGE_BRIDGE_FLINK_API_KEY=flink-key
-LINEAGE_BRIDGE_FLINK_API_SECRET=flink-secret
-
-LINEAGE_BRIDGE_TABLEFLOW_API_KEY=tableflow-key
-LINEAGE_BRIDGE_TABLEFLOW_API_SECRET=tableflow-secret
-
-# ── Per-Cluster Credentials (optional) ──────────────────────────────────
-# LINEAGE_BRIDGE_CLUSTER_CREDENTIALS={"lkc-abc123":{"api_key":"key1","api_secret":"secret1"}}
-
-# ── Databricks Unity Catalog (optional) ─────────────────────────────────
-LINEAGE_BRIDGE_DATABRICKS_WORKSPACE_URL=https://myworkspace.cloud.databricks.com
-LINEAGE_BRIDGE_DATABRICKS_TOKEN=dapi123456789abcdef
-LINEAGE_BRIDGE_DATABRICKS_WAREHOUSE_ID=abc123def456
-
-# ── AWS Glue (optional) ──────────────────────────────────────────────────
-LINEAGE_BRIDGE_AWS_REGION=us-east-1
-
-# ── Google Cloud (optional) ──────────────────────────────────────────────
-LINEAGE_BRIDGE_GCP_PROJECT_ID=my-gcp-project
-LINEAGE_BRIDGE_GCP_LOCATION=us-central1
-
-# ── REST API (optional) ──────────────────────────────────────────────────
-LINEAGE_BRIDGE_API_KEY=my-secure-api-key
-LINEAGE_BRIDGE_API_HOST=0.0.0.0
-LINEAGE_BRIDGE_API_PORT=8000
-
-# ── Logging ──────────────────────────────────────────────────────────────
-LINEAGE_BRIDGE_LOG_LEVEL=INFO
-```
+    ```env
+    # ============================================================================
+    # LineageBridge - Full Configuration
+    # ============================================================================
+    
+    # ── Confluent Cloud (required) ──────────────────────────────────────────
+    LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_KEY=ABC123DEF456
+    LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_SECRET=verylongsecretstring123
+    
+    # ── Confluent Services (optional - falls back to cloud key) ─────────────
+    LINEAGE_BRIDGE_KAFKA_API_KEY=kafka-cluster-key
+    LINEAGE_BRIDGE_KAFKA_API_SECRET=kafka-cluster-secret
+    
+    LINEAGE_BRIDGE_SCHEMA_REGISTRY_ENDPOINT=https://psrc-xxxxx.us-east-1.aws.confluent.cloud
+    LINEAGE_BRIDGE_SCHEMA_REGISTRY_API_KEY=sr-key
+    LINEAGE_BRIDGE_SCHEMA_REGISTRY_API_SECRET=sr-secret
+    
+    LINEAGE_BRIDGE_KSQLDB_API_KEY=ksql-key
+    LINEAGE_BRIDGE_KSQLDB_API_SECRET=ksql-secret
+    
+    LINEAGE_BRIDGE_FLINK_API_KEY=flink-key
+    LINEAGE_BRIDGE_FLINK_API_SECRET=flink-secret
+    
+    LINEAGE_BRIDGE_TABLEFLOW_API_KEY=tableflow-key
+    LINEAGE_BRIDGE_TABLEFLOW_API_SECRET=tableflow-secret
+    
+    # ── Per-Cluster Credentials (optional) ──────────────────────────────────
+    # LINEAGE_BRIDGE_CLUSTER_CREDENTIALS={"lkc-abc123":{"api_key":"key1","api_secret":"secret1"}}
+    
+    # ── Databricks Unity Catalog (optional) ─────────────────────────────────
+    LINEAGE_BRIDGE_DATABRICKS_WORKSPACE_URL=https://myworkspace.cloud.databricks.com
+    LINEAGE_BRIDGE_DATABRICKS_TOKEN=dapi123456789abcdef
+    LINEAGE_BRIDGE_DATABRICKS_WAREHOUSE_ID=abc123def456
+    
+    # ── AWS Glue (optional) ──────────────────────────────────────────────────
+    LINEAGE_BRIDGE_AWS_REGION=us-east-1
+    
+    # ── Google Cloud (optional) ──────────────────────────────────────────────
+    LINEAGE_BRIDGE_GCP_PROJECT_ID=my-gcp-project
+    LINEAGE_BRIDGE_GCP_LOCATION=us-central1
+    
+    # ── REST API (optional) ──────────────────────────────────────────────────
+    LINEAGE_BRIDGE_API_KEY=my-secure-api-key
+    LINEAGE_BRIDGE_API_HOST=0.0.0.0
+    LINEAGE_BRIDGE_API_PORT=8000
+    
+    # ── Logging ──────────────────────────────────────────────────────────────
+    LINEAGE_BRIDGE_LOG_LEVEL=INFO
+    ```
 
 ## Environment-Specific Configuration
 
@@ -333,9 +418,11 @@ load_dotenv(".env.production")
 
 ## Security Best Practices
 
-### 1. Never Commit Credentials
+Here are some tips to keep your credentials safe:
 
-Ensure `.env` is in your `.gitignore`:
+### Never Commit Credentials
+
+Make sure `.env` is in your `.gitignore` (we've already done this, but always verify):
 
 ```gitignore
 .env
@@ -343,34 +430,64 @@ Ensure `.env` is in your `.gitignore`:
 !.env.example
 ```
 
-### 2. Use Least Privilege
+!!! danger "Common Mistake"
+    Don't accidentally commit `.env.production` or `.env.local`—the wildcard `.env.*` protects you.
 
-- Use dedicated API keys with minimal required permissions
-- Avoid using admin keys where read-only access is sufficient
+### Use Least Privilege
 
-### 3. Rotate Credentials
+Give API keys only the permissions they actually need:
 
-Regularly rotate API keys and tokens, especially:
+- Use read-only keys for LineageBridge (we don't modify your data)
+- Don't use OrgAdmin keys if EnvironmentAdmin will do
+- Scope keys to specific environments when possible
 
-- After team member departures
-- If credentials may have been exposed
-- As part of routine security hygiene
+### Rotate Credentials Regularly
 
-### 4. Use Service Accounts
+Change your API keys and tokens periodically, especially:
 
-For production deployments:
+- After someone leaves the team
+- If credentials might have been exposed (chat logs, screenshots, etc.)
+- Every 90 days as good security hygiene
 
-- Use Confluent service accounts instead of user accounts
-- Use Databricks service principals instead of personal access tokens
-- Use AWS IAM roles instead of access keys when possible
+### Use Service Accounts in Production
 
-### 5. Encrypt at Rest
+For production deployments, use machine accounts instead of personal credentials:
 
-For extra security, use encrypted storage:
+=== "Confluent Cloud"
+    
+    Use **service accounts** instead of your personal API keys:
+    
+    1. In Confluent Cloud, go to **Accounts & access**
+    2. Create a service account (e.g., `lineage-bridge-prod`)
+    3. Generate API keys for that service account
+    4. Use those keys in your production `.env`
 
-- AWS Secrets Manager
-- HashiCorp Vault
-- Kubernetes Secrets (with encryption enabled)
+=== "Databricks"
+    
+    Use **service principals** instead of personal access tokens:
+    
+    1. Create a service principal in Databricks
+    2. Grant it the necessary permissions
+    3. Generate a token for the service principal
+    4. Use that token in your `.env`
+
+=== "AWS"
+    
+    Use **IAM roles** instead of access keys when running on AWS infrastructure (EC2, ECS, Lambda):
+    
+    - Attach an IAM role to your compute resource
+    - Grant the role `glue:*` permissions
+    - No credentials needed in `.env`!
+
+### Encrypt Secrets at Rest (Production)
+
+For production deployments, consider using a secrets manager:
+
+- **AWS Secrets Manager** - Great if you're on AWS
+- **HashiCorp Vault** - Works everywhere
+- **Kubernetes Secrets** - If you're running on K8s (enable encryption at rest)
+
+Then load secrets at runtime instead of using `.env` files.
 
 ## Next Steps
 
