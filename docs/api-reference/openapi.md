@@ -1,71 +1,77 @@
 # Interactive API Explorer
 
-Explore the LineageBridge API interactively using the Scalar API reference below.
+!!! success "Best Way to Explore the API"
+    **Start the API server and visit [http://localhost:8000/docs](http://localhost:8000/docs)** for the best interactive experience with Swagger UI!
+    
+    ```bash
+    make api
+    # Then open http://localhost:8000/docs in your browser
+    ```
 
-## Live Documentation
+## Built-in Interactive Documentation
 
-<div id="api-reference"></div>
+LineageBridge includes three built-in API documentation interfaces:
 
-<link
-  id="scalar-api-reference"
-  rel="stylesheet"
-  href="https://cdn.jsdelivr.net/npm/@scalar/api-reference/dist/style.css" />
+### Swagger UI (Recommended)
 
-<script
-  id="api-reference"
-  type="application/json"
-  data-configuration='{"spec": {"url": "https://raw.githubusercontent.com/takabayashi/lineage-bridge/main/docs/openapi.yaml"}}'>
-</script>
+**URL**: [http://localhost:8000/docs](http://localhost:8000/docs)
 
-<script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+Full-featured interactive API explorer with:
 
-## Alternative Tools
+- ✅ Test all endpoints directly in your browser
+- ✅ Auto-populated request bodies with examples
+- ✅ One-click authentication
+- ✅ Response visualization
+- ✅ Download responses as JSON
 
-### Swagger UI
-
-The API server includes a built-in Swagger UI available at:
-
-```
-http://localhost:8000/docs
-```
-
-Start the API server and open this URL in your browser to explore and test endpoints interactively.
-
-### Redoc
-
-Alternative OpenAPI documentation viewer available at:
-
-```
-http://localhost:8000/redoc
-```
-
-### Download OpenAPI Spec
-
-Download the full OpenAPI 3.1 specification:
-
-```bash
-# Via API
-curl http://localhost:8000/api/v1/openapi.yaml -o openapi.yaml
-
-# From repository
-curl https://raw.githubusercontent.com/takabayashi/lineage-bridge/main/docs/openapi.yaml -o openapi.yaml
-```
-
-## Local Development
-
-When developing locally, you can point the Scalar viewer to your local API:
+**How to use:**
 
 1. Start the API server:
    ```bash
-   uv run lineage-bridge-api
+   make api
    ```
 
-2. Access the Swagger UI at `http://localhost:8000/docs`
+2. Open [http://localhost:8000/docs](http://localhost:8000/docs) in your browser
 
-3. Download the spec for offline use:
-   ```bash
-   curl http://localhost:8000/api/v1/openapi.yaml > openapi-local.yaml
-   ```
+3. Click **"Authorize"** if using API key authentication
+
+4. Expand any endpoint and click **"Try it out"** to test
+
+### ReDoc
+
+**URL**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+
+Clean, modern API reference documentation:
+
+- Hierarchical navigation
+- Search functionality
+- Code samples in multiple languages
+- Markdown-rendered descriptions
+
+### OpenAPI JSON
+
+**URL**: [http://localhost:8000/openapi.json](http://localhost:8000/openapi.json)
+
+Machine-readable OpenAPI 3.1 specification for:
+
+- API client generation
+- Testing automation
+- Integration with API tools
+- Schema validation
+
+## Download OpenAPI Spec
+
+Download the full OpenAPI specification for offline use or code generation:
+
+```bash
+# From running API server
+curl http://localhost:8000/openapi.json -o openapi.yaml
+
+# Or from repository (always latest)
+curl https://raw.githubusercontent.com/takabayashi/lineage-bridge/main/docs/openapi.yaml -o openapi.yaml
+```
+
+Or download directly: [openapi.yaml](https://raw.githubusercontent.com/takabayashi/lineage-bridge/main/docs/openapi.yaml)
 
 ## Integration Examples
 
