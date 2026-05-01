@@ -13,7 +13,7 @@
 - No commit without Sentinel review.
 
 **Decisions baked in (from planning conversation, 2026-05-01):**
-1. Catalog protocol v2 is a **breaking change** with a one-shot migration helper for stored graphs.
+1. Catalog protocol v2 is a **clean breaking change** — no migration helper. Pre-v2 NodeType values are deleted; old JSON files raise a Pydantic ValidationError on load. Re-extract, don't port. (Revised 2026-05-01: original plan called for a `scripts/migrate_graphs_to_v2.py` rewriter; dropped after confirming no production users + no stable-interchange promise.)
 2. First production storage tier is **SQLite** (file backend default, sqlite for single-node prod). Postgres/S3 deferred.
 3. New catalogs to land after refactor: **Snowflake** (via Kafka Connect Sink) and **IBM Watsonx.data** (Iceberg origin).
 4. **Watcher becomes the third independent service** (alongside API and UI). Runs as its own process; UI and API both consume its state via the storage layer + a watcher control router. No more in-process thread inside Streamlit.
@@ -68,7 +68,7 @@ The watcher should be the **third peer service** alongside the API and UI: its o
 Write four ADRs to `docs/decisions.md` that freeze the contracts everyone else builds against. (Numbers shifted from the original 017–020 because ADRs 017–019 were taken on 2026-05-01 by the demo-credentials/upstream-chain/catalog-registration work.)
 
 - **ADR-020: Service layer between API/UI and orchestrator.** Defines `ExtractionRequest`, `EnrichmentRequest`, `PushRequest` Pydantic v2 models and the `services/extraction_service.py` API surface.
-- **ADR-021: Catalog protocol v2 (breaking).** New protocol methods, `MaterializationContext` discriminated union, collapsing per-catalog NodeTypes into `NodeType.CATALOG_TABLE` with a `catalog_type` attribute. Includes the migration helper for stored graphs. Supersedes ADR-006.
+- **ADR-021: Catalog protocol v2 (breaking, no migration).** New protocol methods, `MaterializationContext` discriminated union, collapsing per-catalog NodeTypes into `NodeType.CATALOG_TABLE` with a `catalog_type` attribute. No compat shim — old JSON fails Pydantic validation, re-extract. Supersedes ADR-006.
 - **ADR-022: Pluggable storage layer.** `Repository` protocol per entity, backends `memory`/`file`/`sqlite`, env-var-driven selection. Adds `WatcherRepository` to the protocol set (events, extraction history, control state).
 - **ADR-023: Watcher as independent service.** Watcher becomes its own deployable process (no longer a thread inside Streamlit). State persisted via `WatcherRepository`. New `services/watcher_service.py` exposes the engine as a library; CLI/daemon wrapper runs it long-lived; new `api/routers/watcher.py` exposes start/stop/status endpoints. UI becomes stateless about the watcher — it polls the API like any other client. Supersedes the in-process threading model from ADR-014.
 
@@ -121,13 +121,8 @@ class CatalogProvider(Protocol):
 **Model changes** (`models/graph.py`):
 - Replace `NodeType.UC_TABLE`, `GLUE_TABLE`, `GOOGLE_TABLE` with single `NodeType.CATALOG_TABLE`.
 - Add `catalog_type: str` discriminator on node attributes (e.g. `"UNITY_CATALOG"`, `"AWS_GLUE"`, `"GOOGLE_DATA_LINEAGE"`, `"SNOWFLAKE"`, `"WATSONX"`).
-- Add `LineageGraph.from_dict()` migration: detect old node types, rewrite to `CATALOG_TABLE` with catalog_type set.
 
-**Migration helper** (`scripts/migrate_graphs_to_v2.py`):
-- Reads old graph JSON files (in storage directory and any user-supplied path)
-- Rewrites nodes in place
-- Writes a backup with `.v1.bak` suffix
-- Idempotent (skips already-migrated graphs)
+**No migration helper.** Pre-v2 stored JSON files raise a Pydantic ValidationError on `LineageGraph.from_dict()` — re-extract instead of porting. Test fixtures + `ui/sample_data.py` (or its replacement JSON file) are source code, updated atomically with the protocol change.
 
 **Settings** (`config/settings.py`):
 - Nested catalog config via `pydantic_settings.SettingsConfigDict(env_nested_delimiter="__")`
@@ -150,8 +145,7 @@ All catalog-specific imports are lazy (inside methods) so missing extras don't b
 
 **Tests:**
 - `tests/catalogs/test_protocol_conformance.py` — parametrized over all providers, asserts each implements the full v2 contract.
-- `tests/models/test_graph_migration.py` — round-trip old format → new format, verify backward compatibility.
-- Update `tests/fixtures/` for new node type.
+- Update `tests/fixtures/` for new node type. (No migration round-trip test — there's no migration to round-trip.)
 
 #### Phase 1C — Storage layer with file backend (Weaver + Lens)
 
@@ -265,8 +259,7 @@ ui/sidebar/
 **Files added:**
 - `storage/backends/sqlite.py` — uses `aiosqlite`. Single-file DB at `~/.lineage_bridge/storage.db`.
 - `storage/migrations/` — schema migrations via simple version table (alembic is overkill for sqlite).
-- `storage/migrations/001_initial.sql` — `graphs`, `tasks`, `events` tables.
-- `storage/migrations/002_v1_to_v2_node_types.sql` — applies the catalog NodeType migration in-place for stored graphs.
+- `storage/migrations/001_initial.sql` — `graphs`, `tasks`, `events` tables. (No `002_v1_to_v2_node_types.sql` — Phase 1B is a clean break, not a migration; see ADR-021 revision.)
 
 **Files modified:**
 - `storage/factory.py` — register sqlite backend.
@@ -426,7 +419,7 @@ Day:    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15 
 P0  ████│         (foundation ADRs 020-023 — Blueprint, gate)
         │
 P1A      ████████│         (services + API parity — Forge+Lens)
-P1B      █████████████│    (catalog protocol v2 + migration — Blueprint+Weaver+Lens)
+P1B      █████████████│    (catalog protocol v2 — Blueprint+Weaver+Lens)
 P1C      █████████████│    (storage layer file backend incl. WatcherRepository — Weaver+Lens)
 P1D      ████████│         (phase abstraction — Weaver+Lens)
                  │
