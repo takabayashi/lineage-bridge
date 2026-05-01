@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import base64
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -13,10 +14,24 @@ from lineage_bridge.models.graph import EdgeType, NodeType
 
 _ICONS_DIR = Path(__file__).parent / "assets" / "icons"
 
+
+# ── Per-catalog visual style ───────────────────────────────────────────
+# All catalog tables share `NodeType.CATALOG_TABLE` (per ADR-021); each
+# `catalog_type` value gets its own color / label / brand icon below.
+# A single dict-of-dataclass keeps the four attributes in sync — adding a new
+# catalog (e.g. Snowflake) means one entry here, not three or four.
+
+
+@dataclass(frozen=True)
+class CatalogStyle:
+    """Visual style for one catalog_type — color, label, optional brand icon."""
+
+    color: str
+    label: str
+    icon: _IconSpec | None = None  # None = generic database-cylinder fallback
+
+
 # ── Color palette per node type ────────────────────────────────────────
-# All catalog tables share `NodeType.CATALOG_TABLE` (per ADR-021); per-catalog
-# distinctions live in `CATALOG_TYPE_COLORS` below and are resolved by
-# `color_for_node(node)`.
 NODE_COLORS: dict[NodeType, str] = {
     NodeType.KAFKA_TOPIC: "#1976D2",  # Confluent blue
     NodeType.CONNECTOR: "#0D47A1",  # Confluent dark blue
@@ -27,13 +42,6 @@ NODE_COLORS: dict[NodeType, str] = {
     NodeType.SCHEMA: "#90CAF9",  # Confluent pale blue
     NodeType.EXTERNAL_DATASET: "#757575",  # neutral gray
     NodeType.CONSUMER_GROUP: "#2196F3",  # Confluent mid blue
-}
-
-CATALOG_TYPE_COLORS: dict[str, str] = {
-    "UNITY_CATALOG": "#F9A825",  # Databricks amber/yellow
-    "AWS_GLUE": "#E65100",  # AWS orange
-    "GOOGLE_DATA_LINEAGE": "#4285F4",  # Google blue
-    "AWS_DATAZONE": "#FF9900",  # AWS DataZone orange
 }
 
 # ── Node sizes (agraph pixel diameter) ─────────────────────────────────
@@ -90,13 +98,6 @@ NODE_TYPE_LABELS: dict[NodeType, str] = {
     NodeType.SCHEMA: "Schema",
     NodeType.EXTERNAL_DATASET: "External Dataset",
     NodeType.CONSUMER_GROUP: "Consumer Group",
-}
-
-CATALOG_TYPE_LABELS: dict[str, str] = {
-    "UNITY_CATALOG": "Unity Catalog Table",
-    "AWS_GLUE": "AWS Glue Table",
-    "GOOGLE_DATA_LINEAGE": "Google BigQuery Table",
-    "AWS_DATAZONE": "AWS DataZone Asset",
 }
 
 EDGE_TYPE_LABELS: dict[EdgeType, str] = {
@@ -341,34 +342,49 @@ _OFFICIAL_ICON_FILES: dict[NodeType, _IconSpec] = {
     NodeType.FLINK_JOB: _IconSpec("apache-flink.svg"),
 }
 
-# Per-catalog brand icons. Keyed on `catalog_type` so the per-catalog visual
-# distinction survives the NodeType collapse from ADR-021.
-_OFFICIAL_ICON_FILES_BY_CATALOG: dict[str, _IconSpec] = {
-    # Databricks brand red recoloured to palette amber/yellow.
-    "UNITY_CATALOG": _IconSpec("databricks.svg", fill_override="#F9A825"),
-    "GOOGLE_DATA_LINEAGE": _IconSpec("google-bigquery.svg"),
-    # Use AWS Architecture Icon as a full-bleed tile (gradient + white squid).
-    "AWS_GLUE": _IconSpec("aws-glue.svg", mode="tile"),
+# Single source of truth per catalog: color, label, optional brand icon.
+# Adding a new catalog (Snowflake, Watsonx, ...) = one entry here. Keeps
+# the three knobs from drifting out of sync.
+CATALOG_STYLES: dict[str, CatalogStyle] = {
+    "UNITY_CATALOG": CatalogStyle(
+        color="#F9A825",  # Databricks amber/yellow
+        label="Unity Catalog Table",
+        # Databricks brand red recoloured to palette amber/yellow.
+        icon=_IconSpec("databricks.svg", fill_override="#F9A825"),
+    ),
+    "AWS_GLUE": CatalogStyle(
+        color="#E65100",  # AWS orange
+        label="AWS Glue Table",
+        # AWS Architecture Icon as a full-bleed tile (gradient + white squid).
+        icon=_IconSpec("aws-glue.svg", mode="tile"),
+    ),
+    "GOOGLE_DATA_LINEAGE": CatalogStyle(
+        color="#4285F4",  # Google blue
+        label="Google BigQuery Table",
+        icon=_IconSpec("google-bigquery.svg"),
+    ),
+    "AWS_DATAZONE": CatalogStyle(
+        color="#FF9900",  # AWS DataZone orange
+        label="AWS DataZone Asset",
+        icon=None,  # generic database cylinder; DataZone has no native graph node today
+    ),
 }
 
 
 def _get_chip_body(ntype: NodeType, catalog_type: str | None = None) -> str:
     """Return the inner body SVG for a node icon (no <svg> wrapper)."""
+    catalog_style = CATALOG_STYLES.get(catalog_type) if catalog_type else None
+
     spec = _OFFICIAL_ICON_FILES.get(ntype)
-    if spec is None and catalog_type:
-        spec = _OFFICIAL_ICON_FILES_BY_CATALOG.get(catalog_type)
+    if spec is None and catalog_style is not None:
+        spec = catalog_style.icon
     if spec is not None:
         fallback = (
-            CATALOG_TYPE_COLORS.get(catalog_type, "#cccccc")
-            if catalog_type
-            else NODE_COLORS.get(ntype, "#cccccc")
+            catalog_style.color if catalog_style is not None else NODE_COLORS.get(ntype, "#cccccc")
         )
         return _load_official_chip_body(spec, fallback)
-    color = (
-        CATALOG_TYPE_COLORS.get(catalog_type, NODE_COLORS.get(ntype, "#757575"))
-        if catalog_type
-        else NODE_COLORS.get(ntype, "#757575")
-    )
+
+    color = catalog_style.color if catalog_style is not None else NODE_COLORS.get(ntype, "#757575")
     symbol = _SYMBOLS.get(ntype, "")
     return (
         f'<rect x="2" y="2" width="60" height="60" rx="14" '
@@ -398,7 +414,7 @@ def _build_catalog_icons() -> dict[str, str]:
     """Pre-build SVG data URIs per catalog_type."""
     return {
         ct: _svg_to_data_uri(_wrap_svg(_get_chip_body(NodeType.CATALOG_TABLE, ct)))
-        for ct in CATALOG_TYPE_COLORS
+        for ct in CATALOG_STYLES
     }
 
 
@@ -628,17 +644,27 @@ def build_edge_vis_props(etype: EdgeType) -> dict[str, Any]:
 # keep using the dicts directly — they'll get the catalog-default styling.
 
 
+def _catalog_style(node: Any) -> CatalogStyle | None:
+    """Return the CatalogStyle for a node, or None if it isn't a catalog table."""
+    if node.node_type != NodeType.CATALOG_TABLE:
+        return None
+    ct = getattr(node, "catalog_type", None)
+    return CATALOG_STYLES.get(ct) if ct else None
+
+
 def color_for_node(node: Any) -> str:
     """Resolve a node's color, considering catalog_type for catalog tables."""
-    if node.node_type == NodeType.CATALOG_TABLE and getattr(node, "catalog_type", None):
-        return CATALOG_TYPE_COLORS.get(node.catalog_type, NODE_COLORS[NodeType.CATALOG_TABLE])
+    style = _catalog_style(node)
+    if style is not None:
+        return style.color
     return NODE_COLORS.get(node.node_type, "#757575")
 
 
 def label_for_node(node: Any) -> str:
     """Resolve a node's human-readable label, with per-catalog override."""
-    if node.node_type == NodeType.CATALOG_TABLE and getattr(node, "catalog_type", None):
-        return CATALOG_TYPE_LABELS.get(node.catalog_type, NODE_TYPE_LABELS[NodeType.CATALOG_TABLE])
+    style = _catalog_style(node)
+    if style is not None:
+        return style.label
     return NODE_TYPE_LABELS.get(node.node_type, node.node_type.value)
 
 

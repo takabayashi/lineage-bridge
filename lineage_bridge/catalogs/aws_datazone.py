@@ -319,9 +319,10 @@ class DataZoneAssetRegistrar:
 class AWSDataZoneProvider:
     """CatalogProvider-style facade combining asset registration + lineage push.
 
-    Doesn't implement the full ``CatalogProvider`` protocol (no ``build_node`` /
-    ``enrich`` because DataZone doesn't model Confluent stream nodes itself);
-    only ``push_lineage`` is wired into the orchestrator.
+    DataZone is push-only — it doesn't model Confluent stream nodes itself, so
+    ``build_node`` / ``enrich`` / ``build_url`` are no-op stubs that conform
+    to the Protocol structurally without claiming behaviour they don't have.
+    Only ``push_lineage`` is wired into the orchestrator.
     """
 
     catalog_type: str = "AWS_DATAZONE"
@@ -335,6 +336,20 @@ class AWSDataZoneProvider:
         self._domain_id = domain_id
         self._project_id = project_id
         self._region = region
+
+    def build_node(self, *args: Any, **kwargs: Any) -> tuple[LineageNode, Any]:
+        """Not supported — DataZone has no materialization origin we can model."""
+        raise NotImplementedError(
+            "AWSDataZoneProvider is push-only; it does not produce catalog nodes."
+        )
+
+    async def enrich(self, graph: LineageGraph) -> None:
+        """No-op — DataZone has no nodes in the graph to enrich."""
+        return None
+
+    def build_url(self, node: LineageNode) -> str | None:
+        """No-op — DataZone has no nodes in the graph to deeplink."""
+        return None
 
     async def push_lineage(
         self,

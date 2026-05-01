@@ -241,8 +241,19 @@ class TestGraphToEvents:
         graph = LineageGraph()
         conn = _node("s3-sink", NodeType.CONNECTOR)
         topic = _node("orders")
-        uc_table = _node(
-            "catalog.schema.orders", NodeType.CATALOG_TABLE, system=SystemType.DATABRICKS, env="ws"
+        # Build the UC node with the legacy "uc_table" ID segment that
+        # DatabricksUCProvider.build_node actually emits (see databricks_uc.py:79
+        # for the ID-stability rationale). The default _node() helper would
+        # produce "databricks:catalog_table:..." which doesn't match real data.
+        uc_node_id = "databricks:uc_table:ws:catalog.schema.orders"
+        uc_table = LineageNode(
+            node_id=uc_node_id,
+            system=SystemType.DATABRICKS,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="UNITY_CATALOG",
+            qualified_name="catalog.schema.orders",
+            display_name="catalog.schema.orders",
+            environment_id="ws",
         )
         graph.add_node(conn)
         graph.add_node(topic)
@@ -255,13 +266,7 @@ class TestGraphToEvents:
             )
         )
         graph.add_edge(
-            _edge(
-                _nid("s3-sink", NodeType.CONNECTOR),
-                # uc_table-style ID survives the NodeType collapse — DatabricksUCProvider
-                # keeps the legacy "uc_table" segment for ID stability per Phase 1B.
-                "databricks:catalog_table:ws:catalog.schema.orders",
-                EdgeType.PRODUCES,
-            )
+            _edge(_nid("s3-sink", NodeType.CONNECTOR), uc_node_id, EdgeType.PRODUCES)
         )
 
         events_all = graph_to_events(graph, confluent_only=False)
