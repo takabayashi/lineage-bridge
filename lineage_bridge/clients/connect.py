@@ -109,6 +109,21 @@ def _infer_external_dataset(config: dict[str, str], connector_class: str) -> str
     return connector_class
 
 
+def _bigquery_dataset_ref(config: dict[str, str]) -> tuple[str, str] | None:
+    """Return ``(project, dataset)`` for a BigQuery sink connector, or None."""
+    project = config.get("project", "").strip()
+    dataset = (
+        config.get("defaultDataset") or config.get("dataset") or config.get("datasets", "")
+    ).strip()
+    if not project or not dataset:
+        return None
+    # ``datasets`` may be a comma-separated list — take the first.
+    dataset = dataset.split(",", 1)[0].strip()
+    if not dataset:
+        return None
+    return project, dataset
+
+
 class ConnectClient(ConfluentClient):
     """Extracts connector lineage from the Confluent Cloud Connect v1 API."""
 
@@ -136,6 +151,48 @@ class ConnectClient(ConfluentClient):
 
     def _ext_node_id(self, dataset: str) -> str:
         return f"confluent:external_dataset:{self.environment_id}:{dataset}"
+
+    def _build_google_tables(
+        self,
+        *,
+        topics: list[str],
+        project: str,
+        dataset: str,
+        connector_id: str,
+        cluster_id: str,
+    ) -> tuple[list[LineageNode], list[LineageEdge]]:
+        """Build one GOOGLE_TABLE node + PRODUCES edge per topic for a BigQuery sink."""
+        nodes: list[LineageNode] = []
+        edges: list[LineageEdge] = []
+        for topic in topics:
+            table_name = topic.replace(".", "_").replace("-", "_")
+            qualified = f"{project}.{dataset}.{table_name}"
+            google_id = f"google:google_table:{self.environment_id}:{qualified}"
+            nodes.append(
+                LineageNode(
+                    node_id=google_id,
+                    system=SystemType.GOOGLE,
+                    node_type=NodeType.GOOGLE_TABLE,
+                    qualified_name=qualified,
+                    display_name=qualified,
+                    environment_id=self.environment_id,
+                    cluster_id=cluster_id,
+                    attributes={
+                        "project_id": project,
+                        "dataset_id": dataset,
+                        "table_name": table_name,
+                        "source_topic": topic,
+                    },
+                )
+            )
+            edges.append(
+                LineageEdge(
+                    src_id=connector_id,
+                    dst_id=google_id,
+                    edge_type=EdgeType.PRODUCES,
+                )
+            )
+        return nodes, edges
 
     # ── extraction ──────────────────────────────────────────────────────
 
@@ -177,36 +234,43 @@ class ConnectClient(ConfluentClient):
             )
 
             topics = _extract_topics(config)
-            ext_name = _infer_external_dataset(config, connector_class)
-            ext_id = self._ext_node_id(ext_name)
-
-            # External dataset node
-            nodes.append(
-                LineageNode(
-                    node_id=ext_id,
-                    system=SystemType.EXTERNAL,
-                    node_type=NodeType.EXTERNAL_DATASET,
-                    qualified_name=ext_name,
-                    display_name=ext_name,
-                    environment_id=self.environment_id,
-                    attributes={
-                        "inferred_from": cname,
-                        "connector_class": connector_class,
-                    },
-                )
-            )
-
             conn_id = self._connector_node_id(cname)
+
+            # BigQuery sinks get per-topic GOOGLE_TABLE nodes instead of an
+            # EXTERNAL_DATASET hub — the dataset is already encoded in each
+            # google_table's qualified name.
+            bq_ref = (
+                _bigquery_dataset_ref(config) if "bigquery" in connector_class.lower() else None
+            )
+            ext_id: str | None = None
+            if not bq_ref:
+                ext_name = _infer_external_dataset(config, connector_class)
+                ext_id = self._ext_node_id(ext_name)
+                nodes.append(
+                    LineageNode(
+                        node_id=ext_id,
+                        system=SystemType.EXTERNAL,
+                        node_type=NodeType.EXTERNAL_DATASET,
+                        qualified_name=ext_name,
+                        display_name=ext_name,
+                        environment_id=self.environment_id,
+                        attributes={
+                            "inferred_from": cname,
+                            "connector_class": connector_class,
+                        },
+                    )
+                )
 
             if direction == "source":
                 # external_dataset → connector (PRODUCES)
-                edges.append(
-                    LineageEdge(
-                        src_id=ext_id,
-                        dst_id=conn_id,
-                        edge_type=EdgeType.PRODUCES,
+                if ext_id is not None:
+                    edges.append(
+                        LineageEdge(
+                            src_id=ext_id,
+                            dst_id=conn_id,
+                            edge_type=EdgeType.PRODUCES,
+                        )
                     )
-                )
                 # connector → kafka_topic (PRODUCES) for each topic
                 for topic in topics:
                     tid = self._topic_node_id(topic)
@@ -251,14 +315,32 @@ class ConnectClient(ConfluentClient):
                             edge_type=EdgeType.CONSUMES,
                         )
                     )
-                # connector → external_dataset (PRODUCES)
-                edges.append(
-                    LineageEdge(
-                        src_id=conn_id,
-                        dst_id=ext_id,
-                        edge_type=EdgeType.PRODUCES,
+                # connector → external_dataset (PRODUCES) — skipped for BigQuery
+                # sinks, which use per-topic GOOGLE_TABLE nodes instead.
+                if ext_id is not None:
+                    edges.append(
+                        LineageEdge(
+                            src_id=conn_id,
+                            dst_id=ext_id,
+                            edge_type=EdgeType.PRODUCES,
+                        )
                     )
-                )
+
+                # BigQuery sinks: synthesize one GOOGLE_TABLE per topic so the
+                # publish UI can push lineage to Google Data Lineage. UC and Glue
+                # get the same treatment via Tableflow; BigQuery isn't a
+                # Tableflow target, so we infer it from the connector config.
+                if bq_ref:
+                    project, dataset = bq_ref
+                    g_nodes, g_edges = self._build_google_tables(
+                        topics=topics,
+                        project=project,
+                        dataset=dataset,
+                        connector_id=conn_id,
+                        cluster_id=self.kafka_cluster_id,
+                    )
+                    nodes.extend(g_nodes)
+                    edges.extend(g_edges)
             else:
                 logger.warning(
                     "Could not classify connector %s (class=%s) — skipping edges",

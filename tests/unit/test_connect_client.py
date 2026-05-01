@@ -46,6 +46,11 @@ def sink_config_fixture():
     return load_fixture("connector_config_sink.json")
 
 
+@pytest.fixture()
+def bigquery_sink_config_fixture():
+    return load_fixture("connector_config_bigquery_sink.json")
+
+
 def _make_client() -> ConnectClient:
     return ConnectClient(
         api_key=API_KEY,
@@ -261,6 +266,54 @@ async def test_extract_sink_connector(sink_config_fixture, no_sleep):
     assert len(produces_edges) == 1
     assert produces_edges[0].src_id == conn.node_id
     assert produces_edges[0].dst_id == ext_nodes[0].node_id
+
+
+@respx.mock
+async def test_extract_bigquery_sink_synthesizes_google_tables(
+    bigquery_sink_config_fixture, no_sleep
+):
+    """A BigQuery sink emits one GOOGLE_TABLE per topic plus the existing EXTERNAL_DATASET."""
+    respx.get(f"{BASE_URL}{CONNECTORS_PATH}").mock(
+        return_value=httpx.Response(200, json=["bigquery_sink_orders"]),
+    )
+    respx.get(f"{BASE_URL}{_connector_path('bigquery_sink_orders')}").mock(
+        return_value=httpx.Response(200, json=bigquery_sink_config_fixture),
+    )
+
+    async with _make_client() as client:
+        nodes, edges = await client.extract()
+
+    connector_nodes = [n for n in nodes if n.node_type == NodeType.CONNECTOR]
+    assert len(connector_nodes) == 1
+    conn = connector_nodes[0]
+
+    # No EXTERNAL_DATASET node — per-topic GOOGLE_TABLE nodes carry the
+    # project/dataset in their qualified names instead.
+    ext_nodes = [n for n in nodes if n.node_type == NodeType.EXTERNAL_DATASET]
+    assert ext_nodes == []
+
+    # One GOOGLE_TABLE per topic
+    google_nodes = [n for n in nodes if n.node_type == NodeType.GOOGLE_TABLE]
+    assert len(google_nodes) == 2
+    qnames = {n.qualified_name for n in google_nodes}
+    assert qnames == {
+        "my-gcp-project.lineage_bridge.orders",
+        "my-gcp-project.lineage_bridge.enriched_orders",
+    }
+    for g in google_nodes:
+        assert g.system == SystemType.GOOGLE
+        assert g.attributes["project_id"] == "my-gcp-project"
+        assert g.attributes["dataset_id"] == "lineage_bridge"
+        assert g.attributes["source_topic"] in ("orders", "enriched_orders")
+        assert g.node_id.startswith("google:google_table:")
+
+    # Edges: connector -> google_table (PRODUCES) for each topic, plus the
+    # existing connector -> external_dataset PRODUCES edge.
+    google_edges = [e for e in edges if e.dst_id in {g.node_id for g in google_nodes}]
+    assert len(google_edges) == 2
+    for ge in google_edges:
+        assert ge.src_id == conn.node_id
+        assert ge.edge_type == EdgeType.PRODUCES
 
 
 @respx.mock

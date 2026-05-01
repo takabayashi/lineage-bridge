@@ -214,9 +214,9 @@ class GoogleLineageProvider:
         if not self._project_id:
             return PushResult(errors=["No project_id configured"])
 
-        headers = await self._get_auth_headers()
+        headers, auth_error = await self._get_auth_headers_with_reason()
         if not headers:
-            return PushResult(errors=["No credentials available"])
+            return PushResult(errors=[auth_error or "No credentials available"])
 
         result = PushResult()
 
@@ -233,6 +233,12 @@ class GoogleLineageProvider:
         from lineage_bridge.api.openlineage.translator import graph_to_events
 
         events = graph_to_events(graph)
+        # Filter to events that touch a BigQuery output, then rewrite dataset
+        # namespaces to formats Google's processor recognizes (the project's
+        # internal `confluent://` / `google://` namespaces are rejected).
+        events = [e for e in events if any(self._is_bq_output(o) for o in e.outputs)]
+        for event in events:
+            self._normalize_event_for_google(event)
         now = datetime.now(UTC).isoformat()
 
         parent = f"projects/{self._project_id}/locations/{self._location}"
@@ -272,30 +278,87 @@ class GoogleLineageProvider:
         return result
 
     async def _get_auth_headers(self) -> dict[str, str] | None:
-        """Get authentication headers for Google APIs.
+        """Get authentication headers for Google APIs (returns None on any failure)."""
+        headers, _ = await self._get_auth_headers_with_reason()
+        return headers
 
-        Tries (in order):
-        1. Cached token
-        2. google-auth library (Application Default Credentials)
-        3. Returns None if no credentials available
+    async def _get_auth_headers_with_reason(self) -> tuple[dict[str, str] | None, str | None]:
+        """Get auth headers, returning ``(headers, error_reason)`` for diagnostics.
+
+        Tries: (1) cached token, (2) Application Default Credentials via
+        ``google-auth``. ``error_reason`` is populated on failure so callers
+        can surface it (e.g. ``google-auth not installed``, ``no ADC configured``).
         """
         if self._token:
-            return {"Authorization": f"Bearer {self._token}"}
+            return {"Authorization": f"Bearer {self._token}"}, None
 
         try:
             import google.auth
             import google.auth.transport.requests
+        except ImportError as exc:
+            reason = f"google-auth not installed ({exc}); add it to dependencies"
+            logger.warning(reason)
+            return None, reason
 
+        try:
             creds, _project = google.auth.default(
                 scopes=["https://www.googleapis.com/auth/cloud-platform"]
             )
             request = google.auth.transport.requests.Request()
             await asyncio.to_thread(creds.refresh, request)
             self._token = creds.token
-            return {"Authorization": f"Bearer {self._token}"}
-        except Exception:
-            logger.debug("google-auth not available or no ADC configured")
-            return None
+            return {"Authorization": f"Bearer {self._token}"}, None
+        except Exception as exc:
+            reason = (
+                f"Google ADC unavailable: {exc}. "
+                "Run `gcloud auth application-default login` or set "
+                "GOOGLE_APPLICATION_CREDENTIALS to a service-account key."
+            )
+            logger.warning(reason)
+            return None, reason
+
+    # ── OpenLineage event normalization for Google Data Lineage ─────────
+
+    @staticmethod
+    def _is_bq_output(dataset: Any) -> bool:
+        """True if a dataset looks like a BigQuery target (project.dataset.table)."""
+        ns = getattr(dataset, "namespace", "") or ""
+        name = getattr(dataset, "name", "") or ""
+        return ns.startswith("google://") or ns == "bigquery" or name.count(".") >= 2
+
+    @staticmethod
+    def _normalize_event_for_google(event: Any) -> None:
+        """Rewrite dataset namespaces in-place so Google's processor accepts them.
+
+        Google requires recognized FQN formats — our internal namespaces
+        (``confluent://env/cluster``, ``google://project/dataset``) are rejected.
+        Mapping: kafka_topic → ``kafka://<cluster>``; google_table → ``bigquery``.
+        Datasets in unrecognized namespaces (UC/Glue/EXTERNAL) are dropped from
+        the event since Google can't link them either.
+        """
+        kept_inputs = []
+        for ds in event.inputs:
+            ns = ds.namespace or ""
+            if ns.startswith("confluent://"):
+                # confluent://env-id/cluster-id -> kafka://cluster-id
+                cluster = ns.rsplit("/", 1)[-1] or "unknown"
+                ds.namespace = f"kafka://{cluster}"
+                kept_inputs.append(ds)
+            elif ns.startswith("kafka://") or ns == "bigquery":
+                kept_inputs.append(ds)
+            # else: unrecognized (uc/glue/external) — drop
+        event.inputs = kept_inputs
+
+        kept_outputs = []
+        for ds in event.outputs:
+            ns = ds.namespace or ""
+            if ns.startswith("google://") or ds.name.count(".") >= 2:
+                ds.namespace = "bigquery"
+                kept_outputs.append(ds)
+            elif ns == "bigquery":
+                kept_outputs.append(ds)
+            # else: drop — only BigQuery outputs make sense for Google push
+        event.outputs = kept_outputs
 
     def build_url(self, node: LineageNode) -> str | None:
         """Build a deep link to the table in the Google Cloud console."""

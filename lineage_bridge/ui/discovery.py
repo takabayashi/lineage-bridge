@@ -12,11 +12,17 @@ from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ct
 
 
 def _try_load_settings():
-    """Attempt to load credentials from .env / environment variables."""
+    """Attempt to load credentials from .env / environment variables.
+
+    Falls back to the local encrypted cache for fields the demos write there
+    (currently: ``gcp_project_id`` / ``gcp_location``). This means the UI
+    works after ``make demo-bq-up`` even if the user hasn't restarted
+    Streamlit (which would re-read ``.env``).
+    """
     try:
         from lineage_bridge.config.settings import Settings
 
-        return Settings()  # type: ignore[call-arg]
+        settings = Settings()  # type: ignore[call-arg]
     except Exception:
         import logging
 
@@ -25,6 +31,27 @@ def _try_load_settings():
             exc_info=True,
         )
         return None
+
+    if settings.gcp_project_id:
+        return settings
+
+    try:
+        from lineage_bridge.config.cache import load_cache
+
+        gcp = load_cache().get("gcp_settings") or {}
+        update: dict[str, str] = {}
+        if not settings.gcp_project_id and gcp.get("project_id"):
+            update["gcp_project_id"] = gcp["project_id"]
+        if gcp.get("location"):
+            update["gcp_location"] = gcp["location"]
+        if update:
+            settings = settings.model_copy(update=update)
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).debug("GCP cache fallback failed", exc_info=True)
+
+    return settings
 
 
 def _run_async(coro):

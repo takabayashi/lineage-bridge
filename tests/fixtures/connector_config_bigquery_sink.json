@@ -1,0 +1,12 @@
+{
+  "name": "bigquery_sink_orders",
+  "config": {
+    "connector.class": "BigQueryStorageSink",
+    "topics": "orders,enriched_orders",
+    "project": "my-gcp-project",
+    "datasets": "lineage_bridge",
+    "input.data.format": "AVRO",
+    "tasks.max": "1"
+  },
+  "type": "sink"
+}
