@@ -1,21 +1,25 @@
 # Copyright 2026 Daniel Takabayashi
 # Licensed under the Apache License, Version 2.0
-"""Orchestrator that runs all extractors and builds the unified lineage graph.
+"""Orchestrator — composes phases into the extraction pipeline.
 
 Three entry points:
   - run_extraction()  — extract + optionally enrich (full pipeline)
   - run_enrichment()  — enrich an existing graph (catalog + metrics)
   - main()            — CLI with --no-enrich / --enrich-only flags
 
-Extraction phases (run_extraction / _extract_environment):
-  1. KafkaAdmin — establish the topic inventory.
-  2. Connect, ksqlDB, Flink — transformation / processing edges (parallel).
-  3. SchemaRegistry, StreamCatalog — schema enrichment (parallel).
-  4. Tableflow — bridge to UC/Glue (depends on topic nodes).
+Per-environment phase ordering (driven by `PhaseRunner`):
+  1. KafkaAdmin           — establish the topic inventory.
+  2. Processing           — Connect, ksqlDB, Flink (parallel).
+  3. SchemaEnrichment     — SchemaRegistry, StreamCatalog (parallel).
+  4. Tableflow            — bridge to UC/Glue (depends on topic nodes).
 
-Enrichment phases (run_enrichment):
-  4b. Catalog enrichment — providers enrich their own nodes.
-  5. Metrics enrichment — live throughput data (optional).
+Post-extraction (in `run_enrichment`):
+  4b. CatalogEnrichmentPhase — providers enrich their own nodes.
+  5.  MetricsPhase           — live throughput data (optional).
+
+Push functions (`run_lineage_push`, `run_glue_push`, `run_google_push`,
+`run_datazone_push`) live here for now; Phase 1A will collapse them into a
+single `services.push_service.run_push(provider_name, graph, options)`.
 """
 
 from __future__ import annotations
@@ -25,99 +29,46 @@ import logging
 import sys
 from typing import Any
 
-from lineage_bridge.catalogs import get_active_providers
 from lineage_bridge.catalogs.databricks_uc import DatabricksUCProvider
 from lineage_bridge.clients.base import ConfluentClient
-from lineage_bridge.clients.connect import ConnectClient
-from lineage_bridge.clients.flink import FlinkClient
-from lineage_bridge.clients.kafka_admin import KafkaAdminClient
-from lineage_bridge.clients.ksqldb import KsqlDBClient
-from lineage_bridge.clients.metrics import MetricsClient
-from lineage_bridge.clients.schema_registry import SchemaRegistryClient
-from lineage_bridge.clients.stream_catalog import StreamCatalogClient
-from lineage_bridge.clients.tableflow import TableflowClient
 from lineage_bridge.config.settings import Settings
-from lineage_bridge.models.graph import LineageEdge, LineageGraph, LineageNode, PushResult
+from lineage_bridge.extractors.context import ExtractionContext, ProgressCallback
+from lineage_bridge.extractors.phase import PhaseRunner, merge_into, safe_extract
+from lineage_bridge.extractors.phases import (
+    CatalogEnrichmentPhase,
+    KafkaAdminPhase,
+    MetricsPhase,
+    ProcessingPhase,
+    SchemaEnrichmentPhase,
+    TableflowPhase,
+)
+from lineage_bridge.models.graph import LineageGraph, PushResult
 
 logger = logging.getLogger(__name__)
 
 
-# ── graph merging ───────────────────────────────────────────────────────
+# Re-exported for backward compatibility — callers (and tests) historically
+# imported these from this module.
+__all__ = [
+    "ProgressCallback",
+    "main",
+    "merge_into",
+    "run_datazone_push",
+    "run_enrichment",
+    "run_extraction",
+    "run_glue_push",
+    "run_google_push",
+    "run_lineage_push",
+    "safe_extract",
+]
 
-
-def _merge_into(
-    graph: LineageGraph,
-    nodes: list[LineageNode],
-    edges: list[LineageEdge],
-) -> None:
-    """Add *nodes* and *edges* into *graph*, tolerating missing endpoints."""
-    for node in nodes:
-        graph.add_node(node)
-    for edge in edges:
-        try:
-            graph.add_edge(edge)
-        except ValueError:
-            logger.debug(
-                "Skipping edge %s -> %s (%s): endpoint not in graph",
-                edge.src_id,
-                edge.dst_id,
-                edge.edge_type.value,
-            )
-
-
-# ── safe extractor runner ───────────────────────────────────────────────
-
-_EXTRACTOR_TIMEOUT = 120  # seconds — per-extractor ceiling
-
-
-async def _safe_extract(
-    label: str, coro: Any, on_progress: Any = None
-) -> tuple[list[LineageNode], list[LineageEdge]]:
-    """Run an extractor coroutine, returning empty on failure or timeout."""
-    try:
-        return await asyncio.wait_for(coro, timeout=_EXTRACTOR_TIMEOUT)
-    except TimeoutError:
-        detail = f"Extractor '{label}' timed out after {_EXTRACTOR_TIMEOUT}s"
-        logger.warning(detail)
-        if on_progress:
-            on_progress("Warning", detail)
-        return [], []
-    except Exception as exc:
-        # Surface auth errors clearly
-        msg = str(exc)
-        if "401" in msg or "Unauthorized" in msg:
-            detail = (
-                f"Extractor '{label}' got 401 Unauthorized. "
-                "This likely means a cluster-scoped API key is needed. "
-                "Set LINEAGE_BRIDGE_KAFKA_API_KEY in .env."
-            )
-        elif "403" in msg or "Forbidden" in msg:
-            detail = (
-                f"Extractor '{label}' got 403 Forbidden. The API key lacks required permissions."
-            )
-        elif "400" in msg or "Bad Request" in msg:
-            detail = (
-                f"Extractor '{label}' got 400 Bad Request. "
-                "The API key may not have access to this environment, "
-                "or the API parameters are invalid."
-            )
-        else:
-            detail = f"Extractor '{label}' failed: {exc}"
-
-        logger.warning(detail, exc_info=True)
-        if on_progress:
-            on_progress("Warning", detail)
-        return [], []
-
-
-# ── progress callback type ──────────────────────────────────────────────
-
-# Callable that receives (phase_label, detail_message)
-ProgressCallback = Any  # typing: Callable[[str, str], None] | None
+# Legacy aliases — older code expected the underscore-prefixed names.
+_merge_into = merge_into
+_safe_extract = safe_extract
 
 
 def _make_progress(on_progress: ProgressCallback = None):
-    """Return a progress callback that logs and optionally forwards to the UI."""
+    """Wrap a progress callback so it always logs in addition to forwarding."""
 
     def _progress(phase: str, detail: str = "") -> None:
         logger.info("%s %s", phase, detail)
@@ -127,7 +78,7 @@ def _make_progress(on_progress: ProgressCallback = None):
     return _progress
 
 
-# ── main orchestration ──────────────────────────────────────────────────
+# ── enrichment entry point ──────────────────────────────────────────────
 
 
 async def run_enrichment(
@@ -141,77 +92,27 @@ async def run_enrichment(
 ) -> LineageGraph:
     """Enrich an existing graph with catalog metadata and/or metrics.
 
-    Runs catalog provider enrichment (UC, Glue) and optionally metrics
-    enrichment on an already-extracted graph. Mutates the graph in-place
-    and returns it.
-
-    Args:
-        settings: Credentials (from .env).
-        graph: The lineage graph to enrich.
-        enable_catalog: Run catalog provider enrichment (Phase 4b).
-        enable_metrics: Run metrics enrichment (Phase 5).
-        metrics_lookback_hours: Lookback window for metrics.
-        on_progress: Optional callback for UI progress updates.
+    Mutates `graph` in-place and returns it. Catalog enrichment runs Phase 4b
+    (per-provider `enrich()`); metrics enrichment runs Phase 5.
     """
     _progress = _make_progress(on_progress)
 
-    # ── Catalog enrichment ────────────────────────────────────────────
     if enable_catalog:
-        active_providers = get_active_providers(graph)
-        if active_providers:
-            _progress("Enrichment", "Enriching catalog nodes")
-            for provider in active_providers:
-                if provider.catalog_type == "UNITY_CATALOG":
-                    provider = DatabricksUCProvider(
-                        workspace_url=settings.databricks_workspace_url,
-                        token=settings.databricks_token,
-                    )
-                elif provider.catalog_type == "AWS_GLUE":
-                    from lineage_bridge.catalogs.aws_glue import GlueCatalogProvider
+        await CatalogEnrichmentPhase().run(settings, graph, on_progress=_progress)
 
-                    provider = GlueCatalogProvider(region=settings.aws_region)
-                elif provider.catalog_type == "GOOGLE_DATA_LINEAGE":
-                    from lineage_bridge.catalogs.google_lineage import GoogleLineageProvider
-
-                    provider = GoogleLineageProvider(
-                        project_id=settings.gcp_project_id,
-                        location=settings.gcp_location,
-                    )
-                try:
-                    await provider.enrich(graph)
-                except Exception:
-                    logger.warning(
-                        "Catalog enrichment failed for %s",
-                        provider.catalog_type,
-                        exc_info=True,
-                    )
-            _progress("Enrichment", f"Enriched with {len(active_providers)} catalog provider(s)")
-
-    # ── Metrics enrichment ────────────────────────────────────────────
     if enable_metrics:
-        _progress("Metrics", "Enriching nodes with real-time metrics")
-        metrics_client = MetricsClient(
-            api_key=settings.confluent_cloud_api_key,
-            api_secret=settings.confluent_cloud_api_secret,
+        await MetricsPhase().run(
+            settings,
+            graph,
             lookback_hours=metrics_lookback_hours,
+            on_progress=_progress,
         )
-        cluster_ids = {n.cluster_id for n in graph.nodes if n.cluster_id}
-        async with metrics_client:
-            total_enriched = 0
-            for cluster_id in cluster_ids:
-                try:
-                    enriched = await metrics_client.enrich(graph, cluster_id)
-                    total_enriched += enriched
-                except Exception as exc:
-                    logger.warning(
-                        "Metrics enrichment failed for %s: %s",
-                        cluster_id,
-                        exc,
-                    )
-            _progress("Metrics", f"Enriched {total_enriched} nodes with metrics")
 
     _progress("Enrichment done", f"{graph.node_count} nodes, {graph.edge_count} edges")
     return graph
+
+
+# ── push entry points (Phase 1A will collapse these) ───────────────────
 
 
 async def run_lineage_push(
@@ -224,11 +125,7 @@ async def run_lineage_push(
     bridge_table_name: str | None = None,
     on_progress: ProgressCallback = None,
 ) -> PushResult:
-    """Push lineage metadata to Databricks UC tables in the graph.
-
-    Uses the Databricks Statement Execution API to write table properties,
-    comments, and optionally a lineage bridge table.
-    """
+    """Push lineage metadata to Databricks UC tables in the graph."""
     from lineage_bridge.clients.databricks_sql import DatabricksSQLClient
 
     _progress = _make_progress(on_progress)
@@ -240,7 +137,6 @@ async def run_lineage_push(
         _progress("Push skipped", "No Databricks token configured")
         return PushResult(errors=["No Databricks token configured"])
 
-    # Resolve warehouse ID: setting > auto-discovery
     warehouse_id = settings.databricks_warehouse_id
     if not warehouse_id:
         from lineage_bridge.clients.databricks_discovery import (
@@ -370,9 +266,7 @@ async def run_datazone_push(
 
     if not settings.aws_datazone_domain_id or not settings.aws_datazone_project_id:
         _progress("Push skipped", "DataZone domain_id / project_id not configured")
-        return PushResult(
-            errors=["DataZone domain_id / project_id not configured"]
-        )
+        return PushResult(errors=["DataZone domain_id / project_id not configured"])
 
     provider = AWSDataZoneProvider(
         domain_id=settings.aws_datazone_domain_id,
@@ -386,6 +280,9 @@ async def run_datazone_push(
         + (f", {len(result.errors)} error(s)" if result.errors else ""),
     )
     return result
+
+
+# ── extraction entry point ─────────────────────────────────────────────
 
 
 async def run_extraction(
@@ -407,16 +304,7 @@ async def run_extraction(
     flink_credentials: dict[str, dict[str, str]] | None = None,
     on_progress: ProgressCallback = None,
 ) -> LineageGraph:
-    """Run the extraction pipeline and return the merged graph.
-
-    Args:
-        settings: Credentials (from .env).
-        environment_ids: Which environments to scan.
-        cluster_ids: Optional filter — specific cluster IDs. If None, scan all.
-        enable_*: Toggle individual extractors on/off.
-        enable_enrichment: Run catalog + metrics enrichment after extraction.
-        on_progress: Optional callback for UI progress updates.
-    """
+    """Run the extraction pipeline and return the merged graph."""
     graph = LineageGraph()
 
     cloud = ConfluentClient(
@@ -449,7 +337,6 @@ async def run_extraction(
     finally:
         await cloud.close()
 
-    # ── Enrichment (catalog + metrics) ─────────────────────────────────
     if enable_enrichment:
         await run_enrichment(
             settings,
@@ -459,14 +346,12 @@ async def run_extraction(
             on_progress=on_progress,
         )
 
-    # ── Validation ─────────────────────────────────────────────────────
     warnings = graph.validate()
     for w in warnings:
         logger.warning("Graph validation: %s", w)
     if warnings:
         _progress("Validation", f"{len(warnings)} warning(s) — check logs")
 
-    # ── Summary by system ────────────────────────────────────────────────
     from collections import Counter
 
     system_counts = Counter(n.system.value for n in graph.nodes)
@@ -475,38 +360,33 @@ async def run_extraction(
     return graph
 
 
-async def _extract_environment(
+async def _discover_environment(
     settings: Settings,
     cloud: ConfluentClient,
     env_id: str,
-    graph: LineageGraph,
     *,
     cluster_ids: list[str] | None,
-    enable_connect: bool,
-    enable_ksqldb: bool,
-    enable_flink: bool,
     enable_schema_registry: bool,
     enable_stream_catalog: bool,
-    enable_tableflow: bool,
     sr_endpoints: dict[str, str] | None,
     sr_credentials: dict[str, dict[str, str]] | None,
-    flink_credentials: dict[str, dict[str, str]] | None,
     on_progress: Any,
-) -> None:
-    """Run all extractors for a single Confluent Cloud environment."""
+) -> tuple[list[dict[str, Any]], str | None, str | None, str | None]:
+    """Discover clusters and Schema Registry endpoint + credentials for one env.
+
+    Returns (clusters, sr_endpoint, sr_key, sr_secret). `clusters` is empty if
+    none match the filter; caller should bail in that case.
+    """
     on_progress("Discovering", f"clusters in {env_id}")
 
-    # ── discover Kafka clusters ────────────────────────────────────────
     all_clusters = await cloud.paginate("/cmk/v2/clusters", params={"environment": env_id})
     if cluster_ids:
         all_clusters = [c for c in all_clusters if c.get("id") in cluster_ids]
     if not all_clusters:
         on_progress("Warning", f"No Kafka clusters found in {env_id}")
-        return
+        return [], None, None, None
 
-    # ── discover Schema Registry ───────────────────────────────────────
     sr_endpoint: str | None = sr_endpoints.get(env_id) if sr_endpoints else None
-    # Fall back to global setting
     if not sr_endpoint and settings.schema_registry_endpoint:
         sr_endpoint = settings.schema_registry_endpoint
     if not sr_endpoint and (enable_schema_registry or enable_stream_catalog):
@@ -532,7 +412,6 @@ async def _extract_environment(
     elif sr_endpoint:
         on_progress("Discovery", f"Schema Registry (cached): {sr_endpoint}")
 
-    # Credential resolution — per-env SR keys take priority
     if sr_credentials and env_id in sr_credentials:
         sr_key = sr_credentials[env_id]["api_key"]
         sr_secret = sr_credentials[env_id]["api_secret"]
@@ -540,213 +419,16 @@ async def _extract_environment(
         sr_key = settings.schema_registry_api_key or settings.confluent_cloud_api_key
         sr_secret = settings.schema_registry_api_secret or settings.confluent_cloud_api_secret
 
-    # ── Phase 1: Kafka Admin (per cluster) ─────────────────────────────
-    on_progress("Phase 1/4", "Extracting Kafka topics & consumer groups")
-    for cluster in all_clusters:
-        cluster_id = cluster.get("id", "")
-        spec = cluster.get("spec", {})
-        rest_endpoint = spec.get("http_endpoint", "")
-        if not rest_endpoint:
-            region = spec.get("region", "")
-            cloud_provider = spec.get("cloud", "").lower()
-            if region and cloud_provider:
-                rest_endpoint = (
-                    f"https://{cluster_id}.{region}.{cloud_provider}.confluent.cloud:443"
-                )
-        if not rest_endpoint:
-            on_progress("Warning", f"No REST endpoint for cluster {cluster_id}")
-            continue
+    return all_clusters, sr_endpoint, sr_key, sr_secret
 
-        kafka_key, kafka_secret = settings.get_cluster_credentials(cluster_id)
-        bootstrap = spec.get("kafka_bootstrap_endpoint", "")
-        if bootstrap and bootstrap.startswith("SASL_SSL://"):
-            bootstrap = bootstrap[len("SASL_SSL://") :]
-        logger.debug(
-            "KafkaAdminClient bootstrap_servers=%s for cluster %s",
-            bootstrap or None,
-            cluster_id,
-        )
-        kafka_client = KafkaAdminClient(
-            base_url=rest_endpoint,
-            api_key=kafka_key,
-            api_secret=kafka_secret,
-            cluster_id=cluster_id,
-            environment_id=env_id,
-            bootstrap_servers=bootstrap or None,
-        )
-        async with kafka_client:
-            nodes, edges = await _safe_extract(
-                f"KafkaAdmin:{cluster_id}", kafka_client.extract(), on_progress
-            )
-            _merge_into(graph, nodes, edges)
 
-    # ── Phase 2: Connect, ksqlDB, Flink (parallel) ────────────────────
-    on_progress("Phase 2/4", "Extracting connectors, ksqlDB, Flink")
-    phase2_tasks: list[Any] = []
-
-    if enable_connect:
-        for cluster in all_clusters:
-            cluster_id = cluster.get("id", "")
-            connect_client = ConnectClient(
-                api_key=settings.confluent_cloud_api_key,
-                api_secret=settings.confluent_cloud_api_secret,
-                environment_id=env_id,
-                kafka_cluster_id=cluster_id,
-            )
-
-            async def _run_connect(
-                c: ConnectClient = connect_client,
-                cid: str = cluster_id,
-            ) -> tuple[list[LineageNode], list[LineageEdge]]:
-                async with c:
-                    return await _safe_extract(f"Connect:{cid}", c.extract(), on_progress)
-
-            phase2_tasks.append(_run_connect())
-
-    if enable_ksqldb:
-        ksql_client = KsqlDBClient(
-            cloud_api_key=settings.confluent_cloud_api_key,
-            cloud_api_secret=settings.confluent_cloud_api_secret,
-            environment_id=env_id,
-            ksqldb_api_key=settings.ksqldb_api_key,
-            ksqldb_api_secret=settings.ksqldb_api_secret,
-        )
-
-        async def _run_ksqldb() -> tuple[list[LineageNode], list[LineageEdge]]:
-            async with ksql_client:
-                return await _safe_extract("ksqlDB", ksql_client.extract(), on_progress)
-
-        phase2_tasks.append(_run_ksqldb())
-
-    if enable_flink:
-        # Try multiple locations for organization ID
-        org_id = ""
-        for cluster in all_clusters:
-            # Try spec.organization.id (some API versions)
-            org_id = cluster.get("spec", {}).get("organization", {}).get("id", "")
-            if org_id:
-                break
-            # Try top-level organization.id
-            org_id = cluster.get("organization", {}).get("id", "")
-            if org_id:
-                break
-            # Try metadata.resource_name (contains org ID)
-            resource_name = cluster.get("metadata", {}).get("resource_name", "")
-            if "/organization=" in resource_name:
-                org_id = resource_name.split("/organization=")[1].split("/")[0]
-                if org_id:
-                    break
-
-        if not org_id:
-            # Last resort: fetch from /org/v2/environments
-            try:
-                env_data = await cloud.get(f"/org/v2/environments/{env_id}")
-                org_id = env_data.get("metadata", {}).get("resource_name", "")
-                if "/organization=" in org_id:
-                    org_id = org_id.split("/organization=")[1].split("/")[0]
-                else:
-                    org_id = ""
-            except Exception:
-                logger.debug("Failed to fetch org ID from environment %s", env_id, exc_info=True)
-
-        if org_id:
-            # Resolve per-env Flink credentials
-            if flink_credentials and env_id in flink_credentials:
-                flink_key = flink_credentials[env_id]["api_key"]
-                flink_secret = flink_credentials[env_id]["api_secret"]
-            else:
-                flink_key = settings.flink_api_key
-                flink_secret = settings.flink_api_secret
-
-            flink_client = FlinkClient(
-                cloud_api_key=settings.confluent_cloud_api_key,
-                cloud_api_secret=settings.confluent_cloud_api_secret,
-                environment_id=env_id,
-                organization_id=org_id,
-                flink_api_key=flink_key,
-                flink_api_secret=flink_secret,
-            )
-
-            async def _run_flink() -> tuple[list[LineageNode], list[LineageEdge]]:
-                async with flink_client:
-                    return await _safe_extract("Flink", flink_client.extract(), on_progress)
-
-            phase2_tasks.append(_run_flink())
-        else:
-            on_progress(
-                "Warning",
-                f"Could not determine organization ID for Flink in {env_id}"
-                " — Flink extraction skipped",
-            )
-
-    if phase2_tasks:
-        phase2_results = await asyncio.gather(*phase2_tasks)
-        for nodes, edges in phase2_results:
-            _merge_into(graph, nodes, edges)
-
-    # ── Phase 3: SchemaRegistry, StreamCatalog (parallel enrichment) ──
-    on_progress("Phase 3/4", "Enriching with schemas & catalog metadata")
-    phase3_tasks: list[Any] = []
-
-    if enable_schema_registry:
-        if sr_endpoint:
-            sr_client = SchemaRegistryClient(
-                base_url=sr_endpoint,
-                api_key=sr_key,
-                api_secret=sr_secret,
-                environment_id=env_id,
-            )
-
-            async def _run_sr() -> tuple[list[LineageNode], list[LineageEdge]]:
-                async with sr_client:
-                    return await _safe_extract("SchemaRegistry", sr_client.extract(), on_progress)
-
-            phase3_tasks.append(_run_sr())
-        else:
-            on_progress("Skipped", "Schema Registry — no endpoint discovered")
-
-    if enable_stream_catalog and not sr_endpoint:
-        on_progress("Skipped", "Stream Catalog — no SR endpoint discovered")
-    elif enable_stream_catalog and sr_endpoint:
-        catalog_client = StreamCatalogClient(
-            base_url=sr_endpoint,
-            api_key=sr_key,
-            api_secret=sr_secret,
-            environment_id=env_id,
-        )
-
-        async def _run_catalog() -> tuple[list[LineageNode], list[LineageEdge]]:
-            async with catalog_client:
-                try:
-                    await catalog_client.enrich(graph)
-                except Exception:
-                    logger.warning("StreamCatalog enrichment failed", exc_info=True)
-                return [], []
-
-        phase3_tasks.append(_run_catalog())
-
-    if phase3_tasks:
-        phase3_results = await asyncio.gather(*phase3_tasks)
-        for nodes, edges in phase3_results:
-            _merge_into(graph, nodes, edges)
-
-    # ── Phase 4: Tableflow (last) ─────────────────────────────────────
-    if enable_tableflow:
-        on_progress("Phase 4/4", "Extracting Tableflow & catalog integrations")
-        tf_key = settings.tableflow_api_key or settings.confluent_cloud_api_key
-        tf_secret = settings.tableflow_api_secret or settings.confluent_cloud_api_secret
-        tf_cluster_ids = [c.get("id", "") for c in all_clusters if c.get("id")]
-        tf_client = TableflowClient(
-            api_key=tf_key,
-            api_secret=tf_secret,
-            environment_id=env_id,
-            cluster_ids=tf_cluster_ids,
-        )
-        async with tf_client:
-            nodes, edges = await _safe_extract("Tableflow", tf_client.extract(), on_progress)
-            _merge_into(graph, nodes, edges)
-
-    # ── Stamp environment / cluster display names on all nodes ──────────
+async def _stamp_environment_names(
+    cloud: ConfluentClient,
+    env_id: str,
+    clusters: list[dict[str, Any]],
+    graph: LineageGraph,
+) -> None:
+    """Backfill `environment_name` and `cluster_name` on graph nodes for this env."""
     env_name: str | None = None
     try:
         env_data = await cloud.get(f"/org/v2/environments/{env_id}")
@@ -755,7 +437,7 @@ async def _extract_environment(
         logger.debug("Could not fetch environment name for %s", env_id)
 
     cluster_names: dict[str, str] = {}
-    for c in all_clusters:
+    for c in clusters:
         cid = c.get("id", "")
         cname = c.get("spec", {}).get("display_name", "")
         if cid and cname:
@@ -766,6 +448,72 @@ async def _extract_environment(
             node.environment_name = env_name
         if node.cluster_id and not node.cluster_name:
             node.cluster_name = cluster_names.get(node.cluster_id)
+
+
+async def _extract_environment(
+    settings: Settings,
+    cloud: ConfluentClient,
+    env_id: str,
+    graph: LineageGraph,
+    *,
+    cluster_ids: list[str] | None,
+    enable_connect: bool,
+    enable_ksqldb: bool,
+    enable_flink: bool,
+    enable_schema_registry: bool,
+    enable_stream_catalog: bool,
+    enable_tableflow: bool,
+    sr_endpoints: dict[str, str] | None,
+    sr_credentials: dict[str, dict[str, str]] | None,
+    flink_credentials: dict[str, dict[str, str]] | None,
+    on_progress: Any,
+) -> None:
+    """Run all phases for a single Confluent Cloud environment."""
+    clusters, sr_endpoint, sr_key, sr_secret = await _discover_environment(
+        settings,
+        cloud,
+        env_id,
+        cluster_ids=cluster_ids,
+        enable_schema_registry=enable_schema_registry,
+        enable_stream_catalog=enable_stream_catalog,
+        sr_endpoints=sr_endpoints,
+        sr_credentials=sr_credentials,
+        on_progress=on_progress,
+    )
+    if not clusters:
+        return
+
+    ctx = ExtractionContext(
+        settings=settings,
+        cloud=cloud,
+        env_id=env_id,
+        graph=graph,
+        clusters=clusters,
+        sr_endpoint=sr_endpoint,
+        sr_key=sr_key,
+        sr_secret=sr_secret,
+        sr_credentials=sr_credentials,
+        flink_credentials=flink_credentials,
+        enable_connect=enable_connect,
+        enable_ksqldb=enable_ksqldb,
+        enable_flink=enable_flink,
+        enable_schema_registry=enable_schema_registry,
+        enable_stream_catalog=enable_stream_catalog,
+        enable_tableflow=enable_tableflow,
+        on_progress=on_progress,
+    )
+
+    runner = PhaseRunner(
+        [
+            KafkaAdminPhase(),
+            ProcessingPhase(),
+            SchemaEnrichmentPhase(),
+            TableflowPhase(),
+        ]
+    )
+    await runner.run(ctx)
+
+    await _stamp_environment_names(cloud, env_id, clusters, graph)
 
     on_progress(
         "Environment done",
