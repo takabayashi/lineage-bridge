@@ -1,6 +1,11 @@
 # Copyright 2026 Daniel Takabayashi
 # Licensed under the Apache License, Version 2.0
-"""Unit tests for `services.push_service.run_push`."""
+"""Unit tests for `services.push_service.run_push`.
+
+Phase 1B: dispatcher now resolves a fresh provider per request via
+`_provider_for(req.provider, settings)` and calls `provider.push_lineage()`
+directly. We patch the provider classes inside push_service to inject mocks.
+"""
 
 from __future__ import annotations
 
@@ -12,29 +17,45 @@ from lineage_bridge.models.graph import LineageGraph, PushResult
 from lineage_bridge.services import PUSH_PROVIDERS, PushRequest, run_push
 
 
+def _settings() -> MagicMock:
+    """Settings stub with all the fields _provider_for() reads."""
+    s = MagicMock()
+    s.databricks_workspace_url = "https://workspace.databricks.com"
+    s.databricks_token = "dapi-test"
+    s.aws_region = "us-east-1"
+    s.aws_datazone_domain_id = "dzd-test"
+    s.aws_datazone_project_id = "prj-test"
+    s.gcp_project_id = "gcp-test"
+    s.gcp_location = "us"
+    return s
+
+
 @pytest.mark.parametrize(
     "provider,patch_target",
     [
-        ("databricks_uc", "lineage_bridge.extractors.orchestrator.run_lineage_push"),
-        ("aws_glue", "lineage_bridge.extractors.orchestrator.run_glue_push"),
-        ("google", "lineage_bridge.extractors.orchestrator.run_google_push"),
-        ("datazone", "lineage_bridge.extractors.orchestrator.run_datazone_push"),
+        ("databricks_uc", "lineage_bridge.catalogs.databricks_uc.DatabricksUCProvider"),
+        ("aws_glue", "lineage_bridge.catalogs.aws_glue.GlueCatalogProvider"),
+        ("google", "lineage_bridge.catalogs.google_lineage.GoogleLineageProvider"),
+        ("datazone", "lineage_bridge.catalogs.aws_datazone.AWSDataZoneProvider"),
     ],
 )
 async def test_run_push_dispatches_to_correct_provider(provider, patch_target):
-    settings = MagicMock()
+    """Each PushRequest provider name routes to the matching provider class."""
     graph = LineageGraph()
     req = PushRequest(provider=provider, options={})
+    mock_instance = AsyncMock()
+    mock_instance.push_lineage = AsyncMock(return_value=PushResult(tables_updated=1))
 
-    with patch(patch_target, new=AsyncMock(return_value=PushResult(tables_updated=1))) as mock:
-        result = await run_push(req, settings, graph)
+    with patch(patch_target, return_value=mock_instance) as MockClass:
+        result = await run_push(req, _settings(), graph)
 
-    mock.assert_awaited_once()
+    MockClass.assert_called_once()
+    mock_instance.push_lineage.assert_awaited_once()
     assert result.tables_updated == 1
 
 
 async def test_run_push_forwards_options_as_kwargs():
-    """`req.options` is splatted into the underlying push function."""
+    """`req.options` is splatted into provider.push_lineage()."""
     req = PushRequest(
         provider="databricks_uc",
         options={
@@ -44,14 +65,16 @@ async def test_run_push_forwards_options_as_kwargs():
             "bridge_table_name": "main.lineage.bridge",
         },
     )
+    mock_instance = AsyncMock()
+    mock_instance.push_lineage = AsyncMock(return_value=PushResult())
 
     with patch(
-        "lineage_bridge.extractors.orchestrator.run_lineage_push",
-        new=AsyncMock(return_value=PushResult()),
-    ) as mock:
-        await run_push(req, MagicMock(), LineageGraph())
+        "lineage_bridge.catalogs.databricks_uc.DatabricksUCProvider",
+        return_value=mock_instance,
+    ):
+        await run_push(req, _settings(), LineageGraph())
 
-    kwargs = mock.call_args.kwargs
+    kwargs = mock_instance.push_lineage.call_args.kwargs
     assert kwargs["set_properties"] is False
     assert kwargs["set_comments"] is True
     assert kwargs["create_bridge_table"] is True
@@ -63,13 +86,16 @@ async def test_run_push_passes_progress_callback_through():
 
     def cb(phase: str, detail: str) -> None: ...
 
-    with patch(
-        "lineage_bridge.extractors.orchestrator.run_glue_push",
-        new=AsyncMock(return_value=PushResult()),
-    ) as mock:
-        await run_push(req, MagicMock(), LineageGraph(), on_progress=cb)
+    mock_instance = AsyncMock()
+    mock_instance.push_lineage = AsyncMock(return_value=PushResult())
 
-    assert mock.call_args.kwargs["on_progress"] is cb
+    with patch(
+        "lineage_bridge.catalogs.aws_glue.GlueCatalogProvider",
+        return_value=mock_instance,
+    ):
+        await run_push(req, _settings(), LineageGraph(), on_progress=cb)
+
+    assert mock_instance.push_lineage.call_args.kwargs["on_progress"] is cb
 
 
 async def test_unknown_provider_raises_validation_error():

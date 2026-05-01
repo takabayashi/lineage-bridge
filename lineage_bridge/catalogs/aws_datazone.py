@@ -28,7 +28,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from lineage_bridge.models.graph import LineageGraph, LineageNode, NodeType, PushResult, SystemType
+from lineage_bridge.models.graph import LineageGraph, LineageNode, NodeType, PushResult
 from lineage_bridge.openlineage.normalize import kafka_fqn, normalize_event
 
 logger = logging.getLogger(__name__)
@@ -325,7 +325,6 @@ class AWSDataZoneProvider:
     """
 
     catalog_type: str = "AWS_DATAZONE"
-    system_type: SystemType = SystemType.AWS
 
     def __init__(
         self,

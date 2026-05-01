@@ -38,7 +38,7 @@ class TestBuildNode:
         )
 
         assert node.system == SystemType.GOOGLE
-        assert node.node_type == NodeType.GOOGLE_TABLE
+        assert node.node_type == NodeType.CATALOG_TABLE
         assert node.qualified_name == "my-project.my_dataset.orders"
         assert node.attributes["project_id"] == "my-project"
         assert node.attributes["dataset_id"] == "my_dataset"
@@ -89,7 +89,8 @@ class TestBuildUrl:
         node = LineageNode(
             node_id="google:google_table:env:p.d.t",
             system=SystemType.GOOGLE,
-            node_type=NodeType.GOOGLE_TABLE,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="GOOGLE_DATA_LINEAGE",
             qualified_name="p.d.t",
             display_name="p.d.t",
             attributes={
@@ -109,7 +110,8 @@ class TestBuildUrl:
         node = LineageNode(
             node_id="google:google_table:env:x",
             system=SystemType.GOOGLE,
-            node_type=NodeType.GOOGLE_TABLE,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="GOOGLE_DATA_LINEAGE",
             qualified_name="x",
             display_name="x",
             attributes={},
@@ -121,11 +123,9 @@ class TestProviderMetadata:
     def test_catalog_type(self, provider):
         assert provider.catalog_type == "GOOGLE_DATA_LINEAGE"
 
-    def test_node_type(self, provider):
-        assert provider.node_type == NodeType.GOOGLE_TABLE
-
-    def test_system_type(self, provider):
-        assert provider.system_type == SystemType.GOOGLE
+    # node_type / system_type were dropped from the protocol in Phase 1B
+    # (ADR-021). All providers create CATALOG_TABLE nodes; the discriminator
+    # is `catalog_type` (asserted above).
 
 
 class TestEnrich:
@@ -136,7 +136,8 @@ class TestEnrich:
             LineageNode(
                 node_id="google:google_table:env:p.d.t",
                 system=SystemType.GOOGLE,
-                node_type=NodeType.GOOGLE_TABLE,
+                node_type=NodeType.CATALOG_TABLE,
+                catalog_type="GOOGLE_DATA_LINEAGE",
                 qualified_name="p.d.t",
                 display_name="p.d.t",
             )

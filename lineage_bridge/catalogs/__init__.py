@@ -1,19 +1,26 @@
 # Copyright 2026 Daniel Takabayashi
 # Licensed under the Apache License, Version 2.0
-"""Catalog provider registry."""
+"""Catalog provider registry.
+
+Dispatches on the `catalog_type` string (per ADR-021); all catalog tables
+share `NodeType.CATALOG_TABLE`, so we no longer need `(node_type, system)`
+matching to figure out which provider owns a node.
+"""
 
 from __future__ import annotations
 
+from lineage_bridge.catalogs.aws_datazone import AWSDataZoneProvider
 from lineage_bridge.catalogs.aws_glue import GlueCatalogProvider
 from lineage_bridge.catalogs.databricks_uc import DatabricksUCProvider
 from lineage_bridge.catalogs.google_lineage import GoogleLineageProvider
 from lineage_bridge.catalogs.protocol import CatalogProvider
-from lineage_bridge.models.graph import LineageGraph
+from lineage_bridge.models.graph import LineageGraph, NodeType
 
 _PROVIDERS: dict[str, CatalogProvider] = {
     "UNITY_CATALOG": DatabricksUCProvider(),
     "AWS_GLUE": GlueCatalogProvider(),
     "GOOGLE_DATA_LINEAGE": GoogleLineageProvider(),
+    "AWS_DATAZONE": AWSDataZoneProvider(),
 }
 
 
@@ -41,11 +48,10 @@ def get_provider(catalog_type: str) -> CatalogProvider | None:
 
 
 def get_active_providers(graph: LineageGraph) -> list[CatalogProvider]:
-    """Return providers that have at least one node in the graph."""
-    active_types: set[str] = set()
-    for node in graph.nodes:
-        for provider in _PROVIDERS.values():
-            if node.node_type == provider.node_type and node.system == provider.system_type:
-                active_types.add(provider.catalog_type)
-
+    """Return providers that have at least one CATALOG_TABLE node in the graph."""
+    active_types = {
+        n.catalog_type
+        for n in graph.nodes
+        if n.node_type == NodeType.CATALOG_TABLE and n.catalog_type
+    }
     return [_PROVIDERS[ct] for ct in active_types if ct in _PROVIDERS]

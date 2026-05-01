@@ -185,11 +185,13 @@ class TestBuildNodeUrl:
         attributes: dict | None = None,
         environment_id: str | None = "env-123",
         cluster_id: str | None = "lkc-abc",
+        catalog_type: str | None = None,
     ) -> LineageNode:
         return LineageNode(
             node_id=f"{system.value}:{node_type.value}:{environment_id or 'none'}:{qualified_name}",
             system=system,
             node_type=node_type,
+            catalog_type=catalog_type,
             qualified_name=qualified_name,
             display_name=qualified_name,
             environment_id=environment_id,
@@ -199,8 +201,9 @@ class TestBuildNodeUrl:
 
     def test_uc_table_with_workspace_url(self):
         node = self._make_node(
-            NodeType.UC_TABLE,
+            NodeType.CATALOG_TABLE,
             system=SystemType.DATABRICKS,
+            catalog_type="UNITY_CATALOG",
             qualified_name="my_catalog.my_schema.my_table",
             attributes={"workspace_url": "https://myworkspace.databricks.com"},
         )
@@ -211,8 +214,9 @@ class TestBuildNodeUrl:
 
     def test_uc_table_without_workspace_url(self):
         node = self._make_node(
-            NodeType.UC_TABLE,
+            NodeType.CATALOG_TABLE,
             system=SystemType.DATABRICKS,
+            catalog_type="UNITY_CATALOG",
             qualified_name="catalog.schema.table",
             attributes={},
         )
@@ -221,8 +225,9 @@ class TestBuildNodeUrl:
 
     def test_glue_table_with_database_and_table_name(self):
         node = self._make_node(
-            NodeType.GLUE_TABLE,
+            NodeType.CATALOG_TABLE,
             system=SystemType.AWS,
+            catalog_type="AWS_GLUE",
             qualified_name="glue://mydb/mytable",
             attributes={
                 "database": "mydb",
@@ -238,8 +243,9 @@ class TestBuildNodeUrl:
 
     def test_glue_table_missing_attributes(self):
         node = self._make_node(
-            NodeType.GLUE_TABLE,
+            NodeType.CATALOG_TABLE,
             system=SystemType.AWS,
+            catalog_type="AWS_GLUE",
             qualified_name="glue://unknown",
             attributes={},
         )

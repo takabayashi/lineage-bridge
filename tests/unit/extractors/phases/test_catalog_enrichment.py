@@ -15,7 +15,8 @@ def _uc_node() -> LineageNode:
     return LineageNode(
         node_id="databricks:uc_table:env-test1:cat.schema.tbl",
         system=SystemType.DATABRICKS,
-        node_type=NodeType.UC_TABLE,
+        node_type=NodeType.CATALOG_TABLE,
+        catalog_type="UNITY_CATALOG",
         qualified_name="cat.schema.tbl",
         display_name="cat.schema.tbl",
         environment_id="env-test1",

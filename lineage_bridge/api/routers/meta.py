@@ -28,14 +28,10 @@ async def catalogs() -> list[CatalogInfo]:
     """List registered catalog providers."""
     from lineage_bridge.catalogs import _PROVIDERS
 
-    return [
-        CatalogInfo(
-            catalog_type=ct,
-            node_type=p.node_type.value,
-            system_type=p.system_type.value,
-        )
-        for ct, p in _PROVIDERS.items()
-    ]
+    # Per ADR-021, all catalog providers create CATALOG_TABLE nodes; the
+    # discriminator is `catalog_type` itself. node_type / system_type fields
+    # were dropped from CatalogInfo in Phase 1B.
+    return [CatalogInfo(catalog_type=ct) for ct in _PROVIDERS]
 
 
 @router.get("/openapi.yaml", include_in_schema=False)

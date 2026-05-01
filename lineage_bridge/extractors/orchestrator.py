@@ -17,9 +17,8 @@ Post-extraction (in `run_enrichment`):
   4b. run_catalog_enrichment — providers enrich their own nodes.
   5.  run_metrics_enrichment — live throughput data (optional).
 
-Push functions (`run_lineage_push`, `run_glue_push`, `run_google_push`,
-`run_datazone_push`) live here for now; Phase 1A will collapse them into a
-single `services.push_service.run_push(provider_name, graph, options)`.
+Push moved to `services.push_service.run_push` in Phase 1B; the per-provider
+`run_*_push` wrappers that used to live here are gone.
 """
 
 from __future__ import annotations
@@ -29,7 +28,6 @@ import logging
 import sys
 from typing import Any
 
-from lineage_bridge.catalogs.databricks_uc import DatabricksUCProvider
 from lineage_bridge.clients.base import ConfluentClient
 from lineage_bridge.config.settings import Settings
 from lineage_bridge.extractors.context import ExtractionContext, ProgressCallback
@@ -42,7 +40,7 @@ from lineage_bridge.extractors.phases import (
     run_catalog_enrichment,
     run_metrics_enrichment,
 )
-from lineage_bridge.models.graph import LineageGraph, PushResult
+from lineage_bridge.models.graph import LineageGraph
 
 logger = logging.getLogger(__name__)
 
@@ -51,12 +49,8 @@ __all__ = [
     "ProgressCallback",
     "main",
     "merge_into",
-    "run_datazone_push",
     "run_enrichment",
     "run_extraction",
-    "run_glue_push",
-    "run_google_push",
-    "run_lineage_push",
     "safe_extract",
 ]
 
@@ -106,174 +100,9 @@ async def run_enrichment(
     return graph
 
 
-# ── push entry points (Phase 1A will collapse these) ───────────────────
-
-
-async def run_lineage_push(
-    settings: Settings,
-    graph: LineageGraph,
-    *,
-    set_properties: bool = True,
-    set_comments: bool = True,
-    create_bridge_table: bool = False,
-    bridge_table_name: str | None = None,
-    on_progress: ProgressCallback = None,
-) -> PushResult:
-    """Push lineage metadata to Databricks UC tables in the graph."""
-    from lineage_bridge.clients.databricks_sql import DatabricksSQLClient
-
-    _progress = _make_progress(on_progress)
-
-    if not settings.databricks_workspace_url:
-        _progress("Push skipped", "No Databricks workspace URL configured")
-        return PushResult(errors=["No Databricks workspace URL configured"])
-    if not settings.databricks_token:
-        _progress("Push skipped", "No Databricks token configured")
-        return PushResult(errors=["No Databricks token configured"])
-
-    warehouse_id = settings.databricks_warehouse_id
-    if not warehouse_id:
-        from lineage_bridge.clients.databricks_discovery import (
-            list_warehouses,
-            pick_running_warehouse,
-        )
-
-        _progress("Push", "No warehouse ID configured — discovering warehouses...")
-        try:
-            warehouses = await list_warehouses(
-                settings.databricks_workspace_url,
-                settings.databricks_token,
-            )
-            selected = pick_running_warehouse(warehouses)
-            if selected:
-                warehouse_id = selected.id
-                _progress("Push", f"Auto-selected warehouse: {selected.name} ({selected.id})")
-            else:
-                _progress("Push skipped", "No SQL warehouses found in workspace")
-                return PushResult(errors=["No SQL warehouses found in workspace"])
-        except Exception as exc:
-            _progress("Push skipped", f"Warehouse discovery failed: {exc}")
-            return PushResult(errors=[f"Warehouse discovery failed: {exc}"])
-
-    _progress("Push", "Starting lineage push to Databricks")
-
-    sql_client = DatabricksSQLClient(
-        workspace_url=settings.databricks_workspace_url,
-        token=settings.databricks_token,
-        warehouse_id=warehouse_id,
-    )
-    provider = DatabricksUCProvider(
-        workspace_url=settings.databricks_workspace_url,
-        token=settings.databricks_token,
-    )
-    result = await provider.push_lineage(
-        graph,
-        sql_client,
-        set_properties=set_properties,
-        set_comments=set_comments,
-        create_bridge_table=create_bridge_table,
-        bridge_table_name=bridge_table_name,
-        on_progress=on_progress,
-    )
-
-    _progress(
-        "Push done",
-        f"{result.tables_updated} tables updated, "
-        f"{result.properties_set} properties, {result.comments_set} comments"
-        + (f", {len(result.errors)} error(s)" if result.errors else ""),
-    )
-    return result
-
-
-async def run_glue_push(
-    settings: Settings,
-    graph: LineageGraph,
-    *,
-    set_parameters: bool = True,
-    set_description: bool = True,
-    on_progress: ProgressCallback = None,
-) -> PushResult:
-    """Push lineage metadata to AWS Glue tables in the graph."""
-    from lineage_bridge.catalogs.aws_glue import GlueCatalogProvider
-
-    _progress = _make_progress(on_progress)
-
-    provider = GlueCatalogProvider(region=settings.aws_region)
-    result = await provider.push_lineage(
-        graph,
-        set_parameters=set_parameters,
-        set_description=set_description,
-        on_progress=on_progress,
-    )
-
-    _progress(
-        "Glue push done",
-        f"{result.tables_updated} tables updated, "
-        f"{result.properties_set} parameters, {result.comments_set} descriptions"
-        + (f", {len(result.errors)} error(s)" if result.errors else ""),
-    )
-    return result
-
-
-async def run_google_push(
-    settings: Settings,
-    graph: LineageGraph,
-    *,
-    on_progress: ProgressCallback = None,
-) -> PushResult:
-    """Push lineage as OpenLineage events to Google Data Lineage API."""
-    from lineage_bridge.catalogs.google_lineage import GoogleLineageProvider
-
-    _progress = _make_progress(on_progress)
-
-    if not settings.gcp_project_id:
-        _progress("Push skipped", "No GCP project ID configured")
-        return PushResult(errors=["No GCP project ID configured"])
-
-    provider = GoogleLineageProvider(
-        project_id=settings.gcp_project_id,
-        location=settings.gcp_location,
-    )
-    result = await provider.push_lineage(
-        graph,
-        on_progress=on_progress,
-    )
-
-    _progress(
-        "Google push done",
-        f"{result.tables_updated} events pushed"
-        + (f", {len(result.errors)} error(s)" if result.errors else ""),
-    )
-    return result
-
-
-async def run_datazone_push(
-    settings: Settings,
-    graph: LineageGraph,
-    *,
-    on_progress: ProgressCallback = None,
-) -> PushResult:
-    """Register Kafka assets in AWS DataZone and post OpenLineage events."""
-    from lineage_bridge.catalogs.aws_datazone import AWSDataZoneProvider
-
-    _progress = _make_progress(on_progress)
-
-    if not settings.aws_datazone_domain_id or not settings.aws_datazone_project_id:
-        _progress("Push skipped", "DataZone domain_id / project_id not configured")
-        return PushResult(errors=["DataZone domain_id / project_id not configured"])
-
-    provider = AWSDataZoneProvider(
-        domain_id=settings.aws_datazone_domain_id,
-        project_id=settings.aws_datazone_project_id,
-        region=settings.aws_region,
-    )
-    result = await provider.push_lineage(graph, on_progress=on_progress)
-    _progress(
-        "DataZone push done",
-        f"{result.tables_updated} events posted"
-        + (f", {len(result.errors)} error(s)" if result.errors else ""),
-    )
-    return result
+# Push wrappers were removed in Phase 1B. Use `services.run_push(req, settings,
+# graph, on_progress)` with a `PushRequest` instead — it dispatches via the
+# catalog registry to provider.push_lineage().
 
 
 # ── extraction entry point ─────────────────────────────────────────────
@@ -593,7 +422,9 @@ def main() -> None:
             )
 
         if args.push_lineage:
-            result = asyncio.run(run_lineage_push(settings, graph))
+            from lineage_bridge.services import PushRequest, run_push
+
+            result = asyncio.run(run_push(PushRequest(provider="databricks_uc"), settings, graph))
             print(
                 f"Push: {result.tables_updated} tables, "
                 f"{result.properties_set} properties, {result.comments_set} comments"

@@ -710,7 +710,8 @@ class TestBuildTooltipUcTable:
         node = LineageNode(
             node_id="databricks:uc_table:env:my_catalog.my_schema.my_table",
             system=SystemType.DATABRICKS,
-            node_type=NodeType.UC_TABLE,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="UNITY_CATALOG",
             qualified_name="my_catalog.my_schema.my_table",
             display_name="my_table",
             attributes={
@@ -727,13 +728,14 @@ class TestBuildTooltipUcTable:
         node = LineageNode(
             node_id="databricks:uc_table:env:cat.schema.tbl",
             system=SystemType.DATABRICKS,
-            node_type=NodeType.UC_TABLE,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="UNITY_CATALOG",
             qualified_name="cat.schema.tbl",
             display_name="tbl",
-            attributes={"catalog_name": "cat", "catalog_type": "MANAGED"},
+            attributes={"catalog_name": "cat"},
         )
         tip = _build_tooltip(node)
-        assert "MANAGED" in tip
+        assert "Catalog: cat" in tip
         assert "Databricks UC" not in tip  # no workspace_url
 
 
@@ -744,7 +746,8 @@ class TestBuildTooltipGlueTable:
         node = LineageNode(
             node_id="aws:glue_table:env:mydb.mytable",
             system=SystemType.AWS,
-            node_type=NodeType.GLUE_TABLE,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="AWS_GLUE",
             qualified_name="mydb.mytable",
             display_name="mytable",
             attributes={"database": "mydb"},
@@ -874,9 +877,9 @@ class TestBuildTooltipAllNodeTypes:
     @pytest.mark.parametrize("ntype", list(NodeType))
     def test_tooltip_not_empty(self, ntype: NodeType):
         system = SystemType.CONFLUENT
-        if ntype == NodeType.UC_TABLE:
+        if ntype == NodeType.CATALOG_TABLE:
             system = SystemType.DATABRICKS
-        elif ntype == NodeType.GLUE_TABLE:
+        elif ntype == NodeType.CATALOG_TABLE:
             system = SystemType.AWS
         elif ntype == NodeType.EXTERNAL_DATASET:
             system = SystemType.EXTERNAL

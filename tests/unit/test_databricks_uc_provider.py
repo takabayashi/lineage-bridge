@@ -67,7 +67,8 @@ def uc_graph():
         LineageNode(
             node_id="databricks:uc_table:env-abc:confluent_tableflow.lkc-abc123.orders_tableflow",
             system=SystemType.DATABRICKS,
-            node_type=NodeType.UC_TABLE,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="UNITY_CATALOG",
             qualified_name="confluent_tableflow.lkc-abc123.orders_tableflow",
             display_name="confluent_tableflow.lkc-abc123.orders_tableflow",
             environment_id="env-abc",
@@ -97,7 +98,7 @@ class TestBuildNode:
     def test_node_attributes(self, provider, sample_ci_config):
         node, _ = provider.build_node(sample_ci_config, "tf-id", "orders", "lkc-abc123", "env-abc")
         assert node.system == SystemType.DATABRICKS
-        assert node.node_type == NodeType.UC_TABLE
+        assert node.node_type == NodeType.CATALOG_TABLE
         assert node.attributes["catalog_name"] == "confluent_tableflow"
         assert node.attributes["schema_name"] == "lkc-abc123"
         assert node.attributes["table_name"] == "orders"
@@ -145,7 +146,8 @@ class TestBuildUrl:
         node = LineageNode(
             node_id="test",
             system=SystemType.DATABRICKS,
-            node_type=NodeType.UC_TABLE,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="UNITY_CATALOG",
             qualified_name="catalog.schema.table",
             display_name="catalog.schema.table",
             attributes={"workspace_url": WORKSPACE_URL},
@@ -158,7 +160,8 @@ class TestBuildUrl:
         node = LineageNode(
             node_id="test",
             system=SystemType.DATABRICKS,
-            node_type=NodeType.UC_TABLE,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="UNITY_CATALOG",
             qualified_name="catalog.schema.table",
             display_name="catalog.schema.table",
             attributes={},
@@ -169,7 +172,8 @@ class TestBuildUrl:
         node = LineageNode(
             node_id="test",
             system=SystemType.DATABRICKS,
-            node_type=NodeType.UC_TABLE,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="UNITY_CATALOG",
             qualified_name="no_dots_here",
             display_name="no_dots_here",
             attributes={"workspace_url": WORKSPACE_URL},
@@ -183,7 +187,8 @@ class TestBuildUrl:
         node = LineageNode(
             node_id="test",
             system=SystemType.DATABRICKS,
-            node_type=NodeType.UC_TABLE,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="UNITY_CATALOG",
             qualified_name="catalog.schema.table",
             display_name="catalog.schema.table",
             attributes={"workspace_url": stale},
@@ -198,7 +203,8 @@ class TestBuildUrl:
         node = LineageNode(
             node_id="test",
             system=SystemType.DATABRICKS,
-            node_type=NodeType.UC_TABLE,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="UNITY_CATALOG",
             qualified_name="catalog.schema.table",
             display_name="catalog.schema.table",
             attributes={},
@@ -436,7 +442,8 @@ def push_graph():
     uc_node = LineageNode(
         node_id="databricks:uc_table:env-abc:confluent_tableflow.lkc-abc123.orders",
         system=SystemType.DATABRICKS,
-        node_type=NodeType.UC_TABLE,
+        node_type=NodeType.CATALOG_TABLE,
+        catalog_type="UNITY_CATALOG",
         qualified_name="confluent_tableflow.lkc-abc123.orders",
         display_name="confluent_tableflow.lkc-abc123.orders",
         environment_id="env-abc",
@@ -488,7 +495,7 @@ class TestPushLineage:
         )
 
         result = await provider.push_lineage(
-            push_graph, sql_client, set_properties=True, set_comments=False
+            push_graph, sql_client=sql_client, set_properties=True, set_comments=False
         )
 
         assert result.tables_updated == 1
@@ -510,7 +517,7 @@ class TestPushLineage:
         )
 
         result = await provider.push_lineage(
-            push_graph, sql_client, set_properties=False, set_comments=True
+            push_graph, sql_client=sql_client, set_properties=False, set_comments=True
         )
 
         assert result.tables_updated == 1
@@ -532,7 +539,7 @@ class TestPushLineage:
 
         result = await provider.push_lineage(
             push_graph,
-            sql_client,
+            sql_client=sql_client,
             set_properties=False,
             set_comments=False,
             create_bridge_table=True,
@@ -555,7 +562,7 @@ class TestPushLineage:
             )
         )
 
-        result = await provider.push_lineage(graph, sql_client)
+        result = await provider.push_lineage(graph, sql_client=sql_client)
         assert result.tables_updated == 0
 
     @respx.mock
@@ -574,7 +581,7 @@ class TestPushLineage:
             )
         )
 
-        result = await provider.push_lineage(push_graph, sql_client)
+        result = await provider.push_lineage(push_graph, sql_client=sql_client)
         assert result.tables_updated == 1
         assert len(result.errors) > 0
         assert any("PERMISSION_DENIED" in e for e in result.errors)

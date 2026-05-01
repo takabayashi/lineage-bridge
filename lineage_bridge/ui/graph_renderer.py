@@ -17,13 +17,13 @@ from lineage_bridge.models.graph import (
 )
 from lineage_bridge.ui.styles import (
     EDGE_TYPE_LABELS,
-    NODE_COLORS,
-    NODE_TYPE_LABELS,
     TOPIC_WITH_SCHEMA_ICON,
     build_confluent_cloud_url,
     build_edge_vis_props,
     build_node_vis_props,
     build_status_badge_icon,
+    color_for_node,
+    label_for_node,
 )
 
 
@@ -48,8 +48,8 @@ def _build_tooltip(node: LineageNode) -> str:
     surfaces the most relevant quick-view info; SQL is intentionally
     omitted (too noisy for hover).
     """
-    label = NODE_TYPE_LABELS.get(node.node_type, node.node_type.value)
-    color = NODE_COLORS.get(node.node_type, "#757575")
+    label = label_for_node(node)
+    color = color_for_node(node)
     a = node.attributes
 
     # ── Location row (prefer names over IDs) ───────────────────────
@@ -162,13 +162,25 @@ def _build_tooltip(node: LineageNode) -> str:
         if a.get("suspended"):
             detail_lines.append("SUSPENDED")
 
-    elif ntype == NodeType.UC_TABLE:
-        if a.get("catalog_name"):
-            detail_lines.append(f"Catalog: {a['catalog_name']}")
-        if a.get("workspace_url"):
-            detail_lines.append("Databricks UC")
-        elif a.get("catalog_type"):
-            detail_lines.append(a["catalog_type"])
+    elif ntype == NodeType.CATALOG_TABLE:
+        # Per-catalog detail rows. Falls back to a generic line if catalog_type
+        # is unknown (e.g. graph created by an older provider).
+        ct = node.catalog_type
+        if ct == "UNITY_CATALOG":
+            if a.get("catalog_name"):
+                detail_lines.append(f"Catalog: {a['catalog_name']}")
+            if a.get("workspace_url"):
+                detail_lines.append("Databricks UC")
+        elif ct == "AWS_GLUE":
+            if a.get("database"):
+                detail_lines.append(f"Database: {a['database']}")
+        elif ct == "GOOGLE_DATA_LINEAGE":
+            if a.get("project_id"):
+                detail_lines.append(f"Project: {a['project_id']}")
+            if a.get("dataset_id"):
+                detail_lines.append(f"Dataset: {a['dataset_id']}")
+        elif ct:
+            detail_lines.append(ct)
 
     elif ntype == NodeType.SCHEMA:
         if a.get("schema_type"):

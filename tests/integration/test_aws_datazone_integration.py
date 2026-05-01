@@ -127,7 +127,8 @@ def integration_graph() -> LineageGraph:
     glue = LineageNode(
         node_id=f"aws:glue_table:env-int:db.{glue_table}",
         system=SystemType.AWS,
-        node_type=NodeType.GLUE_TABLE,
+        node_type=NodeType.CATALOG_TABLE,
+        catalog_type="AWS_GLUE",
         qualified_name=f"db.{glue_table}",
         display_name=glue_table,
         environment_id="env-int",

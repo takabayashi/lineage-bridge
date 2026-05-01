@@ -130,17 +130,11 @@ class TaskCreatedResponse(BaseModel):
 
 class CatalogInfo(BaseModel):
     catalog_type: str
-    node_type: str
-    system_type: str
 
     model_config = {
         "json_schema_extra": {
             "examples": [
-                {
-                    "catalog_type": "UNITY_CATALOG",
-                    "node_type": "uc_table",
-                    "system_type": "databricks",
-                }
+                {"catalog_type": "UNITY_CATALOG"},
             ],
         }
     }

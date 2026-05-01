@@ -79,7 +79,8 @@ def _uc_target() -> LineageNode:
     return LineageNode(
         node_id="databricks:uc_table:env-1:cat.sch.target",
         system=SystemType.DATABRICKS,
-        node_type=NodeType.UC_TABLE,
+        node_type=NodeType.CATALOG_TABLE,
+        catalog_type="UNITY_CATALOG",
         qualified_name="cat.sch.target",
         display_name="target",
         environment_id="env-1",

@@ -214,7 +214,8 @@ class TestProvider:
         glue = LineageNode(
             node_id="aws:glue_table:env-1:db.t",
             system=SystemType.AWS,
-            node_type=NodeType.GLUE_TABLE,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="AWS_GLUE",
             qualified_name="db.t",
             display_name="db.t",
             environment_id="env-1",

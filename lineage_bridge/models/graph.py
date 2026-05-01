@@ -17,16 +17,19 @@ from pydantic import BaseModel, Field
 
 
 class NodeType(StrEnum):
-    """Types of nodes in the lineage graph."""
+    """Types of nodes in the lineage graph.
+
+    Per ADR-021, every catalog table (Unity Catalog, AWS Glue, Google Data
+    Lineage, Snowflake, Watsonx, ...) shares one node type — `CATALOG_TABLE`
+    — with the `catalog_type` field on the node carrying the discriminator.
+    """
 
     KAFKA_TOPIC = "kafka_topic"
     CONNECTOR = "connector"
     KSQLDB_QUERY = "ksqldb_query"
     FLINK_JOB = "flink_job"
     TABLEFLOW_TABLE = "tableflow_table"
-    UC_TABLE = "uc_table"
-    GLUE_TABLE = "glue_table"
-    GOOGLE_TABLE = "google_table"
+    CATALOG_TABLE = "catalog_table"
     SCHEMA = "schema"
     EXTERNAL_DATASET = "external_dataset"
     CONSUMER_GROUP = "consumer_group"
@@ -68,6 +71,14 @@ class LineageNode(BaseModel):
     environment_name: str | None = None
     cluster_id: str | None = None
     cluster_name: str | None = None
+    catalog_type: str | None = Field(
+        default=None,
+        description=(
+            "For NodeType.CATALOG_TABLE only — discriminator for which catalog "
+            "owns this node (e.g. 'UNITY_CATALOG', 'AWS_GLUE', 'GOOGLE_DATA_LINEAGE', "
+            "'AWS_DATAZONE', 'SNOWFLAKE', 'WATSONX'). None for non-catalog node types."
+        ),
+    )
     attributes: dict[str, Any] = Field(default_factory=dict)
     tags: list[str] = Field(default_factory=list)
     url: str | None = None
@@ -258,6 +269,18 @@ class LineageGraph:
     def filter_by_type(self, node_type: NodeType) -> list[LineageNode]:
         """Return all nodes matching the given type."""
         return [n for n in self._nodes.values() if n.node_type == node_type]
+
+    def filter_catalog_nodes(self, catalog_type: str | None = None) -> list[LineageNode]:
+        """Return CATALOG_TABLE nodes, optionally filtered by `catalog_type`.
+
+        With `catalog_type=None`, returns every catalog table regardless of which
+        catalog owns it. With a string, returns only the matching subset (e.g.
+        `filter_catalog_nodes("UNITY_CATALOG")`).
+        """
+        out = [n for n in self._nodes.values() if n.node_type == NodeType.CATALOG_TABLE]
+        if catalog_type is not None:
+            out = [n for n in out if n.catalog_type == catalog_type]
+        return out
 
     def filter_by_env(self, environment_id: str) -> list[LineageNode]:
         """Return all nodes belonging to the given environment."""

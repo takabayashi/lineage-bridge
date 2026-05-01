@@ -4,7 +4,8 @@
 
 Google Data Lineage natively speaks OpenLineage, making it a natural integration
 point. This provider:
-  - Creates GOOGLE_TABLE nodes from Tableflow catalog integrations
+  - Creates CATALOG_TABLE nodes (catalog_type="GOOGLE_DATA_LINEAGE")
+    from Tableflow catalog integrations
   - Enriches nodes via the Data Lineage REST API
   - Pushes lineage as OpenLineage events to Google Data Lineage API
   - Builds deep links to the Google Cloud console
@@ -47,8 +48,6 @@ class GoogleLineageProvider:
     """
 
     catalog_type: str = "GOOGLE_DATA_LINEAGE"
-    node_type: NodeType = NodeType.GOOGLE_TABLE
-    system_type: SystemType = SystemType.GOOGLE
 
     def __init__(
         self,
@@ -69,18 +68,21 @@ class GoogleLineageProvider:
         cluster_id: str,
         environment_id: str,
     ) -> tuple[LineageNode, LineageEdge]:
-        """Create a GOOGLE_TABLE node and MATERIALIZES edge from the tableflow node."""
+        """Create a CATALOG_TABLE node + MATERIALIZES edge from the tableflow node."""
         google_cfg = ci_config.get("google_bigquery", ci_config)
         project_id = google_cfg.get("project_id", self._project_id or "unknown")
         dataset_id = google_cfg.get("dataset_id", cluster_id)
         table_name = topic_name.split(".")[-1].replace("-", "_")
         qualified = f"{project_id}.{dataset_id}.{table_name}"
+        # Node ID retains "google_table" so existing IDs stay stable; the
+        # runtime discriminator is `catalog_type`.
         google_id = f"google:google_table:{environment_id}:{qualified}"
 
         node = LineageNode(
             node_id=google_id,
             system=SystemType.GOOGLE,
-            node_type=NodeType.GOOGLE_TABLE,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="GOOGLE_DATA_LINEAGE",
             qualified_name=qualified,
             display_name=qualified,
             environment_id=environment_id,
@@ -105,7 +107,7 @@ class GoogleLineageProvider:
             logger.debug("Google enrichment skipped -- no project_id configured")
             return
 
-        google_nodes = graph.filter_by_type(NodeType.GOOGLE_TABLE)
+        google_nodes = graph.filter_catalog_nodes("GOOGLE_DATA_LINEAGE")
         if not google_nodes:
             return
 
@@ -221,7 +223,9 @@ class GoogleLineageProvider:
         result = PushResult()
 
         google_nodes = [
-            n for n in graph.filter_by_type(NodeType.GOOGLE_TABLE) if n.system == SystemType.GOOGLE
+            n
+            for n in graph.filter_catalog_nodes("GOOGLE_DATA_LINEAGE")
+            if n.system == SystemType.GOOGLE
         ]
         if not google_nodes:
             return result

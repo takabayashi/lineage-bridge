@@ -50,7 +50,7 @@ def _gcp_enabled() -> tuple[bool, str]:
         return False, "LINEAGE_BRIDGE_GCP_PROJECT_ID required"
     try:
         import google.auth
-        import google.auth.transport.requests  # noqa: F401
+        import google.auth.transport.requests
     except ImportError:
         return False, "google-auth not installed"
     try:

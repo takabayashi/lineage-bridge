@@ -572,7 +572,8 @@ def generate_sample_graph() -> LineageGraph:
     uc_orders = LineageNode(
         node_id=_node_id("databricks", "uc_table", "main.streaming.orders_avro"),
         system=SystemType.DATABRICKS,
-        node_type=NodeType.UC_TABLE,
+        node_type=NodeType.CATALOG_TABLE,
+        catalog_type="UNITY_CATALOG",
         qualified_name="main.streaming.orders_avro",
         display_name="UC: main.streaming.orders_avro",
         environment_id=ENV_ID,
@@ -602,7 +603,8 @@ def generate_sample_graph() -> LineageGraph:
     uc_enriched = LineageNode(
         node_id=_node_id("databricks", "uc_table", "main.streaming.enriched_orders"),
         system=SystemType.DATABRICKS,
-        node_type=NodeType.UC_TABLE,
+        node_type=NodeType.CATALOG_TABLE,
+        catalog_type="UNITY_CATALOG",
         qualified_name="main.streaming.enriched_orders",
         display_name="UC: main.streaming.enriched_orders",
         environment_id=ENV_ID,
@@ -632,7 +634,8 @@ def generate_sample_graph() -> LineageGraph:
     uc_daily_summary = LineageNode(
         node_id=_node_id("databricks", "uc_table", "main.analytics.daily_order_summary"),
         system=SystemType.DATABRICKS,
-        node_type=NodeType.UC_TABLE,
+        node_type=NodeType.CATALOG_TABLE,
+        catalog_type="UNITY_CATALOG",
         qualified_name="main.analytics.daily_order_summary",
         display_name="UC: daily_order_summary",
         environment_id=ENV_ID,
@@ -662,7 +665,8 @@ def generate_sample_graph() -> LineageGraph:
     glue_payments = LineageNode(
         node_id=_node_id("aws", "glue_table", "streaming_db.payments"),
         system=SystemType.AWS,
-        node_type=NodeType.GLUE_TABLE,
+        node_type=NodeType.CATALOG_TABLE,
+        catalog_type="AWS_GLUE",
         qualified_name="streaming_db.payments",
         display_name="Glue: streaming_db.payments",
         environment_id=ENV_ID,
@@ -688,7 +692,8 @@ def generate_sample_graph() -> LineageGraph:
     glue_shipments = LineageNode(
         node_id=_node_id("aws", "glue_table", "streaming_db.shipments"),
         system=SystemType.AWS,
-        node_type=NodeType.GLUE_TABLE,
+        node_type=NodeType.CATALOG_TABLE,
+        catalog_type="AWS_GLUE",
         qualified_name="streaming_db.shipments",
         display_name="Glue: streaming_db.shipments",
         environment_id=ENV_ID,
@@ -716,7 +721,8 @@ def generate_sample_graph() -> LineageGraph:
     gcp_enriched = LineageNode(
         node_id=_node_id("google", "google_table", "my-project.streaming.enriched_orders"),
         system=SystemType.GOOGLE,
-        node_type=NodeType.GOOGLE_TABLE,
+        node_type=NodeType.CATALOG_TABLE,
+        catalog_type="GOOGLE_DATA_LINEAGE",
         qualified_name="my-project.streaming.enriched_orders",
         display_name="BQ: my-project.streaming.enriched_orders",
         environment_id=ENV_ID,

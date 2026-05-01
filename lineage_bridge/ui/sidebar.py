@@ -536,7 +536,7 @@ def _render_sidebar_databricks():
 
     # ── Push to UC button ─────────────────────────────────────────────
     graph = st.session_state.get("graph")
-    has_uc_tables = graph is not None and len(graph.filter_by_type(NodeType.UC_TABLE)) > 0
+    has_uc_tables = graph is not None and len(graph.filter_catalog_nodes("UNITY_CATALOG")) > 0
     st.divider()
     if not has_uc_tables:
         st.caption("No UC tables in current graph — extract with Tableflow enabled.")
@@ -585,7 +585,7 @@ def _render_sidebar_aws():
     st.caption("Credentials: AWS default credential chain")
 
     graph = st.session_state.get("graph")
-    glue_tables = graph.filter_by_type(NodeType.GLUE_TABLE) if graph else []
+    glue_tables = graph.filter_catalog_nodes("AWS_GLUE") if graph else []
     kafka_topics = graph.filter_by_type(NodeType.KAFKA_TOPIC) if graph else []
     has_glue_tables = bool(glue_tables)
 
@@ -679,7 +679,7 @@ def _render_sidebar_google():
     st.caption("Credentials: Application Default Credentials (ADC)")
 
     graph = st.session_state.get("graph")
-    google_tables = graph.filter_by_type(NodeType.GOOGLE_TABLE) if graph else []
+    google_tables = graph.filter_catalog_nodes("GOOGLE_DATA_LINEAGE") if graph else []
     if google_tables:
         enriched = sum(1 for n in google_tables if n.attributes.get("columns"))
         st.info(f"{len(google_tables)} BigQuery table(s), {enriched} enriched")

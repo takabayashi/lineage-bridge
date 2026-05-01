@@ -30,8 +30,6 @@ class GlueCatalogProvider:
     """CatalogProvider implementation for AWS Glue Data Catalog."""
 
     catalog_type: str = "AWS_GLUE"
-    node_type: NodeType = NodeType.GLUE_TABLE
-    system_type: SystemType = SystemType.AWS
 
     def __init__(self, region: str | None = None) -> None:
         self._region = region
@@ -44,23 +42,25 @@ class GlueCatalogProvider:
         cluster_id: str,
         environment_id: str,
     ) -> tuple[LineageNode, LineageEdge]:
-        """Create a GLUE_TABLE node and MATERIALIZES edge from the tableflow node."""
+        """Create a CATALOG_TABLE node + MATERIALIZES edge from the tableflow node."""
         glue_cfg = ci_config.get("aws_glue", ci_config)
         database = glue_cfg.get("database_name", cluster_id)
         # Tableflow uses the raw topic name (including dots) as the Glue table name.
         qualified = f"glue://{database}/{topic_name}"
+        # Node ID retains the legacy "glue_table" segment so existing graph IDs
+        # don't churn — the runtime discriminator is `catalog_type`.
         glue_id = f"aws:glue_table:{environment_id}:{qualified}"
 
         node = LineageNode(
             node_id=glue_id,
             system=SystemType.AWS,
-            node_type=NodeType.GLUE_TABLE,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="AWS_GLUE",
             qualified_name=qualified,
             display_name=f"{database}.{topic_name} (glue)",
             environment_id=environment_id,
             cluster_id=cluster_id,
             attributes={
-                "catalog_type": "AWS_GLUE",
                 "database": database,
                 "table_name": topic_name,
             },
@@ -73,12 +73,12 @@ class GlueCatalogProvider:
         return node, edge
 
     async def enrich(self, graph: LineageGraph) -> None:
-        """Fetch table metadata from AWS Glue and enrich GLUE_TABLE nodes."""
+        """Fetch table metadata from AWS Glue and enrich AWS_GLUE catalog nodes."""
         if not self._region:
             logger.debug("Glue enrichment skipped — no region configured")
             return
 
-        glue_nodes = graph.filter_by_type(NodeType.GLUE_TABLE)
+        glue_nodes = graph.filter_catalog_nodes("AWS_GLUE")
         if not glue_nodes:
             return
 
@@ -190,7 +190,7 @@ class GlueCatalogProvider:
         result = PushResult()
 
         glue_nodes = [
-            n for n in graph.filter_by_type(NodeType.GLUE_TABLE) if n.system == SystemType.AWS
+            n for n in graph.filter_catalog_nodes("AWS_GLUE") if n.system == SystemType.AWS
         ]
         if not glue_nodes:
             return result

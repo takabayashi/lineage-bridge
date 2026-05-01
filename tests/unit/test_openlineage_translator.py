@@ -73,7 +73,7 @@ class TestBuildNamespace:
     def test_databricks_namespace(self):
         node = _node(
             "table",
-            NodeType.UC_TABLE,
+            NodeType.CATALOG_TABLE,
             SystemType.DATABRICKS,
             env="ws",
             cluster="",
@@ -84,7 +84,7 @@ class TestBuildNamespace:
     def test_aws_namespace(self):
         node = _node(
             "table",
-            NodeType.GLUE_TABLE,
+            NodeType.CATALOG_TABLE,
             SystemType.AWS,
             env="us-east-1",
             cluster="mydb",
@@ -242,7 +242,7 @@ class TestGraphToEvents:
         conn = _node("s3-sink", NodeType.CONNECTOR)
         topic = _node("orders")
         uc_table = _node(
-            "catalog.schema.orders", NodeType.UC_TABLE, system=SystemType.DATABRICKS, env="ws"
+            "catalog.schema.orders", NodeType.CATALOG_TABLE, system=SystemType.DATABRICKS, env="ws"
         )
         graph.add_node(conn)
         graph.add_node(topic)
@@ -257,7 +257,9 @@ class TestGraphToEvents:
         graph.add_edge(
             _edge(
                 _nid("s3-sink", NodeType.CONNECTOR),
-                "databricks:uc_table:ws:catalog.schema.orders",
+                # uc_table-style ID survives the NodeType collapse — DatabricksUCProvider
+                # keeps the legacy "uc_table" segment for ID stability per Phase 1B.
+                "databricks:catalog_table:ws:catalog.schema.orders",
                 EdgeType.PRODUCES,
             )
         )

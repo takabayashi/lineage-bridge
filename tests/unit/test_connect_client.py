@@ -293,7 +293,7 @@ async def test_extract_bigquery_sink_synthesizes_google_tables(
     assert ext_nodes == []
 
     # One GOOGLE_TABLE per topic
-    google_nodes = [n for n in nodes if n.node_type == NodeType.GOOGLE_TABLE]
+    google_nodes = [n for n in nodes if n.node_type == NodeType.CATALOG_TABLE]
     assert len(google_nodes) == 2
     qnames = {n.qualified_name for n in google_nodes}
     assert qnames == {

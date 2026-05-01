@@ -23,7 +23,8 @@ def _make_glue_node(database="db", table_name="tbl"):
     return LineageNode(
         node_id=f"aws:glue_table:env-1:glue://{database}/{table_name}",
         system=SystemType.AWS,
-        node_type=NodeType.GLUE_TABLE,
+        node_type=NodeType.CATALOG_TABLE,
+        catalog_type="AWS_GLUE",
         qualified_name=f"glue://{database}/{table_name}",
         display_name=f"{database}.{table_name} (glue)",
         attributes={"database": database, "table_name": table_name},
@@ -60,7 +61,7 @@ class TestBuildNode:
             "env-abc",
         )
         assert node.system == SystemType.AWS
-        assert node.node_type == NodeType.GLUE_TABLE
+        assert node.node_type == NodeType.CATALOG_TABLE
 
     def test_node_attributes(self):
         provider = GlueCatalogProvider()
@@ -71,7 +72,7 @@ class TestBuildNode:
             "lkc-abc123",
             "env-abc",
         )
-        assert node.attributes["catalog_type"] == "AWS_GLUE"
+        assert node.catalog_type == "AWS_GLUE"
         assert node.attributes["database"] == "my_db"
         assert node.attributes["table_name"] == "orders"
         assert node.display_name == "my_db.orders (glue)"
@@ -123,7 +124,8 @@ class TestBuildUrl:
         node = LineageNode(
             node_id="test",
             system=SystemType.AWS,
-            node_type=NodeType.GLUE_TABLE,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="AWS_GLUE",
             qualified_name="glue://orders",
             display_name="orders (glue)",
             attributes={"table_name": "orders"},

@@ -46,9 +46,7 @@ from lineage_bridge.openlineage.models import (
 _DATASET_NODE_TYPES = {
     NodeType.KAFKA_TOPIC,
     NodeType.TABLEFLOW_TABLE,
-    NodeType.UC_TABLE,
-    NodeType.GLUE_TABLE,
-    NodeType.GOOGLE_TABLE,
+    NodeType.CATALOG_TABLE,
     NodeType.EXTERNAL_DATASET,
 }
 
@@ -319,14 +317,14 @@ def _infer_node_type(system: SystemType, is_job: bool, name: str) -> NodeType:
 
     if system == SystemType.CONFLUENT:
         return NodeType.KAFKA_TOPIC
-    elif system == SystemType.DATABRICKS:
-        return NodeType.UC_TABLE
-    elif system == SystemType.AWS:
-        return NodeType.GLUE_TABLE
-    elif system == SystemType.GOOGLE:
-        return NodeType.GOOGLE_TABLE
-    else:
-        return NodeType.EXTERNAL_DATASET
+    if system in (SystemType.DATABRICKS, SystemType.AWS, SystemType.GOOGLE):
+        # All catalog tables collapse onto NodeType.CATALOG_TABLE per ADR-021;
+        # the catalog_type discriminator (set on the node when known) is what
+        # routes downstream rendering / push dispatch. We can't recover it from
+        # an OpenLineage event's namespace alone, so callers stamping
+        # catalog_type after events_to_graph() is the contract.
+        return NodeType.CATALOG_TABLE
+    return NodeType.EXTERNAL_DATASET
 
 
 def events_to_graph(events: list[RunEvent]) -> LineageGraph:

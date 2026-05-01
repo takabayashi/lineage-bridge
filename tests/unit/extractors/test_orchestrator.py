@@ -21,7 +21,6 @@ from lineage_bridge.extractors.orchestrator import (
     main,
     run_enrichment,
     run_extraction,
-    run_lineage_push,
 )
 from lineage_bridge.models.graph import (
     LineageGraph,
@@ -407,84 +406,6 @@ def test_main_requires_env_arg():
         main()
 
 
-# ── push functions (will move to push_service in Phase 1A) ──────────────
-
-
-async def test_run_lineage_push_no_credentials():
-    """run_lineage_push returns an error when workspace URL is missing."""
-    result = await run_lineage_push(make_settings(), LineageGraph())
-    assert len(result.errors) == 1
-    assert "workspace URL" in result.errors[0]
-
-
-async def test_run_lineage_push_auto_discovers_warehouse():
-    """No warehouse_id configured triggers warehouse discovery."""
-    settings = make_settings(
-        databricks_workspace_url="https://myworkspace.databricks.com",
-        databricks_token="dapi-test-token",
-    )
-
-    from lineage_bridge.clients.databricks_discovery import WarehouseInfo
-    from lineage_bridge.models.graph import PushResult
-
-    mock_warehouses = [WarehouseInfo(id="wh-auto", name="Auto WH", state="RUNNING")]
-    mock_result = PushResult(tables_updated=1)
-
-    with (
-        patch(
-            "lineage_bridge.clients.databricks_discovery.list_warehouses",
-            new=AsyncMock(return_value=mock_warehouses),
-        ),
-        patch("lineage_bridge.extractors.orchestrator.DatabricksUCProvider") as MockProvider,
-        patch("lineage_bridge.clients.databricks_sql.DatabricksSQLClient") as MockSQL,
-    ):
-        mock_provider = AsyncMock()
-        mock_provider.push_lineage = AsyncMock(return_value=mock_result)
-        MockProvider.return_value = mock_provider
-
-        result = await run_lineage_push(settings, LineageGraph())
-
-    assert result.tables_updated == 1
-    assert MockSQL.call_args[1]["warehouse_id"] == "wh-auto"
-
-
-async def test_run_lineage_push_no_warehouses_found():
-    """No warehouses returned by discovery yields an error result."""
-    settings = make_settings(
-        databricks_workspace_url="https://myworkspace.databricks.com",
-        databricks_token="dapi-test-token",
-    )
-
-    with patch(
-        "lineage_bridge.clients.databricks_discovery.list_warehouses",
-        new=AsyncMock(return_value=[]),
-    ):
-        result = await run_lineage_push(settings, LineageGraph())
-
-    assert any("No SQL warehouses" in e for e in result.errors)
-
-
-async def test_run_lineage_push_delegates_to_provider():
-    """When configured, run_lineage_push calls DatabricksUCProvider.push_lineage."""
-    settings = make_settings(
-        databricks_workspace_url="https://myworkspace.databricks.com",
-        databricks_token="dapi-test-token",
-        databricks_warehouse_id="wh-123",
-    )
-
-    from lineage_bridge.models.graph import PushResult
-
-    mock_result = PushResult(tables_updated=2, properties_set=2, comments_set=2)
-
-    with (
-        patch("lineage_bridge.extractors.orchestrator.DatabricksUCProvider") as MockProvider,
-        patch("lineage_bridge.clients.databricks_sql.DatabricksSQLClient"),
-    ):
-        mock_provider = AsyncMock()
-        mock_provider.push_lineage = AsyncMock(return_value=mock_result)
-        MockProvider.return_value = mock_provider
-
-        result = await run_lineage_push(settings, LineageGraph())
-
-    assert result.tables_updated == 2
-    mock_provider.push_lineage.assert_awaited_once()
+# Push wrappers were removed in Phase 1B — coverage is now in
+# tests/services/test_push_service.py (dispatch) and tests/unit/test_databricks_uc_provider.py
+# (per-provider behaviour incl. warehouse discovery).

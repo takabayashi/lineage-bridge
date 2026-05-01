@@ -21,6 +21,7 @@ def _make_graph(
     attributes: dict | None = None,
     environment_id: str | None = "env-123",
     cluster_id: str | None = "lkc-abc",
+    catalog_type: str | None = None,
 ) -> tuple[str, LineageGraph]:
     """Build a LineageGraph with a single node and return (node_id, graph)."""
     node_id = f"{system.value}:{node_type.value}:{environment_id or 'none'}:{qualified_name}"
@@ -28,6 +29,7 @@ def _make_graph(
         node_id=node_id,
         system=system,
         node_type=node_type,
+        catalog_type=catalog_type,
         qualified_name=qualified_name,
         display_name=qualified_name,
         environment_id=environment_id,
@@ -160,8 +162,9 @@ class TestRenderUcTable:
     @patch("lineage_bridge.ui.node_details.st")
     def test_renders_uc_table(self, st_mock: MagicMock):
         sel_id, graph = _make_graph(
-            NodeType.UC_TABLE,
+            NodeType.CATALOG_TABLE,
             system=SystemType.DATABRICKS,
+            catalog_type="UNITY_CATALOG",
             qualified_name="catalog.schema.table",
             attributes={
                 "catalog_name": "catalog",
@@ -183,8 +186,9 @@ class TestRenderGlueTable:
     @patch("lineage_bridge.ui.node_details.st")
     def test_renders_glue_table(self, st_mock: MagicMock):
         sel_id, graph = _make_graph(
-            NodeType.GLUE_TABLE,
+            NodeType.CATALOG_TABLE,
             system=SystemType.AWS,
+            catalog_type="AWS_GLUE",
             qualified_name="glue://mydb/mytable",
             attributes={
                 "database": "mydb",

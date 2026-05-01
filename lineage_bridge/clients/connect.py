@@ -161,18 +161,21 @@ class ConnectClient(ConfluentClient):
         connector_id: str,
         cluster_id: str,
     ) -> tuple[list[LineageNode], list[LineageEdge]]:
-        """Build one GOOGLE_TABLE node + PRODUCES edge per topic for a BigQuery sink."""
+        """Build one CATALOG_TABLE node (GOOGLE_DATA_LINEAGE) + PRODUCES edge per topic."""
         nodes: list[LineageNode] = []
         edges: list[LineageEdge] = []
         for topic in topics:
             table_name = topic.replace(".", "_").replace("-", "_")
             qualified = f"{project}.{dataset}.{table_name}"
+            # Node ID retains the legacy "google_table" segment so existing IDs
+            # don't churn — the runtime discriminator is `catalog_type`.
             google_id = f"google:google_table:{self.environment_id}:{qualified}"
             nodes.append(
                 LineageNode(
                     node_id=google_id,
                     system=SystemType.GOOGLE,
-                    node_type=NodeType.GOOGLE_TABLE,
+                    node_type=NodeType.CATALOG_TABLE,
+                    catalog_type="GOOGLE_DATA_LINEAGE",
                     qualified_name=qualified,
                     display_name=qualified,
                     environment_id=self.environment_id,
@@ -236,7 +239,7 @@ class ConnectClient(ConfluentClient):
             topics = _extract_topics(config)
             conn_id = self._connector_node_id(cname)
 
-            # BigQuery sinks get per-topic GOOGLE_TABLE nodes instead of an
+            # BigQuery sinks get per-topic CATALOG_TABLE (Google) nodes instead of an
             # EXTERNAL_DATASET hub — the dataset is already encoded in each
             # google_table's qualified name.
             bq_ref = (
@@ -316,7 +319,7 @@ class ConnectClient(ConfluentClient):
                         )
                     )
                 # connector → external_dataset (PRODUCES) — skipped for BigQuery
-                # sinks, which use per-topic GOOGLE_TABLE nodes instead.
+                # sinks, which use per-topic CATALOG_TABLE (Google) nodes instead.
                 if ext_id is not None:
                     edges.append(
                         LineageEdge(
@@ -326,7 +329,7 @@ class ConnectClient(ConfluentClient):
                         )
                     )
 
-                # BigQuery sinks: synthesize one GOOGLE_TABLE per topic so the
+                # BigQuery sinks: synthesize one CATALOG_TABLE (Google) per topic so the
                 # publish UI can push lineage to Google Data Lineage. UC and Glue
                 # get the same treatment via Tableflow; BigQuery isn't a
                 # Tableflow target, so we infer it from the connector config.

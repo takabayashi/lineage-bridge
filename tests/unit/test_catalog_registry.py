@@ -46,7 +46,8 @@ class TestGetActiveProviders:
             LineageNode(
                 node_id="databricks:uc_table:env-1:cat.schema.tbl",
                 system=SystemType.DATABRICKS,
-                node_type=NodeType.UC_TABLE,
+                node_type=NodeType.CATALOG_TABLE,
+                catalog_type="UNITY_CATALOG",
                 qualified_name="cat.schema.tbl",
                 display_name="cat.schema.tbl",
             )
@@ -55,7 +56,8 @@ class TestGetActiveProviders:
             LineageNode(
                 node_id="aws:glue_table:env-1:glue://db/tbl",
                 system=SystemType.AWS,
-                node_type=NodeType.GLUE_TABLE,
+                node_type=NodeType.CATALOG_TABLE,
+                catalog_type="AWS_GLUE",
                 qualified_name="glue://db/tbl",
                 display_name="db.tbl (glue)",
             )
@@ -71,7 +73,8 @@ class TestGetActiveProviders:
             LineageNode(
                 node_id="google:google_table:env:p.d.t",
                 system=SystemType.GOOGLE,
-                node_type=NodeType.GOOGLE_TABLE,
+                node_type=NodeType.CATALOG_TABLE,
+                catalog_type="GOOGLE_DATA_LINEAGE",
                 qualified_name="p.d.t",
                 display_name="p.d.t",
             )
@@ -87,7 +90,8 @@ class TestGetActiveProviders:
             LineageNode(
                 node_id="databricks:uc_table:env-1:cat.schema.tbl",
                 system=SystemType.DATABRICKS,
-                node_type=NodeType.UC_TABLE,
+                node_type=NodeType.CATALOG_TABLE,
+                catalog_type="UNITY_CATALOG",
                 qualified_name="cat.schema.tbl",
                 display_name="cat.schema.tbl",
             )
