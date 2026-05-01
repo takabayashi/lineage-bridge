@@ -153,7 +153,32 @@ def _render_sidebar_connection():
     settings = _try_load_settings()
 
     if st.session_state.connected:
-        st.caption("Connection active. Expand to view credentials.")
+        if settings:
+            api_key = settings.confluent_cloud_api_key
+            masked = api_key[:4] + "..." + api_key[-4:]
+            st.info(f"Credentials: `{masked}`")
+        st.caption("Connection active.")
+
+        if st.button(
+            "Disconnect",
+            key="disconnect_btn",
+            type="secondary",
+            width="stretch",
+        ):
+            # Clear all connection and extraction state
+            st.session_state.connected = False
+            st.session_state.environments = []
+            st.session_state.env_cache = {}
+            st.session_state.graph = None
+            st.session_state.selected_node = None
+            st.session_state.focus_node = None
+            st.session_state.last_extraction_params = None
+            st.session_state.extraction_log = []
+            # Clear cached credentials
+            st.session_state._cached_cluster_creds = {}
+            st.session_state._cached_sr_creds = {}
+            st.session_state._cached_flink_creds = {}
+            st.rerun()
         return
 
     if settings:

@@ -107,13 +107,30 @@ async def _run_extraction(
         settings = Settings()
         store.add_progress(task_id, "Loaded settings")
 
-        from lineage_bridge.extractors.orchestrator import Orchestrator
-
-        orchestrator = Orchestrator(settings)
-        store.add_progress(task_id, "Created orchestrator")
+        from lineage_bridge.extractors.orchestrator import run_extraction
+        from lineage_bridge.clients.discovery import list_environments
 
         env_ids = params.get("environment_ids", [])
-        graph = await orchestrator.extract(environment_ids=env_ids or None)
+
+        # If no environment_ids provided, discover all environments
+        if not env_ids:
+            from lineage_bridge.clients.base import ConfluentClient
+            cloud = ConfluentClient(
+                "https://api.confluent.cloud",
+                settings.confluent_cloud_api_key,
+                settings.confluent_cloud_api_secret,
+            )
+            envs = await list_environments(cloud)
+            env_ids = [e.id for e in envs]
+            store.add_progress(task_id, f"Discovered {len(env_ids)} environments")
+
+        store.add_progress(task_id, f"Extracting from {len(env_ids)} environment(s)")
+
+        graph = await run_extraction(
+            settings,
+            environment_ids=env_ids,
+            enable_enrichment=True,
+        )
 
         msg = f"Extraction complete: {graph.node_count} nodes, {graph.edge_count} edges"
         store.add_progress(task_id, msg)

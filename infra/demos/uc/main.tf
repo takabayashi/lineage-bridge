@@ -582,16 +582,15 @@ resource "terraform_data" "update_trust_phase1" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid       = "SelfAssume"
-        Effect    = "Allow"
-        Principal = { AWS = ["arn:aws:iam::${var.aws_account_id}:root", aws_iam_role.tableflow.arn] }
-        Action    = "sts:AssumeRole"
-      },
-      {
-        Sid       = "DatabricksAssumeRole"
-        Effect    = "Allow"
-        Principal = { AWS = "arn:aws:iam::414351767826:root" }
-        Action    = "sts:AssumeRole"
+        Sid    = "DatabricksAssumeRole"
+        Effect = "Allow"
+        Principal = {
+          AWS = [
+            databricks_storage_credential.tableflow.aws_iam_role[0].unity_catalog_iam_arn,
+            aws_iam_role.tableflow.arn
+          ]
+        }
+        Action = "sts:AssumeRole"
         Condition = {
           StringEquals = {
             "sts:ExternalId" = databricks_storage_credential.tableflow.aws_iam_role[0].external_id
@@ -623,16 +622,15 @@ resource "terraform_data" "update_trust_phase2" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid       = "SelfAssume"
-        Effect    = "Allow"
-        Principal = { AWS = ["arn:aws:iam::${var.aws_account_id}:root", aws_iam_role.tableflow.arn] }
-        Action    = "sts:AssumeRole"
-      },
-      {
-        Sid       = "DatabricksAssumeRole"
-        Effect    = "Allow"
-        Principal = { AWS = "arn:aws:iam::414351767826:root" }
-        Action    = "sts:AssumeRole"
+        Sid    = "DatabricksAssumeRole"
+        Effect = "Allow"
+        Principal = {
+          AWS = [
+            databricks_storage_credential.tableflow.aws_iam_role[0].unity_catalog_iam_arn,
+            aws_iam_role.tableflow.arn
+          ]
+        }
+        Action = "sts:AssumeRole"
         Condition = {
           StringEquals = {
             "sts:ExternalId" = databricks_storage_credential.tableflow.aws_iam_role[0].external_id
