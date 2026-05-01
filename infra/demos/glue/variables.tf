@@ -38,3 +38,20 @@ variable "aws_region" {
   type        = string
   default     = "us-east-1"
 }
+
+# ── AWS DataZone (optional) ─────────────────────────────────────────────────
+# When set, the demo wires LineageBridge's DataZone provider so the Streamlit
+# UI's "Push to DataZone" button is available out of the box. Leave empty to
+# skip — the rest of the demo works without DataZone.
+
+variable "aws_datazone_domain_id" {
+  description = "Existing AWS DataZone domain ID (dzd-xxxxxx). Empty = skip DataZone wiring."
+  type        = string
+  default     = ""
+}
+
+variable "aws_datazone_project_id" {
+  description = "Existing DataZone project ID (owns registered Kafka assets). Empty = skip."
+  type        = string
+  default     = ""
+}

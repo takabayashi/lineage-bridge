@@ -125,6 +125,27 @@ def _merge_gcp_settings(cache: dict, env: dict) -> bool:
     return True
 
 
+def _merge_aws_datazone_settings(cache: dict, env: dict) -> bool:
+    """Mirror AWS DataZone domain/project IDs into the cache.
+
+    Same UX as the GCP fallback — once a demo provisions DataZone wiring, the
+    UI's "Push to DataZone" button stays available even when ``.env`` later
+    gets overwritten by another demo (multi-demo workflows).
+    """
+    domain_id = env.get("LINEAGE_BRIDGE_AWS_DATAZONE_DOMAIN_ID", "").strip()
+    project_id = env.get("LINEAGE_BRIDGE_AWS_DATAZONE_PROJECT_ID", "").strip()
+    if not domain_id or not project_id:
+        return False
+    existing = dict(cache.get("aws_datazone_settings") or {})
+    existing["domain_id"] = domain_id
+    existing["project_id"] = project_id
+    region = env.get("LINEAGE_BRIDGE_AWS_REGION", "").strip()
+    if region:
+        existing["region"] = region
+    cache["aws_datazone_settings"] = existing
+    return True
+
+
 def main() -> int:
     args = _parse_args()
 
@@ -162,6 +183,8 @@ def main() -> int:
         merged.append("ksqldb")
     if _merge_gcp_settings(cache, env):
         merged.append("gcp")
+    if _merge_aws_datazone_settings(cache, env):
+        merged.append("datazone")
 
     if not merged:
         print("  No demo credentials found in .env — cache unchanged")

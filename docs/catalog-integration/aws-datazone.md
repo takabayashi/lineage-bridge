@@ -45,6 +45,19 @@ The asset's `externalIdentifier` matches the lineage event FQN exactly, so the D
 
 ## Configuration
 
+### Auto-wired by the Glue demo
+
+If you use `make demo-glue-up`, the `setup-tfvars.sh` step auto-detects DataZone for you: when the configured `aws_region` has a single DataZone domain it's picked automatically; multiple domains prompt for a choice; zero domains silently skips DataZone (the rest of the demo still works). Same logic for project selection inside the chosen domain. The IDs land in `infra/demos/glue/terraform.tfvars`:
+
+```hcl
+aws_datazone_domain_id  = "dzd-xxxxxx"
+aws_datazone_project_id = "prj-xxxxxx"
+```
+
+…and Terraform threads them into the `.env` output and into the local encrypted cache (so the "Push to DataZone" button stays available even after another demo overwrites `.env`). To override or skip: edit `terraform.tfvars` and set both to `""`, then re-run `make demo-glue-up`.
+
+### Manual configuration
+
 ```bash
 # Required
 export LINEAGE_BRIDGE_AWS_DATAZONE_DOMAIN_ID=dzd_xxxxxx

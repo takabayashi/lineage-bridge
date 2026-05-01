@@ -56,6 +56,12 @@ output "demo_env_file" {
     LINEAGE_BRIDGE_FLINK_API_KEY=${module.core.flink_api_key_id}
     LINEAGE_BRIDGE_FLINK_API_SECRET=${module.core.flink_api_key_secret}
     LINEAGE_BRIDGE_AWS_REGION=${var.aws_region}
+%{ if var.aws_datazone_domain_id != "" ~}
+    LINEAGE_BRIDGE_AWS_DATAZONE_DOMAIN_ID=${var.aws_datazone_domain_id}
+%{ endif ~}
+%{ if var.aws_datazone_project_id != "" ~}
+    LINEAGE_BRIDGE_AWS_DATAZONE_PROJECT_ID=${var.aws_datazone_project_id}
+%{ endif ~}
   EOT
   sensitive   = true
 }

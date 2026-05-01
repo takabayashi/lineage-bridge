@@ -15,9 +15,10 @@ def _try_load_settings():
     """Attempt to load credentials from .env / environment variables.
 
     Falls back to the local encrypted cache for fields the demos write there
-    (currently: ``gcp_project_id`` / ``gcp_location``). This means the UI
-    works after ``make demo-bq-up`` even if the user hasn't restarted
-    Streamlit (which would re-read ``.env``).
+    (``gcp_project_id`` / ``gcp_location`` and the AWS DataZone domain /
+    project IDs). This means the UI's "Push to Google" / "Push to DataZone"
+    buttons stay available across multi-demo workflows even when ``.env``
+    has been overwritten by a different demo.
     """
     try:
         from lineage_bridge.config.settings import Settings
@@ -32,24 +33,30 @@ def _try_load_settings():
         )
         return None
 
-    if settings.gcp_project_id:
-        return settings
-
     try:
         from lineage_bridge.config.cache import load_cache
 
-        gcp = load_cache().get("gcp_settings") or {}
+        cache = load_cache()
         update: dict[str, str] = {}
+
+        gcp = cache.get("gcp_settings") or {}
         if not settings.gcp_project_id and gcp.get("project_id"):
             update["gcp_project_id"] = gcp["project_id"]
         if gcp.get("location"):
-            update["gcp_location"] = gcp["location"]
+            update.setdefault("gcp_location", gcp["location"])
+
+        dz = cache.get("aws_datazone_settings") or {}
+        if not settings.aws_datazone_domain_id and dz.get("domain_id"):
+            update["aws_datazone_domain_id"] = dz["domain_id"]
+        if not settings.aws_datazone_project_id and dz.get("project_id"):
+            update["aws_datazone_project_id"] = dz["project_id"]
+
         if update:
             settings = settings.model_copy(update=update)
     except Exception:
         import logging
 
-        logging.getLogger(__name__).debug("GCP cache fallback failed", exc_info=True)
+        logging.getLogger(__name__).debug("Cache fallback failed", exc_info=True)
 
     return settings
 

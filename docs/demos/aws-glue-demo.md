@@ -117,6 +117,10 @@ The setup script will prompt for these if not auto-detected:
 - **AWS Account ID** — Auto-detected from `aws sts get-caller-identity`
 - **AWS Region** — Defaults to `us-east-1`
 
+### Optional: AWS DataZone
+
+If your account has an AWS DataZone domain in the demo's region, `setup-tfvars.sh` auto-detects it and a project inside it (single match auto-picks; multiple prompts; zero silently skips). Selected IDs are written to `terraform.tfvars` and threaded into the generated `.env`, which makes the **Push to DataZone** button appear in the Streamlit UI alongside Push to Glue. No DataZone domain → the rest of the demo still works; DataZone is a strict opt-in. See [AWS DataZone Integration](../catalog-integration/aws-datazone.md) for what gets registered.
+
 ## Provisioning
 
 ### Step 1: Credential Setup

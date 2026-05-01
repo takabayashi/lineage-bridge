@@ -182,6 +182,65 @@ prompt AWS_REGION "AWS region" "${AWS_REGION:-us-east-1}"
 
 echo ""
 
+# ── AWS DataZone (optional) ───────────────────────────────────────────────
+#
+# Auto-detect if a domain + project already exist. Single-match auto-picks;
+# multiple matches prompt; zero matches just leaves DataZone disabled (the
+# demo still works — only the "Push to DataZone" button stays hidden).
+
+echo "── AWS DataZone (optional) ─────────────────────────────────────"
+echo ""
+
+DZ_DOMAIN_ID=$(get_tfvar aws_datazone_domain_id)
+DZ_PROJECT_ID=$(get_tfvar aws_datazone_project_id)
+
+if [ -z "$DZ_DOMAIN_ID" ] && command -v aws &>/dev/null; then
+    DZ_DOMAINS_JSON=$(aws datazone list-domains --region "$AWS_REGION" \
+        --query 'items[?status==`AVAILABLE`].{id:id, name:name}' \
+        --output json 2>/dev/null || echo "[]")
+    DZ_DOMAIN_COUNT=$(echo "$DZ_DOMAINS_JSON" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 0)
+    if [ "$DZ_DOMAIN_COUNT" = "1" ]; then
+        DZ_DOMAIN_ID=$(echo "$DZ_DOMAINS_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['id'])")
+        DZ_DOMAIN_NAME=$(echo "$DZ_DOMAINS_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['name'])")
+        echo "  Detected DataZone domain: $DZ_DOMAIN_ID ($DZ_DOMAIN_NAME)"
+    elif [ "$DZ_DOMAIN_COUNT" -gt 1 ]; then
+        echo "  Multiple DataZone domains found:"
+        echo "$DZ_DOMAINS_JSON" | python3 -c "import sys,json; [print(f\"    - {d['id']}  {d['name']}\") for d in json.load(sys.stdin)]"
+        echo ""
+        read -rp "  DataZone domain ID (blank to skip): " DZ_DOMAIN_ID
+    else
+        echo "  No DataZone domains found in $AWS_REGION — skipping."
+    fi
+fi
+
+if [ -n "$DZ_DOMAIN_ID" ] && [ -z "$DZ_PROJECT_ID" ] && command -v aws &>/dev/null; then
+    DZ_PROJECTS_JSON=$(aws datazone list-projects --domain-identifier "$DZ_DOMAIN_ID" \
+        --region "$AWS_REGION" --query 'items[].{id:id, name:name}' \
+        --output json 2>/dev/null || echo "[]")
+    DZ_PROJECT_COUNT=$(echo "$DZ_PROJECTS_JSON" | python3 -c "import sys,json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo 0)
+    if [ "$DZ_PROJECT_COUNT" = "1" ]; then
+        DZ_PROJECT_ID=$(echo "$DZ_PROJECTS_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['id'])")
+        DZ_PROJECT_NAME=$(echo "$DZ_PROJECTS_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['name'])")
+        echo "  Detected DataZone project: $DZ_PROJECT_ID ($DZ_PROJECT_NAME)"
+    elif [ "$DZ_PROJECT_COUNT" -gt 1 ]; then
+        echo "  Multiple DataZone projects in $DZ_DOMAIN_ID:"
+        echo "$DZ_PROJECTS_JSON" | python3 -c "import sys,json; [print(f\"    - {p['id']}  {p['name']}\") for p in json.load(sys.stdin)]"
+        echo ""
+        read -rp "  DataZone project ID (blank to skip DataZone wiring): " DZ_PROJECT_ID
+    else
+        echo "  No DataZone projects found in domain — skipping."
+        DZ_DOMAIN_ID=""
+    fi
+fi
+
+# Both must be set; otherwise wipe both so the .env stays clean.
+if [ -z "$DZ_DOMAIN_ID" ] || [ -z "$DZ_PROJECT_ID" ]; then
+    DZ_DOMAIN_ID=""
+    DZ_PROJECT_ID=""
+fi
+
+echo ""
+
 # ── Tableflow API key (placeholder — provision-demo.sh creates it) ───────
 
 TF_KEY=$(get_tfvar confluent_tableflow_api_key)
@@ -214,6 +273,10 @@ confluent_tableflow_api_secret = "$TF_SECRET"
 # AWS
 aws_region     = "$AWS_REGION"
 aws_account_id = "$AWS_ACCOUNT_ID"
+
+# AWS DataZone (optional — leave empty to skip Push to DataZone wiring)
+aws_datazone_domain_id  = "$DZ_DOMAIN_ID"
+aws_datazone_project_id = "$DZ_PROJECT_ID"
 EOF
 
 echo "  Written to: $TFVARS"
