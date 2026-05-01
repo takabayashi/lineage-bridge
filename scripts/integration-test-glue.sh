@@ -171,12 +171,13 @@ test_glue_enrichment() {
   fi
 
   if uv run lineage-bridge-extract --env "$ENV_ID" --output "$OUTPUT_FILE" 2>&1 | tee /tmp/glue-test3.log | tail -3 | grep -q "Complete:"; then
-    # Check for Glue tables in output
-    GLUE_TABLES=$(python3 -c "import json; data=json.load(open('$OUTPUT_FILE')); print(sum(1 for n in data['nodes'] if n['node_type']=='glue_table'))" 2>/dev/null || echo "0")
+    # Phase 1B (ADR-021): Glue tables now use NodeType.CATALOG_TABLE with
+    # catalog_type="AWS_GLUE" instead of the retired NodeType.GLUE_TABLE.
+    GLUE_TABLES=$(python3 -c "import json; data=json.load(open('$OUTPUT_FILE')); print(sum(1 for n in data['nodes'] if n['node_type']=='catalog_table' and n.get('catalog_type')=='AWS_GLUE'))" 2>/dev/null || echo "0")
 
     if [ "$GLUE_TABLES" -ge 1 ]; then
       # Verify Glue tables have enriched metadata
-      HAS_COLUMNS=$(python3 -c "import json; data=json.load(open('$OUTPUT_FILE')); glue=[n for n in data['nodes'] if n['node_type']=='glue_table']; print(1 if glue and 'columns' in glue[0].get('attributes', {}) else 0)" 2>/dev/null || echo "0")
+      HAS_COLUMNS=$(python3 -c "import json; data=json.load(open('$OUTPUT_FILE')); glue=[n for n in data['nodes'] if n['node_type']=='catalog_table' and n.get('catalog_type')=='AWS_GLUE']; print(1 if glue and 'columns' in glue[0].get('attributes', {}) else 0)" 2>/dev/null || echo "0")
 
       if [ "$HAS_COLUMNS" = "1" ]; then
         test_passed "Glue enrichment ($GLUE_TABLES Glue tables with metadata)"

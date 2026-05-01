@@ -137,12 +137,13 @@ test_catalog_enrichment() {
   fi
 
   if uv run lineage-bridge-extract --env "$ENV_ID" --output "$OUTPUT_FILE" 2>&1 | tee /tmp/test2.log | tail -3 | grep -q "Complete:"; then
-    # Check for UC tables in output
-    UC_TABLES=$(python3 -c "import json; data=json.load(open('$OUTPUT_FILE')); print(sum(1 for n in data['nodes'] if n['node_type']=='uc_table'))" 2>/dev/null || echo "0")
+    # Phase 1B (ADR-021): UC tables now use NodeType.CATALOG_TABLE with
+    # catalog_type="UNITY_CATALOG" instead of the retired NodeType.UC_TABLE.
+    UC_TABLES=$(python3 -c "import json; data=json.load(open('$OUTPUT_FILE')); print(sum(1 for n in data['nodes'] if n['node_type']=='catalog_table' and n.get('catalog_type')=='UNITY_CATALOG'))" 2>/dev/null || echo "0")
 
     if [ "$UC_TABLES" -ge 1 ]; then
       # Verify UC tables have enriched metadata (schema, owner)
-      HAS_SCHEMA=$(python3 -c "import json; data=json.load(open('$OUTPUT_FILE')); uc=[n for n in data['nodes'] if n['node_type']=='uc_table']; print(1 if uc and 'schema' in uc[0].get('attributes', {}) else 0)" 2>/dev/null || echo "0")
+      HAS_SCHEMA=$(python3 -c "import json; data=json.load(open('$OUTPUT_FILE')); uc=[n for n in data['nodes'] if n['node_type']=='catalog_table' and n.get('catalog_type')=='UNITY_CATALOG']; print(1 if uc and 'schema' in uc[0].get('attributes', {}) else 0)" 2>/dev/null || echo "0")
 
       if [ "$HAS_SCHEMA" = "1" ]; then
         test_passed "Catalog enrichment ($UC_TABLES UC tables with metadata)"
