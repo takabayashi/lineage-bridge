@@ -4,7 +4,11 @@ All notable changes to LineageBridge are documented here. The format follows [Ke
 
 ## [Unreleased]
 
-**New catalog integrations and richer push payloads.**
+See the [latest commits](https://github.com/takabayashi/lineage-bridge/commits/main) for work in progress.
+
+## [0.4.1] - 2026-05-01
+
+**New catalog integrations, brand-icon refresh, BigQuery node enhancement, and CI/docs hardening.**
 
 ### Added
 
@@ -14,27 +18,15 @@ All notable changes to LineageBridge are documented here. The format follows [Ke
 - **Multi-hop OpenLineage push** for Google: every Job-event (source connectors, Flink, ksqlDB, sinks) is pushed so the Lineage tab can walk transitively from a BQ table back to the source topics.
 - **Live integration tests**: `tests/integration/test_gcp_dataplex_integration.py` (gated by `LINEAGE_BRIDGE_GCP_INTEGRATION=1`) and `tests/integration/test_aws_datazone_integration.py` (gated by `LINEAGE_BRIDGE_AWS_DATAZONE_INTEGRATION=1`). Run via `make test-integration-dataplex` / `make test-integration-datazone`.
 - **"Push to DataZone" button** in the Streamlit publish panel, gated on `LINEAGE_BRIDGE_AWS_DATAZONE_DOMAIN_ID` + `LINEAGE_BRIDGE_AWS_DATAZONE_PROJECT_ID`.
-
-### Changed
-
-- Shared OpenLineage namespace normalizer (`api/openlineage/normalize.py`) — used by both Google and DataZone providers, parametrised by allowlist (`{bigquery}` for Google, `{kafka, aws}` and `{bigquery, aws}` for DataZone).
-- Shared upstream-chain builder (`catalogs/upstream_chain.py`) — single source of truth for chain shape, used by all four catalogs.
-- `google-auth` is now a hard dependency (was previously imported lazily and silently failed if missing).
-
-See the [latest commits](https://github.com/takabayashi/lineage-bridge/commits/main) for work in progress.
-
-## [0.4.1] - 2026-05-01
-
-**Brand-icon refresh, BigQuery node enhancement, and CI/docs hardening.**
-
-### Added
-
 - **Official brand icons** for Kafka, Flink, Databricks (Unity Catalog), Google BigQuery, and AWS Glue graph nodes. Other node types keep their geometric icons. New `_IconSpec` config supports `logo` and `tile` render modes plus an optional `fill_override` for recolouring monochrome marks.
 - **Shell-based integration test harnesses** for all three demo environments: `scripts/integration-test-uc.sh` (7 tests), `scripts/integration-test-glue.sh` (8 tests), `scripts/integration-test-bigquery.sh` (9 tests). Each validates extraction, enrichment, catalog push, API, watcher, and Docker, with `--skip-docker` for CI.
 - **Documentation polish**: prominent docs-site link on the README, deep-links from catalog feature bullets to per-catalog guides, GCP environment variables documented, `lineage-bridge-api` entrypoint surfaced.
 
 ### Changed
 
+- Shared OpenLineage namespace normalizer (`api/openlineage/normalize.py`) — used by both Google and DataZone providers, parametrised by allowlist (`{bigquery}` for Google, `{kafka, aws}` and `{bigquery, aws}` for DataZone).
+- Shared upstream-chain builder (`catalogs/upstream_chain.py`) — single source of truth for chain shape, used by all four catalogs.
+- `google-auth` is now a hard dependency (was previously imported lazily and silently failed if missing).
 - **BigQuery connector lineage**: BigQuery sink connectors now synthesise per-topic `GOOGLE_TABLE` nodes in `clients/connect.py` so the publish UI surfaces them directly without requiring Tableflow.
 
 ### Fixed
