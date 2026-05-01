@@ -4,12 +4,81 @@ LineageBridge translates Confluent Cloud stream lineage into standard OpenLineag
 
 ## Why OpenLineage?
 
-[OpenLineage](https://openlineage.io) is an open standard for data lineage metadata collection and analysis. By mapping Confluent concepts to OpenLineage, LineageBridge enables:
+[OpenLineage](https://openlineage.io) is an open standard for data lineage metadata collection and analysis. It's like a common language that all data tools can speak.
+
+**The problem without OpenLineage:** Every vendor has their own lineage format. Confluent uses one schema, Databricks uses another, AWS Glue uses yet another. If you want to combine lineage from all three, you need custom code for each integration.
+
+**The solution with OpenLineage:** Everyone speaks the same language. LineageBridge translates Confluent lineage to OpenLineage, so any tool that understands OpenLineage can consume it.
+
+Benefits:
 
 - **Interoperability** - Works with any catalog that speaks OpenLineage (Databricks, AWS, Google, Marquez, etc.)
 - **Standardization** - Uses industry-standard schemas instead of vendor-specific formats
 - **Extensibility** - Easy to add new catalog integrations without changing core logic
 - **Bidirectionality** - Both produce and consume lineage from external systems
+
+**Real-world example:** Your team uses Confluent for streaming, Databricks for analytics, and dbt for transformations. With OpenLineage, all three systems can share lineage data, giving you end-to-end visibility from Kafka topics → Databricks tables → dbt models in a single graph.
+
+## Translation Process
+
+Here's how LineageBridge converts Confluent lineage to OpenLineage:
+
+```mermaid
+graph LR
+    subgraph "Confluent Cloud"
+        A[Kafka Topics]
+        B[Connectors]
+        C[ksqlDB Queries]
+        D[Schemas]
+    end
+    
+    subgraph "LineageBridge"
+        E[Extract]
+        F[Transform]
+        G[Map to OpenLineage]
+    end
+    
+    subgraph "OpenLineage Events"
+        H[Datasets]
+        I[Jobs]
+        J[Runs]
+        K[Facets]
+    end
+    
+    A --> E
+    B --> E
+    C --> E
+    D --> E
+    
+    E --> F
+    F --> G
+    
+    G --> H
+    G --> I
+    G --> J
+    G --> K
+    
+    subgraph "Catalog Consumers"
+        L[Databricks UC]
+        M[AWS Glue]
+        N[Google Data Lineage]
+        O[Marquez]
+    end
+    
+    H --> L
+    I --> L
+    H --> M
+    I --> M
+    H --> N
+    I --> N
+    H --> O
+    I --> O
+```
+
+**Step 1: Extract** - Pull metadata from Confluent Cloud APIs (topics, connectors, schemas, etc.)  
+**Step 2: Transform** - Build a lineage graph with nodes and edges  
+**Step 3: Map** - Convert nodes/edges to OpenLineage datasets, jobs, and events  
+**Step 4: Publish** - Send OpenLineage events to data catalogs or export as JSON
 
 ## Concept Mapping
 
@@ -292,75 +361,346 @@ OpenLineage RunEvent:
 
 ### 1. Export Confluent Lineage to Unity Catalog
 
-Extract Confluent lineage and expose it as OpenLineage events:
+**Scenario:** Your data team uses Unity Catalog to track all tables, but they can't see what happens before data lands in Databricks. You want to show them the upstream Kafka topics and connectors.
 
-```bash
-# Trigger extraction
-curl -X POST http://localhost:8000/api/v1/tasks/extract
+**Solution:** Extract Confluent lineage and push it to Unity Catalog via OpenLineage.
 
-# Query OpenLineage events
-curl http://localhost:8000/api/v1/lineage/events > confluent-lineage.json
+=== "cURL"
+    ```bash
+    # Trigger extraction
+    curl -X POST http://localhost:8000/api/v1/tasks/extract
+    # Response: {"task_id":"abc-123"}
+    
+    # Wait for completion (or poll /tasks/abc-123)
+    sleep 30
+    
+    # Query OpenLineage events
+    curl http://localhost:8000/api/v1/lineage/events > confluent-lineage.json
+    
+    # UC can consume these events or use LineageBridge's push_lineage() provider method
+    ```
 
-# UC can consume these events or use LineageBridge's push_lineage() provider method
-```
+=== "Python (httpx)"
+    ```python
+    import httpx
+    import time
+    import json
+    
+    client = httpx.Client(base_url="http://localhost:8000/api/v1")
+    
+    # Trigger extraction
+    response = client.post("/tasks/extract")
+    task_id = response.json()["task_id"]
+    
+    # Wait for completion
+    while True:
+        task = client.get(f"/tasks/{task_id}").json()
+        if task["status"] == "completed":
+            break
+        time.sleep(2)
+    
+    # Get OpenLineage events
+    events = client.get("/lineage/events").json()
+    
+    # Save to file
+    with open("confluent-lineage.json", "w") as f:
+        json.dump(events, f, indent=2)
+    
+    print(f"Exported {len(events)} events")
+    ```
+
+=== "Python (requests)"
+    ```python
+    import requests
+    import time
+    import json
+    
+    base_url = "http://localhost:8000/api/v1"
+    
+    # Trigger extraction
+    response = requests.post(f"{base_url}/tasks/extract")
+    task_id = response.json()["task_id"]
+    
+    # Wait for completion
+    while True:
+        response = requests.get(f"{base_url}/tasks/{task_id}")
+        if response.json()["status"] == "completed":
+            break
+        time.sleep(2)
+    
+    # Get OpenLineage events
+    response = requests.get(f"{base_url}/lineage/events")
+    events = response.json()
+    
+    # Save to file
+    with open("confluent-lineage.json", "w") as f:
+        json.dump(events, f, indent=2)
+    
+    print(f"Exported {len(events)} events")
+    ```
+
+**What you get:** A JSON file with OpenLineage events that Unity Catalog can ingest. Now your data analysts can trace a UC table back to its source Kafka topic!
 
 ### 2. Import External Lineage into LineageBridge
 
-Ingest OpenLineage events from external systems:
+**Scenario:** You have a Databricks notebook that reads from a Kafka topic and writes to a Unity Catalog table. LineageBridge knows about the Kafka topic (from Confluent extraction), but it doesn't know about the notebook job. You want to connect the dots.
 
-```bash
-curl -X POST http://localhost:8000/api/v1/lineage/events \
-  -H "Content-Type: application/json" \
-  -d '[{
-    "eventTime": "2026-04-30T00:00:00Z",
-    "eventType": "COMPLETE",
-    "run": {"runId": "external-run-1"},
-    "job": {
-      "namespace": "databricks://workspace-1",
-      "name": "etl-pipeline"
-    },
-    "inputs": [
-      {
-        "namespace": "confluent://env-abc/lkc-123",
-        "name": "orders"
-      }
-    ],
-    "outputs": [
-      {
-        "namespace": "databricks://workspace-1",
-        "name": "main.sales.orders"
-      }
-    ]
-  }]'
-```
+**Solution:** Send an OpenLineage event from your Databricks job to the LineageBridge API.
+
+=== "cURL"
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/lineage/events \
+      -H "Content-Type: application/json" \
+      -d '[{
+        "eventTime": "2026-04-30T00:00:00Z",
+        "eventType": "COMPLETE",
+        "run": {"runId": "external-run-1"},
+        "job": {
+          "namespace": "databricks://workspace-1",
+          "name": "etl-pipeline"
+        },
+        "inputs": [
+          {
+            "namespace": "confluent://env-abc/lkc-123",
+            "name": "orders"
+          }
+        ],
+        "outputs": [
+          {
+            "namespace": "databricks://workspace-1",
+            "name": "main.sales.orders"
+          }
+        ]
+      }]'
+    ```
+
+=== "Python (httpx)"
+    ```python
+    import httpx
+    from datetime import datetime
+    import uuid
+    
+    client = httpx.Client(base_url="http://localhost:8000/api/v1")
+    
+    event = {
+        "eventTime": datetime.utcnow().isoformat() + "Z",
+        "eventType": "COMPLETE",
+        "run": {"runId": str(uuid.uuid4())},
+        "job": {
+            "namespace": "databricks://workspace-1",
+            "name": "etl-pipeline",
+            "facets": {
+                "documentation": {
+                    "description": "Reads from Kafka and writes to UC"
+                }
+            }
+        },
+        "inputs": [
+            {
+                "namespace": "confluent://env-abc/lkc-123",
+                "name": "orders"
+            }
+        ],
+        "outputs": [
+            {
+                "namespace": "databricks://workspace-1",
+                "name": "main.sales.orders"
+            }
+        ]
+    }
+    
+    response = client.post("/lineage/events", json=[event])
+    print(response.json())
+    ```
+
+=== "Python (requests)"
+    ```python
+    import requests
+    from datetime import datetime
+    import uuid
+    
+    event = {
+        "eventTime": datetime.utcnow().isoformat() + "Z",
+        "eventType": "COMPLETE",
+        "run": {"runId": str(uuid.uuid4())},
+        "job": {
+            "namespace": "databricks://workspace-1",
+            "name": "etl-pipeline"
+        },
+        "inputs": [
+            {
+                "namespace": "confluent://env-abc/lkc-123",
+                "name": "orders"
+            }
+        ],
+        "outputs": [
+            {
+                "namespace": "databricks://workspace-1",
+                "name": "main.sales.orders"
+            }
+        ]
+    }
+    
+    response = requests.post(
+        "http://localhost:8000/api/v1/lineage/events",
+        json=[event]
+    )
+    print(response.json())
+    ```
+
+**What you get:** LineageBridge now knows that `orders` (Kafka topic) flows through `etl-pipeline` (Databricks job) to `main.sales.orders` (UC table). The lineage graph is complete!
+
+**Integration tip:** Add this code to the end of your Databricks notebook so lineage is sent automatically on every run.
 
 ### 3. Unified Lineage View
 
-Query the enriched view to see cross-platform lineage:
+**Scenario:** Your data stack includes Confluent Cloud, Databricks, and AWS Glue. Data flows between all three platforms, but you can't see the full picture in any single tool.
 
-```bash
-# Full enriched graph (Confluent + Databricks + AWS)
-curl "http://localhost:8000/api/v1/graphs/enriched/view"
+**Solution:** Use the enriched view endpoint to get a unified lineage graph with all platforms combined.
 
-# Filter by systems
-curl "http://localhost:8000/api/v1/graphs/enriched/view?systems=confluent,databricks"
-```
+=== "cURL"
+    ```bash
+    # Full enriched graph (Confluent + Databricks + AWS)
+    curl "http://localhost:8000/api/v1/graphs/enriched/view" > unified-lineage.json
+    
+    # Filter by systems
+    curl "http://localhost:8000/api/v1/graphs/enriched/view?systems=confluent,databricks" > kafka-to-databricks.json
+    ```
+
+=== "Python (httpx)"
+    ```python
+    import httpx
+    import json
+    
+    client = httpx.Client(base_url="http://localhost:8000/api/v1")
+    
+    # Full enriched graph
+    all_lineage = client.get("/graphs/enriched/view").json()
+    
+    print(f"Total events: {len(all_lineage.get('events', []))}")
+    
+    # Filter by systems (Confluent + Databricks only)
+    filtered_lineage = client.get(
+        "/graphs/enriched/view",
+        params={"systems": "confluent,databricks"}
+    ).json()
+    
+    print(f"Confluent + Databricks events: {len(filtered_lineage.get('events', []))}")
+    
+    # Save to file
+    with open("unified-lineage.json", "w") as f:
+        json.dump(all_lineage, f, indent=2)
+    ```
+
+=== "Python (requests)"
+    ```python
+    import requests
+    import json
+    
+    base_url = "http://localhost:8000/api/v1"
+    
+    # Full enriched graph
+    response = requests.get(f"{base_url}/graphs/enriched/view")
+    all_lineage = response.json()
+    
+    print(f"Total events: {len(all_lineage.get('events', []))}")
+    
+    # Filter by systems
+    response = requests.get(
+        f"{base_url}/graphs/enriched/view",
+        params={"systems": "confluent,databricks"}
+    )
+    filtered_lineage = response.json()
+    
+    print(f"Confluent + Databricks events: {len(filtered_lineage.get('events', []))}")
+    
+    # Save to file
+    with open("unified-lineage.json", "w") as f:
+        json.dump(all_lineage, f, indent=2)
+    ```
+
+**What you get:** A single OpenLineage JSON file with events from all platforms. Import it into Marquez, your data catalog, or a custom visualization tool to see the full end-to-end data flow.
+
+**Example flow you can now trace:**  
+Postgres table → Kafka topic (via connector) → ksqlDB transformation → Databricks Delta table → AWS Glue table (via Glue crawler)
 
 ### 4. Push to Google Data Lineage
 
-Google Data Lineage natively accepts OpenLineage events:
+**Scenario:** Your team uses Google Cloud Platform, and you want to see Kafka topic lineage in Google's Data Lineage UI alongside your BigQuery tables.
 
-```bash
-# Export from LineageBridge
-curl http://localhost:8000/api/v1/graphs/confluent/view > lineage.json
+**Solution:** Export Confluent lineage from LineageBridge and push it to Google Data Lineage, which natively accepts OpenLineage events.
 
-# Push to Google
-curl -X POST \
-  "https://datalineage.googleapis.com/v1/projects/my-project/locations/us:processOpenLineageRunEvent" \
-  -H "Authorization: Bearer $(gcloud auth print-access-token)" \
-  -H "Content-Type: application/json" \
-  -d @lineage.json
-```
+=== "cURL"
+    ```bash
+    # Export from LineageBridge
+    curl http://localhost:8000/api/v1/graphs/confluent/view > lineage.json
+    
+    # Push to Google Data Lineage
+    curl -X POST \
+      "https://datalineage.googleapis.com/v1/projects/my-project/locations/us:processOpenLineageRunEvent" \
+      -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+      -H "Content-Type: application/json" \
+      -d @lineage.json
+    ```
+
+=== "Python (httpx)"
+    ```python
+    import httpx
+    import subprocess
+    
+    # Export from LineageBridge
+    client = httpx.Client(base_url="http://localhost:8000/api/v1")
+    lineage = client.get("/graphs/confluent/view").json()
+    
+    # Get Google Cloud access token
+    token = subprocess.check_output(
+        ["gcloud", "auth", "print-access-token"]
+    ).decode().strip()
+    
+    # Push to Google Data Lineage
+    google_client = httpx.Client()
+    response = google_client.post(
+        "https://datalineage.googleapis.com/v1/projects/my-project/locations/us:processOpenLineageRunEvent",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        },
+        json=lineage
+    )
+    
+    print(f"Pushed to Google: {response.status_code}")
+    ```
+
+=== "Python (requests)"
+    ```python
+    import requests
+    import subprocess
+    
+    # Export from LineageBridge
+    response = requests.get("http://localhost:8000/api/v1/graphs/confluent/view")
+    lineage = response.json()
+    
+    # Get Google Cloud access token
+    token = subprocess.check_output(
+        ["gcloud", "auth", "print-access-token"]
+    ).decode().strip()
+    
+    # Push to Google Data Lineage
+    response = requests.post(
+        "https://datalineage.googleapis.com/v1/projects/my-project/locations/us:processOpenLineageRunEvent",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        },
+        json=lineage
+    )
+    
+    print(f"Pushed to Google: {response.status_code}")
+    ```
+
+**What you get:** Your Kafka topics and connectors now appear in Google's Data Lineage UI. Click on a BigQuery table, and you can trace it back to the source Kafka topic.
+
+**Automation tip:** Run this script hourly via Cloud Scheduler to keep Google Data Lineage in sync with your Confluent Cloud environment.
 
 ## OpenLineage Spec Compliance
 

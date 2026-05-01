@@ -17,95 +17,132 @@ make api
 
 ## Health Check
 
-### cURL
+Use this endpoint to check if the API is running. It's perfect for monitoring scripts, container health checks, or just making sure everything is working before you run expensive operations.
 
-```bash
-curl http://localhost:8000/api/v1/health
-```
+=== "cURL"
+    ```bash
+    curl http://localhost:8000/api/v1/health
+    ```
+    
+    Response:
+    
+    ```json
+    {"status": "ok"}
+    ```
 
-Response:
+=== "Python (httpx)"
+    ```python
+    import httpx
+    
+    response = httpx.get("http://localhost:8000/api/v1/health")
+    print(response.json())
+    # {'status': 'ok'}
+    ```
 
-```json
-{"status": "ok"}
-```
+=== "Python (requests)"
+    ```python
+    import requests
+    
+    response = requests.get("http://localhost:8000/api/v1/health")
+    print(response.json())
+    # {'status': 'ok'}
+    ```
 
-### Python (httpx)
-
-```python
-import httpx
-
-response = httpx.get("http://localhost:8000/api/v1/health")
-print(response.json())
-# {'status': 'ok'}
-```
-
-### Python (requests)
-
-```python
-import requests
-
-response = requests.get("http://localhost:8000/api/v1/health")
-print(response.json())
-```
+**No auth required**: This endpoint works even if you have API keys enabled.
 
 ## Lineage Events
 
 ### Query All Events
 
-**cURL:**
+Get all OpenLineage events from the API. Each event represents a job execution (like a connector run or ksqlDB query) with its inputs and outputs.
 
-```bash
-curl http://localhost:8000/api/v1/lineage/events
-```
+**When you'd use this:** You're building a custom lineage dashboard and want to show all data flows in your organization.
 
-**Python:**
+=== "cURL"
+    ```bash
+    curl http://localhost:8000/api/v1/lineage/events
+    ```
 
-```python
-import httpx
+=== "Python (httpx)"
+    ```python
+    import httpx
+    
+    client = httpx.Client(base_url="http://localhost:8000/api/v1")
+    events = client.get("/lineage/events").json()
+    
+    for event in events:
+        print(f"{event['job']['name']} ({event['eventType']})")
+    ```
 
-client = httpx.Client(base_url="http://localhost:8000/api/v1")
-events = client.get("/lineage/events").json()
-
-for event in events:
-    print(f"{event['job']['name']} ({event['eventType']})")
-```
+=== "Python (requests)"
+    ```python
+    import requests
+    
+    response = requests.get("http://localhost:8000/api/v1/lineage/events")
+    events = response.json()
+    
+    for event in events:
+        print(f"{event['job']['name']} ({event['eventType']})")
+    ```
 
 ### Query with Filters
 
-**cURL:**
+Narrow down results to specific namespaces, jobs, or time ranges. Supports glob patterns (`*`) for flexible matching.
 
-```bash
-# Filter by namespace (glob patterns supported)
-curl "http://localhost:8000/api/v1/lineage/events?namespace=confluent://*"
+**When you'd use this:** You only care about lineage for production environments, or you want to see what changed in the last week.
 
-# Filter by job name
-curl "http://localhost:8000/api/v1/lineage/events?job=my-connector"
+=== "cURL"
+    ```bash
+    # Filter by namespace (glob patterns supported)
+    curl "http://localhost:8000/api/v1/lineage/events?namespace=confluent://*"
+    
+    # Filter by job name
+    curl "http://localhost:8000/api/v1/lineage/events?job=my-connector"
+    
+    # Filter by time range
+    curl "http://localhost:8000/api/v1/lineage/events?since=2026-04-01T00:00:00Z&until=2026-04-30T23:59:59Z"
+    
+    # Pagination
+    curl "http://localhost:8000/api/v1/lineage/events?limit=10&offset=0"
+    ```
 
-# Filter by time range
-curl "http://localhost:8000/api/v1/lineage/events?since=2026-04-01T00:00:00Z&until=2026-04-30T23:59:59Z"
+=== "Python (httpx)"
+    ```python
+    import httpx
+    from datetime import datetime, timedelta
+    
+    client = httpx.Client(base_url="http://localhost:8000/api/v1")
+    
+    # Filter by time range
+    since = (datetime.now() - timedelta(days=7)).isoformat() + "Z"
+    events = client.get("/lineage/events", params={
+        "namespace": "confluent://*",
+        "since": since,
+        "limit": 100
+    }).json()
+    
+    print(f"Found {len(events)} events in the last 7 days")
+    ```
 
-# Pagination
-curl "http://localhost:8000/api/v1/lineage/events?limit=10&offset=0"
-```
-
-**Python:**
-
-```python
-import httpx
-from datetime import datetime, timedelta
-
-client = httpx.Client(base_url="http://localhost:8000/api/v1")
-
-# Filter by time range
-since = (datetime.now() - timedelta(days=7)).isoformat() + "Z"
-events = client.get("/lineage/events", params={
-    "namespace": "confluent://*",
-    "since": since,
-    "limit": 100
-}).json()
-
-print(f"Found {len(events)} events in the last 7 days")
-```
+=== "Python (requests)"
+    ```python
+    import requests
+    from datetime import datetime, timedelta
+    
+    # Filter by time range
+    since = (datetime.now() - timedelta(days=7)).isoformat() + "Z"
+    response = requests.get(
+        "http://localhost:8000/api/v1/lineage/events",
+        params={
+            "namespace": "confluent://*",
+            "since": since,
+            "limit": 100
+        }
+    )
+    events = response.json()
+    
+    print(f"Found {len(events)} events in the last 7 days")
+    ```
 
 ### Get Events by Run ID
 
@@ -127,95 +164,153 @@ for event in events:
 
 ### Ingest External Events
 
-**cURL:**
+Send OpenLineage events from external systems (like dbt, Airflow, or custom ETL jobs) to LineageBridge. This creates a unified lineage view across all your data platforms.
 
-```bash
-curl -X POST http://localhost:8000/api/v1/lineage/events \
-  -H "Content-Type: application/json" \
-  -d '[
-    {
-      "eventTime": "2026-04-30T00:00:00Z",
-      "eventType": "COMPLETE",
-      "run": {
-        "runId": "my-run-1"
-      },
-      "job": {
-        "namespace": "databricks://my-workspace",
-        "name": "etl-pipeline"
-      },
-      "inputs": [
-        {
-          "namespace": "confluent://env-1/lkc-1",
-          "name": "orders"
-        }
-      ],
-      "outputs": [
-        {
-          "namespace": "databricks://my-workspace",
-          "name": "catalog.schema.orders"
-        }
-      ]
-    }
-  ]'
-```
+**When you'd use this:** Your Databricks notebook reads from a Kafka topic and writes to a Unity Catalog table. You want to see that flow in LineageBridge alongside your Confluent lineage.
 
-**Python:**
-
-```python
-from datetime import datetime
-import uuid
-
-event = {
-    "eventTime": datetime.utcnow().isoformat() + "Z",
-    "eventType": "COMPLETE",
-    "run": {
-        "runId": str(uuid.uuid4())
-    },
-    "job": {
-        "namespace": "databricks://my-workspace",
-        "name": "etl-pipeline",
-        "facets": {
-            "documentation": {
-                "description": "Daily ETL pipeline for orders"
-            }
-        }
-    },
-    "inputs": [
+=== "cURL"
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/lineage/events \
+      -H "Content-Type: application/json" \
+      -d '[
         {
-            "namespace": "confluent://env-1/lkc-1",
-            "name": "orders"
-        }
-    ],
-    "outputs": [
-        {
+          "eventTime": "2026-04-30T00:00:00Z",
+          "eventType": "COMPLETE",
+          "run": {
+            "runId": "my-run-1"
+          },
+          "job": {
             "namespace": "databricks://my-workspace",
-            "name": "catalog.schema.orders"
+            "name": "etl-pipeline"
+          },
+          "inputs": [
+            {
+              "namespace": "confluent://env-1/lkc-1",
+              "name": "orders"
+            }
+          ],
+          "outputs": [
+            {
+              "namespace": "databricks://my-workspace",
+              "name": "catalog.schema.orders"
+            }
+          ]
         }
-    ]
-}
+      ]'
+    ```
 
-response = client.post("/lineage/events", json=[event])
-print(response.json())
-```
+=== "Python (httpx)"
+    ```python
+    from datetime import datetime
+    import uuid
+    import httpx
+    
+    client = httpx.Client(base_url="http://localhost:8000/api/v1")
+    
+    event = {
+        "eventTime": datetime.utcnow().isoformat() + "Z",
+        "eventType": "COMPLETE",
+        "run": {
+            "runId": str(uuid.uuid4())
+        },
+        "job": {
+            "namespace": "databricks://my-workspace",
+            "name": "etl-pipeline",
+            "facets": {
+                "documentation": {
+                    "description": "Daily ETL pipeline for orders"
+                }
+            }
+        },
+        "inputs": [
+            {
+                "namespace": "confluent://env-1/lkc-1",
+                "name": "orders"
+            }
+        ],
+        "outputs": [
+            {
+                "namespace": "databricks://my-workspace",
+                "name": "catalog.schema.orders"
+            }
+        ]
+    }
+    
+    response = client.post("/lineage/events", json=[event])
+    print(response.json())
+    ```
+
+=== "Python (requests)"
+    ```python
+    from datetime import datetime
+    import uuid
+    import requests
+    
+    event = {
+        "eventTime": datetime.utcnow().isoformat() + "Z",
+        "eventType": "COMPLETE",
+        "run": {
+            "runId": str(uuid.uuid4())
+        },
+        "job": {
+            "namespace": "databricks://my-workspace",
+            "name": "etl-pipeline"
+        },
+        "inputs": [
+            {
+                "namespace": "confluent://env-1/lkc-1",
+                "name": "orders"
+            }
+        ],
+        "outputs": [
+            {
+                "namespace": "databricks://my-workspace",
+                "name": "catalog.schema.orders"
+            }
+        ]
+    }
+    
+    response = requests.post(
+        "http://localhost:8000/api/v1/lineage/events",
+        json=[event]
+    )
+    print(response.json())
+    ```
 
 ## Datasets
 
 ### List All Datasets
 
-**cURL:**
+Get all datasets (topics, tables, external sources) from the lineage graph.
 
-```bash
-curl http://localhost:8000/api/v1/lineage/datasets
-```
+**When you'd use this:** You want to see all the data assets in your organization — Kafka topics, Unity Catalog tables, Glue tables, etc.
 
-**Python:**
+=== "cURL"
+    ```bash
+    curl http://localhost:8000/api/v1/lineage/datasets
+    ```
 
-```python
-datasets = client.get("/lineage/datasets").json()
+=== "Python (httpx)"
+    ```python
+    import httpx
+    
+    client = httpx.Client(base_url="http://localhost:8000/api/v1")
+    datasets = client.get("/lineage/datasets").json()
+    
+    for ds in datasets:
+        print(f"{ds['namespace']} / {ds['name']}")
+    ```
 
-for ds in datasets:
-    print(f"{ds['namespace']} / {ds['name']}")
-```
+=== "Python (requests)"
+    ```python
+    import requests
+    
+    response = requests.get("http://localhost:8000/api/v1/lineage/datasets")
+    datasets = response.json()
+    
+    for ds in datasets:
+        print(f"{ds['namespace']} / {ds['name']}")
+    ```
 
 ### Filter Datasets
 
@@ -273,37 +368,92 @@ if dataset.get("facets", {}).get("schema"):
 
 ### Traverse Dataset Lineage
 
-**cURL:**
+Follow the data flow upstream (where does this come from?) or downstream (where does it go?). This is the most powerful feature for impact analysis.
 
-```bash
-# Upstream lineage (where does this data come from?)
-curl "http://localhost:8000/api/v1/lineage/datasets/lineage?namespace=databricks://workspace-1&name=catalog.sales.orders&direction=upstream&depth=5"
+**When you'd use this:** 
+- **Upstream**: "This table has bad data. Where did it come from?"
+- **Downstream**: "I'm changing this Kafka topic schema. What will break?"
 
-# Downstream lineage (where does this data go?)
-curl "http://localhost:8000/api/v1/lineage/datasets/lineage?namespace=confluent://env-1/lkc-1&name=orders&direction=downstream&depth=3"
+=== "cURL"
+    ```bash
+    # Upstream lineage (where does this data come from?)
+    curl "http://localhost:8000/api/v1/lineage/datasets/lineage?namespace=databricks://workspace-1&name=catalog.sales.orders&direction=upstream&depth=5"
+    
+    # Downstream lineage (where does this data go?)
+    curl "http://localhost:8000/api/v1/lineage/datasets/lineage?namespace=confluent://env-1/lkc-1&name=orders&direction=downstream&depth=3"
+    
+    # Both directions (full blast radius)
+    curl "http://localhost:8000/api/v1/lineage/datasets/lineage?namespace=confluent://env-1/lkc-1&name=orders&direction=both&depth=10"
+    ```
 
-# Both directions
-curl "http://localhost:8000/api/v1/lineage/datasets/lineage?namespace=confluent://env-1/lkc-1&name=orders&direction=both&depth=10"
+=== "Python (httpx)"
+    ```python
+    import httpx
+    
+    client = httpx.Client(base_url="http://localhost:8000/api/v1")
+    
+    # Trace upstream lineage for a UC table
+    lineage = client.get("/lineage/datasets/lineage", params={
+        "namespace": "databricks://workspace-1",
+        "name": "catalog.sales.orders",
+        "direction": "upstream",
+        "depth": 5
+    }).json()
+    
+    print("Upstream lineage:")
+    for node in lineage.get("nodes", []):
+        print(f"  - {node['display_name']} ({node['node_type']})")
+    
+    print("\nEdges:")
+    for edge in lineage.get("edges", []):
+        print(f"  {edge['src_id']} --{edge['edge_type']}--> {edge['dst_id']}")
+    ```
+
+=== "Python (requests)"
+    ```python
+    import requests
+    
+    # Trace upstream lineage for a UC table
+    response = requests.get(
+        "http://localhost:8000/api/v1/lineage/datasets/lineage",
+        params={
+            "namespace": "databricks://workspace-1",
+            "name": "catalog.sales.orders",
+            "direction": "upstream",
+            "depth": 5
+        }
+    )
+    lineage = response.json()
+    
+    print("Upstream lineage:")
+    for node in lineage.get("nodes", []):
+        print(f"  - {node['display_name']} ({node['node_type']})")
+    
+    print("\nEdges:")
+    for edge in lineage.get("edges", []):
+        print(f"  {edge['src_id']} --{edge['edge_type']}--> {edge['dst_id']}")
+    ```
+
+**Depth parameter:** How many hops to traverse. Use `depth=1` for immediate parents/children, `depth=10` for the full chain.
+
+**Example output:**
+
 ```
+Upstream lineage:
+  - catalog.sales.orders (uc_table)
+  - kafka-delta-sink (connector)
+  - enriched_orders (kafka_topic)
+  - order-enrichment (ksqldb_query)
+  - raw_orders (kafka_topic)
+  - postgres-cdc-source (connector)
+  - public.orders (external_dataset)
 
-**Python:**
-
-```python
-# Trace upstream lineage for a UC table
-lineage = client.get("/lineage/datasets/lineage", params={
-    "namespace": "databricks://workspace-1",
-    "name": "catalog.sales.orders",
-    "direction": "upstream",
-    "depth": 5
-}).json()
-
-print("Upstream lineage:")
-for node in lineage.get("nodes", []):
-    print(f"  - {node['display_name']} ({node['node_type']})")
-
-print("\nEdges:")
-for edge in lineage.get("edges", []):
-    print(f"  {edge['src_id']} --{edge['edge_type']}--> {edge['dst_id']}")
+Edges:
+  postgres-cdc-source --PRODUCES--> raw_orders
+  raw_orders --CONSUMES--> order-enrichment
+  order-enrichment --PRODUCES--> enriched_orders
+  enriched_orders --CONSUMES--> kafka-delta-sink
+  kafka-delta-sink --PRODUCES--> catalog.sales.orders
 ```
 
 ## Jobs
@@ -377,20 +527,36 @@ if job.get("facets", {}).get("sql"):
 
 ### List Graphs
 
-**cURL:**
+See all in-memory lineage graphs. LineageBridge can manage multiple graphs (like different environments or snapshots).
 
-```bash
-curl http://localhost:8000/api/v1/graphs
-```
+**When you'd use this:** You're running multiple extractions (dev vs prod) and want to see which graphs are loaded.
 
-**Python:**
+=== "cURL"
+    ```bash
+    curl http://localhost:8000/api/v1/graphs
+    ```
 
-```python
-graphs = client.get("/graphs").json()
+=== "Python (httpx)"
+    ```python
+    import httpx
+    
+    client = httpx.Client(base_url="http://localhost:8000/api/v1")
+    graphs = client.get("/graphs").json()
+    
+    for graph in graphs:
+        print(f"{graph['graph_id']}: {graph['node_count']} nodes, {graph['edge_count']} edges")
+    ```
 
-for graph in graphs:
-    print(f"{graph['graph_id']}: {graph['node_count']} nodes, {graph['edge_count']} edges")
-```
+=== "Python (requests)"
+    ```python
+    import requests
+    
+    response = requests.get("http://localhost:8000/api/v1/graphs")
+    graphs = response.json()
+    
+    for graph in graphs:
+        print(f"{graph['graph_id']}: {graph['node_count']} nodes, {graph['edge_count']} edges")
+    ```
 
 ### Create Graph
 
@@ -474,54 +640,128 @@ print(response.json())
 
 ### Confluent-Only View
 
-**cURL:**
+Get just the Confluent lineage without any catalog enrichment (no UC tables, Glue tables, etc.). This is useful for exporting pure Kafka lineage to external systems.
 
-```bash
-curl http://localhost:8000/api/v1/graphs/confluent/view > confluent-lineage.json
-```
+**When you'd use this:** You want to push Kafka lineage to a data catalog that will do its own enrichment, or you only care about what's happening inside Confluent Cloud.
 
-**Python:**
+=== "cURL"
+    ```bash
+    curl http://localhost:8000/api/v1/graphs/confluent/view > confluent-lineage.json
+    ```
 
-```python
-# Get pure Confluent lineage (no catalog nodes)
-confluent_view = client.get("/graphs/confluent/view").json()
+=== "Python (httpx)"
+    ```python
+    import httpx
+    import json
+    
+    client = httpx.Client(base_url="http://localhost:8000/api/v1")
+    
+    # Get pure Confluent lineage (no catalog nodes)
+    confluent_view = client.get("/graphs/confluent/view").json()
+    
+    events = confluent_view.get("events", [])
+    print(f"Found {len(events)} OpenLineage events from Confluent")
+    
+    # Save for external consumption
+    with open("confluent-lineage.json", "w") as f:
+        json.dump(confluent_view, f, indent=2)
+    ```
 
-events = confluent_view.get("events", [])
-print(f"Found {len(events)} OpenLineage events from Confluent")
+=== "Python (requests)"
+    ```python
+    import requests
+    import json
+    
+    # Get pure Confluent lineage (no catalog nodes)
+    response = requests.get("http://localhost:8000/api/v1/graphs/confluent/view")
+    confluent_view = response.json()
+    
+    events = confluent_view.get("events", [])
+    print(f"Found {len(events)} OpenLineage events from Confluent")
+    
+    # Save for external consumption
+    with open("confluent-lineage.json", "w") as f:
+        json.dump(confluent_view, f, indent=2)
+    ```
 
-# Save for external consumption
-with open("confluent-lineage.json", "w") as f:
-    json.dump(confluent_view, f, indent=2)
-```
+**What's included:**
+- Kafka topics
+- Connectors (source and sink)
+- ksqlDB queries
+- Flink jobs
+- Schemas
+- Consumer groups
+
+**What's excluded:**
+- Unity Catalog tables
+- AWS Glue tables
+- Google BigQuery tables
+- External datasets (unless they're connector sources)
 
 ### Enriched View
 
-**cURL:**
+Get the full cross-platform lineage graph with all catalog enrichments. This is the "everything" view.
 
-```bash
-# All systems
-curl http://localhost:8000/api/v1/graphs/enriched/view > full-lineage.json
+**When you'd use this:** You want to see data flows across all platforms — from Postgres → Kafka → Databricks → AWS Glue → Google BigQuery.
 
-# Filter by systems
-curl "http://localhost:8000/api/v1/graphs/enriched/view?systems=confluent,databricks" > confluent-databricks.json
-```
+=== "cURL"
+    ```bash
+    # All systems
+    curl http://localhost:8000/api/v1/graphs/enriched/view > full-lineage.json
+    
+    # Filter by systems
+    curl "http://localhost:8000/api/v1/graphs/enriched/view?systems=confluent,databricks" > confluent-databricks.json
+    ```
 
-**Python:**
+=== "Python (httpx)"
+    ```python
+    import httpx
+    
+    client = httpx.Client(base_url="http://localhost:8000/api/v1")
+    
+    # Full cross-platform lineage
+    enriched_view = client.get("/graphs/enriched/view").json()
+    
+    events = enriched_view.get("events", [])
+    print(f"Total events: {len(events)}")
+    
+    # Filter by systems
+    databricks_view = client.get("/graphs/enriched/view", params={
+        "systems": "confluent,databricks"
+    }).json()
+    
+    print(f"Confluent+Databricks events: {len(databricks_view.get('events', []))}")
+    ```
 
-```python
-# Full cross-platform lineage
-enriched_view = client.get("/graphs/enriched/view").json()
+=== "Python (requests)"
+    ```python
+    import requests
+    
+    # Full cross-platform lineage
+    response = requests.get("http://localhost:8000/api/v1/graphs/enriched/view")
+    enriched_view = response.json()
+    
+    events = enriched_view.get("events", [])
+    print(f"Total events: {len(events)}")
+    
+    # Filter by systems
+    response = requests.get(
+        "http://localhost:8000/api/v1/graphs/enriched/view",
+        params={"systems": "confluent,databricks"}
+    )
+    databricks_view = response.json()
+    
+    print(f"Confluent+Databricks events: {len(databricks_view.get('events', []))}")
+    ```
 
-events = enriched_view.get("events", [])
-print(f"Total events: {len(events)}")
+**What's included:**
+- Everything from the Confluent-only view
+- Unity Catalog tables (if configured)
+- AWS Glue tables (if configured)
+- Google BigQuery tables (if configured)
+- MATERIALIZES edges connecting Kafka topics to catalog tables
 
-# Filter by systems
-databricks_view = client.get("/graphs/enriched/view", params={
-    "systems": "confluent,databricks"
-}).json()
-
-print(f"Confluent+Databricks events: {len(databricks_view.get('events', []))}")
-```
+**System filter values:** `confluent`, `databricks`, `aws`, `google`
 
 ### Query Node Lineage
 
@@ -557,30 +797,56 @@ print(f"Upstream nodes: {len(upstream.get('nodes', []))}")
 
 ### Trigger Extraction
 
-**cURL:**
+Start an async lineage extraction from Confluent Cloud. This pulls topics, connectors, schemas, ksqlDB queries, and Flink jobs from your environments.
 
-```bash
-# Extract all environments
-curl -X POST http://localhost:8000/api/v1/tasks/extract
+**When you'd use this:** You want to refresh the lineage graph on-demand (like after deploying new connectors), or you're building an automated pipeline that runs every hour.
 
-# Extract specific environments
-curl -X POST http://localhost:8000/api/v1/tasks/extract \
-  -H "Content-Type: application/json" \
-  -d '["env-abc", "env-xyz"]'
-```
+=== "cURL"
+    ```bash
+    # Extract all environments
+    curl -X POST http://localhost:8000/api/v1/tasks/extract
+    # Response: {"task_id":"abc-123","status":"pending"}
+    
+    # Extract specific environments
+    curl -X POST http://localhost:8000/api/v1/tasks/extract \
+      -H "Content-Type: application/json" \
+      -d '["env-abc", "env-xyz"]'
+    ```
 
-**Python:**
+=== "Python (httpx)"
+    ```python
+    import httpx
+    
+    client = httpx.Client(base_url="http://localhost:8000/api/v1")
+    
+    # Extract all environments
+    response = client.post("/tasks/extract")
+    task_id = response.json()["task_id"]
+    print(f"Started extraction: {task_id}")
+    
+    # Extract specific environments
+    response = client.post("/tasks/extract", json=["env-abc", "env-xyz"])
+    task_id = response.json()["task_id"]
+    ```
 
-```python
-# Extract all environments
-response = client.post("/tasks/extract")
-task_id = response.json()["task_id"]
-print(f"Started extraction: {task_id}")
+=== "Python (requests)"
+    ```python
+    import requests
+    
+    # Extract all environments
+    response = requests.post("http://localhost:8000/api/v1/tasks/extract")
+    task_id = response.json()["task_id"]
+    print(f"Started extraction: {task_id}")
+    
+    # Extract specific environments
+    response = requests.post(
+        "http://localhost:8000/api/v1/tasks/extract",
+        json=["env-abc", "env-xyz"]
+    )
+    task_id = response.json()["task_id"]
+    ```
 
-# Extract specific environments
-response = client.post("/tasks/extract", json=["env-abc", "env-xyz"])
-task_id = response.json()["task_id"]
-```
+**Response:** You get a `task_id` immediately. The extraction runs in the background (typically 30-60 seconds). Poll the task endpoint to check status.
 
 ### Trigger Enrichment
 
@@ -608,39 +874,75 @@ task_id = response.json()["task_id"]
 
 ### Poll Task Status
 
-**cURL:**
+Check if your extraction or enrichment task is complete. Tasks go through states: `pending` → `running` → `completed` (or `failed`).
 
-```bash
-curl http://localhost:8000/api/v1/tasks/550e8400-e29b-41d4-a716-446655440000
-```
+**When you'd use this:** You triggered an extraction and want to know when it's done so you can fetch the results.
 
-**Python:**
+=== "cURL"
+    ```bash
+    curl http://localhost:8000/api/v1/tasks/550e8400-e29b-41d4-a716-446655440000
+    # Response: {"task_id":"...","status":"completed","result":{...}}
+    ```
 
-```python
-import time
-
-task_id = "550e8400-e29b-41d4-a716-446655440000"
-
-while True:
-    task = client.get(f"/tasks/{task_id}").json()
-    status = task["status"]
+=== "Python (httpx)"
+    ```python
+    import httpx
+    import time
     
-    print(f"Status: {status}")
+    client = httpx.Client(base_url="http://localhost:8000/api/v1")
+    task_id = "550e8400-e29b-41d4-a716-446655440000"
     
-    if status == "completed":
-        print("Result:", task["result"])
-        break
-    elif status == "failed":
-        print("Error:", task["error"])
-        break
+    while True:
+        task = client.get(f"/tasks/{task_id}").json()
+        status = task["status"]
+        
+        print(f"Status: {status}")
+        
+        if status == "completed":
+            print("Result:", task["result"])
+            break
+        elif status == "failed":
+            print("Error:", task["error"])
+            break
+        
+        # Show progress
+        if task.get("progress"):
+            for msg in task["progress"]:
+                print(f"  {msg}")
+        
+        time.sleep(2)
+    ```
+
+=== "Python (requests)"
+    ```python
+    import requests
+    import time
     
-    # Show progress
-    if task.get("progress"):
-        for msg in task["progress"]:
-            print(f"  {msg}")
+    task_id = "550e8400-e29b-41d4-a716-446655440000"
     
-    time.sleep(2)
-```
+    while True:
+        response = requests.get(f"http://localhost:8000/api/v1/tasks/{task_id}")
+        task = response.json()
+        status = task["status"]
+        
+        print(f"Status: {status}")
+        
+        if status == "completed":
+            print("Result:", task["result"])
+            break
+        elif status == "failed":
+            print("Error:", task["error"])
+            break
+        
+        # Show progress
+        if task.get("progress"):
+            for msg in task["progress"]:
+                print(f"  {msg}")
+        
+        time.sleep(2)
+    ```
+
+**Tip:** Poll every 2-5 seconds. Don't hammer the API every 100ms — extractions take time!
 
 ### List Tasks
 
@@ -675,68 +977,187 @@ for task in tasks:
 
 ## Complete Workflow Example
 
-Extract lineage from Confluent, traverse it, and export as OpenLineage:
+**Real-world scenario:** You're a data engineer at an e-commerce company. You need to understand where your `main.analytics.order_summary` Unity Catalog table gets its data from. You know it reads from Kafka, but you don't know which topics or what transformations happen in between.
 
-**Python:**
+This example shows how to:
 
-```python
-import httpx
-import time
-import json
+1. Extract lineage from Confluent Cloud
+2. Wait for the extraction to finish
+3. Find your Unity Catalog table
+4. Trace it back to the source Kafka topics
+5. Export the full lineage as OpenLineage events
 
-client = httpx.Client(
-    base_url="http://localhost:8000/api/v1",
-    timeout=30.0
-)
+=== "Python (httpx)"
+    ```python
+    import httpx
+    import time
+    import json
+    
+    client = httpx.Client(
+        base_url="http://localhost:8000/api/v1",
+        timeout=30.0
+    )
+    
+    # 1. Trigger extraction
+    print("Starting extraction...")
+    response = client.post("/tasks/extract")
+    task_id = response.json()["task_id"]
+    print(f"Task ID: {task_id}")
+    
+    # 2. Poll until complete
+    while True:
+        task = client.get(f"/tasks/{task_id}").json()
+        status = task["status"]
+        print(f"Status: {status}")
+        
+        if status == "completed":
+            print("✓ Extraction complete!")
+            break
+        elif status == "failed":
+            print(f"✗ Extraction failed: {task['error']}")
+            exit(1)
+        
+        time.sleep(2)
+    
+    # 3. Find a UC table
+    print("\nSearching for Unity Catalog tables...")
+    uc_tables = client.get("/lineage/datasets", params={
+        "namespace": "databricks://*"
+    }).json()
+    
+    if not uc_tables:
+        print("No UC tables found")
+        exit(0)
+    
+    table = uc_tables[0]
+    print(f"Found UC table: {table['name']}")
+    
+    # 4. Traverse upstream lineage
+    print(f"\nTracing upstream lineage for {table['name']}...")
+    lineage = client.get("/lineage/datasets/lineage", params={
+        "namespace": table["namespace"],
+        "name": table["name"],
+        "direction": "upstream",
+        "depth": 10
+    }).json()
+    
+    print(f"\nUpstream lineage chain ({len(lineage.get('nodes', []))} nodes):")
+    for node in lineage.get("nodes", []):
+        print(f"  - {node['display_name']} ({node['node_type']})")
+    
+    # 5. Export as OpenLineage
+    print("\nExporting full lineage graph...")
+    enriched_view = client.get("/graphs/enriched/view").json()
+    
+    with open("lineage.json", "w") as f:
+        json.dump(enriched_view, f, indent=2)
+    
+    print(f"✓ Exported {len(enriched_view.get('events', []))} OpenLineage events to lineage.json")
+    print("\nYou can now:")
+    print("  - Import lineage.json into your data catalog")
+    print("  - Visualize it in Marquez or another OpenLineage tool")
+    print("  - Share it with your team for impact analysis")
+    ```
 
-# 1. Trigger extraction
-print("Starting extraction...")
-response = client.post("/tasks/extract")
-task_id = response.json()["task_id"]
+=== "Python (requests)"
+    ```python
+    import requests
+    import time
+    import json
+    
+    base_url = "http://localhost:8000/api/v1"
+    
+    # 1. Trigger extraction
+    print("Starting extraction...")
+    response = requests.post(f"{base_url}/tasks/extract")
+    task_id = response.json()["task_id"]
+    print(f"Task ID: {task_id}")
+    
+    # 2. Poll until complete
+    while True:
+        response = requests.get(f"{base_url}/tasks/{task_id}")
+        task = response.json()
+        status = task["status"]
+        print(f"Status: {status}")
+        
+        if status == "completed":
+            print("✓ Extraction complete!")
+            break
+        elif status == "failed":
+            print(f"✗ Extraction failed: {task['error']}")
+            exit(1)
+        
+        time.sleep(2)
+    
+    # 3. Find a UC table
+    print("\nSearching for Unity Catalog tables...")
+    response = requests.get(
+        f"{base_url}/lineage/datasets",
+        params={"namespace": "databricks://*"}
+    )
+    uc_tables = response.json()
+    
+    if not uc_tables:
+        print("No UC tables found")
+        exit(0)
+    
+    table = uc_tables[0]
+    print(f"Found UC table: {table['name']}")
+    
+    # 4. Traverse upstream lineage
+    print(f"\nTracing upstream lineage for {table['name']}...")
+    response = requests.get(
+        f"{base_url}/lineage/datasets/lineage",
+        params={
+            "namespace": table["namespace"],
+            "name": table["name"],
+            "direction": "upstream",
+            "depth": 10
+        }
+    )
+    lineage = response.json()
+    
+    print(f"\nUpstream lineage chain ({len(lineage.get('nodes', []))} nodes):")
+    for node in lineage.get("nodes", []):
+        print(f"  - {node['display_name']} ({node['node_type']})")
+    
+    # 5. Export as OpenLineage
+    print("\nExporting full lineage graph...")
+    response = requests.get(f"{base_url}/graphs/enriched/view")
+    enriched_view = response.json()
+    
+    with open("lineage.json", "w") as f:
+        json.dump(enriched_view, f, indent=2)
+    
+    print(f"✓ Exported {len(enriched_view.get('events', []))} OpenLineage events to lineage.json")
+    ```
 
-# 2. Poll until complete
-while True:
-    task = client.get(f"/tasks/{task_id}").json()
-    if task["status"] == "completed":
-        print("Extraction complete!")
-        break
-    elif task["status"] == "failed":
-        print(f"Extraction failed: {task['error']}")
-        exit(1)
-    time.sleep(2)
+**Expected output:**
 
-# 3. Find a UC table
-uc_tables = client.get("/lineage/datasets", params={
-    "namespace": "databricks://*"
-}).json()
-
-if not uc_tables:
-    print("No UC tables found")
-    exit(0)
-
-table = uc_tables[0]
-print(f"\nFound UC table: {table['name']}")
-
-# 4. Traverse upstream lineage
-lineage = client.get("/lineage/datasets/lineage", params={
-    "namespace": table["namespace"],
-    "name": table["name"],
-    "direction": "upstream",
-    "depth": 10
-}).json()
-
-print(f"\nUpstream lineage chain:")
-for node in lineage.get("nodes", []):
-    print(f"  - {node['display_name']} ({node['node_type']})")
-
-# 5. Export as OpenLineage
-enriched_view = client.get("/graphs/enriched/view").json()
-
-with open("lineage.json", "w") as f:
-    json.dump(enriched_view, f, indent=2)
-
-print(f"\nExported {len(enriched_view.get('events', []))} OpenLineage events to lineage.json")
 ```
+Starting extraction...
+Task ID: 550e8400-e29b-41d4-a716-446655440000
+Status: pending
+Status: running
+Status: completed
+✓ Extraction complete!
+
+Searching for Unity Catalog tables...
+Found UC table: main.analytics.order_summary
+
+Tracing upstream lineage for main.analytics.order_summary...
+
+Upstream lineage chain (5 nodes):
+  - main.analytics.order_summary (uc_table)
+  - kafka-delta-sink (connector)
+  - enriched_orders (kafka_topic)
+  - order-enrichment-query (ksqldb_query)
+  - raw_orders (kafka_topic)
+
+✓ Exported 12 OpenLineage events to lineage.json
+```
+
+**What just happened?** You discovered that your UC table comes from a Kafka Delta Sink connector, which reads from `enriched_orders`. That topic is created by a ksqlDB query that transforms `raw_orders`. Now you know the full data flow!
 
 ## Error Handling
 

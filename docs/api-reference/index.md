@@ -1,15 +1,28 @@
 # API Reference
 
-LineageBridge exposes an **OpenLineage-compatible REST API** that bridges Confluent Cloud stream lineage with external data catalogs.
+LineageBridge exposes an **OpenLineage-compatible REST API** that lets you extract lineage from Confluent Cloud and bridge it to external data catalogs like Databricks Unity Catalog, AWS Glue, and Google Data Lineage.
 
 ## Quick Start
 
 Start the API server:
 
-```bash
-make api
-# API runs at http://localhost:8000
-```
+=== "uv"
+    ```bash
+    uv run lineage-bridge-api
+    # API runs at http://localhost:8000
+    ```
+
+=== "Make"
+    ```bash
+    make api
+    # API runs at http://localhost:8000
+    ```
+
+=== "Docker"
+    ```bash
+    docker run -p 8000:8000 lineage-bridge:latest
+    # API runs at http://localhost:8000
+    ```
 
 **Explore the API interactively:**
 
@@ -19,13 +32,15 @@ make api
 
 ## Overview
 
-The LineageBridge API provides a RESTful interface for:
+The LineageBridge API lets you:
 
-- Querying OpenLineage events from Confluent Cloud
-- Ingesting lineage from external systems
-- Managing lineage graphs
-- Triggering extraction and enrichment tasks
-- Traversing dataset and job relationships
+- **Query lineage** - Get OpenLineage events from Confluent Cloud
+- **Import lineage** - Ingest lineage from external systems (Databricks, dbt, etc.)
+- **Build graphs** - Create and manage lineage graphs
+- **Run tasks** - Trigger async extraction and enrichment
+- **Traverse relationships** - Follow upstream/downstream lineage paths
+
+**Real-world use case:** Sarah's team uses the API to automatically export Kafka topic lineage to Unity Catalog every hour, so their data engineers can see the full data flow from Postgres → Kafka → Databricks tables in one place.
 
 ## Base URL & Versioning
 
@@ -54,6 +69,60 @@ export LINEAGE_BRIDGE_API_KEY="your-key"  # Optional auth
 ```
 
 **Versioning**: URL-based (`/api/v1`, `/api/v2`, etc.) for backward compatibility.
+
+## API Request Flow
+
+When you trigger a lineage extraction, here's what happens:
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Extractor
+    participant Confluent
+    participant Catalog
+    
+    Client->>API: POST /api/v1/tasks/extract
+    API-->>Client: 202 Accepted {task_id: "abc123"}
+    
+    API->>Extractor: Start async extraction
+    Extractor->>Confluent: Fetch topics, connectors, schemas
+    Confluent-->>Extractor: Lineage metadata
+    
+    Extractor->>Catalog: Enrich with UC/Glue metadata
+    Catalog-->>Extractor: Table lineage
+    
+    Extractor-->>API: Task completed
+    
+    Client->>API: GET /api/v1/tasks/abc123
+    API-->>Client: {status: "completed", result: {...}}
+    
+    Client->>API: GET /api/v1/graphs/enriched/view
+    API-->>Client: OpenLineage events
+```
+
+**Why async?** Extraction can take 30-60 seconds for large environments (100+ topics, dozens of connectors). The async pattern lets you start the job and poll for results instead of waiting for a long HTTP timeout.
+
+## Quick Reference
+
+Common operations you'll use most often:
+
+| Task | Endpoint | Method | Example |
+|------|----------|--------|---------|
+| Check health | `/api/v1/health` | GET | `curl http://localhost:8000/api/v1/health` |
+| Start extraction | `/api/v1/tasks/extract` | POST | `curl -X POST http://localhost:8000/api/v1/tasks/extract` |
+| Check task status | `/api/v1/tasks/{task_id}` | GET | `curl http://localhost:8000/api/v1/tasks/abc-123` |
+| List datasets | `/api/v1/lineage/datasets` | GET | `curl http://localhost:8000/api/v1/lineage/datasets` |
+| Trace lineage | `/api/v1/lineage/datasets/lineage` | GET | `curl "http://localhost:8000/api/v1/lineage/datasets/lineage?namespace=...&name=...&direction=upstream"` |
+| Export lineage | `/api/v1/graphs/enriched/view` | GET | `curl http://localhost:8000/api/v1/graphs/enriched/view > lineage.json` |
+| Import events | `/api/v1/lineage/events` | POST | `curl -X POST http://localhost:8000/api/v1/lineage/events -d @events.json` |
+
+**Typical workflow:**
+
+1. **Extract** → POST `/tasks/extract`
+2. **Wait** → Poll GET `/tasks/{task_id}` until `status == "completed"`
+3. **Query** → GET `/lineage/datasets` or `/lineage/datasets/lineage`
+4. **Export** → GET `/graphs/enriched/view`
 
 ## Endpoint Categories
 
@@ -131,22 +200,54 @@ Async task management.
 | `POST /api/v1/tasks/extract` | Trigger async lineage extraction from Confluent Cloud |
 | `POST /api/v1/tasks/enrich` | Trigger async catalog enrichment |
 
-## Quick Start
+## Test the API
 
-Start the API server:
+Verify the API is running:
 
-```bash
-uv run lineage-bridge-api
-# or
-make api
-```
+=== "cURL"
+    ```bash
+    curl http://localhost:8000/api/v1/health
+    # Response: {"status":"ok"}
+    ```
 
-Verify it's running:
+=== "Python (httpx)"
+    ```python
+    import httpx
+    response = httpx.get("http://localhost:8000/api/v1/health")
+    print(response.json())
+    # {'status': 'ok'}
+    ```
 
-```bash
-curl http://localhost:8000/api/v1/health
-# {"status": "ok"}
-```
+=== "Python (requests)"
+    ```python
+    import requests
+    response = requests.get("http://localhost:8000/api/v1/health")
+    print(response.json())
+    # {'status': 'ok'}
+    ```
+
+Check API version:
+
+=== "cURL"
+    ```bash
+    curl http://localhost:8000/api/v1/version
+    # Response: {"version":"0.4.0","name":"lineage-bridge"}
+    ```
+
+=== "Python (httpx)"
+    ```python
+    import httpx
+    response = httpx.get("http://localhost:8000/api/v1/version")
+    print(response.json())
+    # {'version': '0.4.0', 'name': 'lineage-bridge'}
+    ```
+
+=== "Python (requests)"
+    ```python
+    import requests
+    response = requests.get("http://localhost:8000/api/v1/version")
+    print(response.json())
+    ```
 
 Open the interactive Swagger UI:
 

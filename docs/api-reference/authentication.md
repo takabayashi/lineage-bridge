@@ -1,6 +1,32 @@
 # Authentication
 
-The LineageBridge API supports optional API key authentication via the `X-API-Key` header.
+The LineageBridge API supports optional API key authentication via the `X-API-Key` header. This lets you protect your lineage data when running the API in production or exposing it to external systems.
+
+## How It Works
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Endpoint
+    
+    Note over API: LINEAGE_BRIDGE_API_KEY set?
+    
+    Client->>API: GET /api/v1/health
+    API-->>Client: 200 OK (no auth required)
+    
+    Client->>API: GET /api/v1/lineage/events
+    API->>API: Check X-API-Key header
+    alt No API key provided
+        API-->>Client: 403 Forbidden - Missing API Key
+    else Invalid API key
+        API-->>Client: 403 Forbidden - Invalid API Key
+    else Valid API key
+        API->>Endpoint: Process request
+        Endpoint-->>API: Response
+        API-->>Client: 200 OK
+    end
+```
 
 ## Configuration
 
@@ -12,66 +38,98 @@ export LINEAGE_BRIDGE_API_KEY="your-secret-key-here"
 
 When this variable is set, all endpoints except `/api/v1/health` require authentication.
 
+**Why health is always open:** Monitoring tools and load balancers need to check if the API is running without worrying about credentials.
+
 ## Using API Keys
 
-### cURL
+Pass your API key in the `X-API-Key` header with every request (except `/health`).
 
-Pass the API key in the `X-API-Key` header:
+=== "cURL"
+    ```bash
+    curl -H "X-API-Key: your-secret-key-here" \
+      http://localhost:8000/api/v1/lineage/events
+    ```
+
+=== "Python (httpx)"
+    ```python
+    import httpx
+    
+    # Set the key once when creating the client
+    client = httpx.Client(
+        base_url="http://localhost:8000/api/v1",
+        headers={"X-API-Key": "your-secret-key-here"}
+    )
+    
+    # All requests will include the key automatically
+    response = client.get("/lineage/events")
+    print(response.json())
+    ```
+
+=== "Python (requests)"
+    ```python
+    import requests
+    
+    headers = {"X-API-Key": "your-secret-key-here"}
+    response = requests.get(
+        "http://localhost:8000/api/v1/lineage/events",
+        headers=headers
+    )
+    print(response.json())
+    ```
+
+=== "JavaScript (fetch)"
+    ```javascript
+    const response = await fetch('http://localhost:8000/api/v1/lineage/events', {
+      headers: {
+        'X-API-Key': 'your-secret-key-here'
+      }
+    });
+    const data = await response.json();
+    ```
+
+**Tip:** Store your API key in an environment variable, not in your source code:
 
 ```bash
-curl -H "X-API-Key: your-secret-key-here" \
-  http://localhost:8000/api/v1/lineage/events
+export LINEAGE_API_KEY="your-secret-key-here"
 ```
 
-### Python (httpx)
+Then reference it:
 
-```python
-import httpx
+=== "Python"
+    ```python
+    import os
+    api_key = os.environ["LINEAGE_API_KEY"]
+    ```
 
-client = httpx.Client(
-    base_url="http://localhost:8000/api/v1",
-    headers={"X-API-Key": "your-secret-key-here"}
-)
-
-response = client.get("/lineage/events")
-print(response.json())
-```
-
-### Python (requests)
-
-```python
-import requests
-
-headers = {"X-API-Key": "your-secret-key-here"}
-response = requests.get(
-    "http://localhost:8000/api/v1/lineage/events",
-    headers=headers
-)
-print(response.json())
-```
-
-### JavaScript (fetch)
-
-```javascript
-const response = await fetch('http://localhost:8000/api/v1/lineage/events', {
-  headers: {
-    'X-API-Key': 'your-secret-key-here'
-  }
-});
-const data = await response.json();
-```
+=== "JavaScript"
+    ```javascript
+    const apiKey = process.env.LINEAGE_API_KEY;
+    ```
 
 ## Generating Secure Keys
 
-Use a cryptographically secure random string for production:
+Use a cryptographically secure random string for production. A good API key has at least 32 bytes (64 hex characters) of entropy.
 
-```bash
-# Linux/macOS
-openssl rand -hex 32
+=== "openssl (Linux/macOS)"
+    ```bash
+    openssl rand -hex 32
+    # Example output: 8f4e3a2b1c9d7f6e5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f
+    ```
 
-# Python
-python -c "import secrets; print(secrets.token_hex(32))"
-```
+=== "Python"
+    ```python
+    import secrets
+    print(secrets.token_hex(32))
+    # Example output: 8f4e3a2b1c9d7f6e5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f
+    ```
+
+=== "Node.js"
+    ```javascript
+    const crypto = require('crypto');
+    console.log(crypto.randomBytes(32).toString('hex'));
+    ```
+
+**Don't use** simple passwords like "password123" or predictable strings. An attacker could guess them.
 
 ## Unauthenticated Endpoints
 
@@ -175,22 +233,40 @@ LINEAGE_BRIDGE_API_KEY="your-secret-key-here" docker-compose up -d
 
 ## Testing Authentication
 
-Test that authentication is working:
+After enabling authentication, test that it works correctly:
 
-```bash
-# Should fail (no key)
-curl http://localhost:8000/api/v1/lineage/events
-# {"detail": "Missing API Key"}
+=== "Test 1: Missing API Key (should fail)"
+    ```bash
+    curl http://localhost:8000/api/v1/lineage/events
+    # Expected: {"detail": "Missing API Key"}
+    # Status: 403 Forbidden
+    ```
 
-# Should succeed (health check, no auth required)
-curl http://localhost:8000/api/v1/health
-# {"status": "ok"}
+=== "Test 2: Health Check (should succeed)"
+    ```bash
+    curl http://localhost:8000/api/v1/health
+    # Expected: {"status": "ok"}
+    # Status: 200 OK
+    # Health checks never require auth!
+    ```
 
-# Should succeed (correct key)
-curl -H "X-API-Key: your-secret-key-here" \
-  http://localhost:8000/api/v1/lineage/events
-# [...]
-```
+=== "Test 3: Valid API Key (should succeed)"
+    ```bash
+    curl -H "X-API-Key: your-secret-key-here" \
+      http://localhost:8000/api/v1/lineage/events
+    # Expected: [...]
+    # Status: 200 OK
+    ```
+
+=== "Test 4: Invalid API Key (should fail)"
+    ```bash
+    curl -H "X-API-Key: wrong-key" \
+      http://localhost:8000/api/v1/lineage/events
+    # Expected: {"detail": "Invalid API Key"}
+    # Status: 403 Forbidden
+    ```
+
+**What "should fail" means:** You get a `403 Forbidden` response. This is good! It means your API is protected.
 
 ## Future Enhancements
 
