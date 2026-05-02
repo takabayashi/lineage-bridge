@@ -38,14 +38,33 @@ def _render_sidebar_scope() -> None:
         type="primary" if not all_discovered else "secondary",
         width="stretch",
     ):
-        bar = st.progress(0)
-        for i, env in enumerate(all_envs):
-            try:
-                cache[env.id] = _discover_one(settings, env.id)
-            except Exception as exc:
-                cache[env.id] = {"services": None, "error": str(exc)}
-            bar.progress((i + 1) / max(len(all_envs), 1))
-        bar.empty()
+        # Unified loading pattern: st.status everywhere instead of mixing
+        # st.progress (was here) / st.spinner (warehouses) / st.status (the
+        # rest). Each env gets a write() line so users see progress per env
+        # and a final summary line.
+        with st.status(
+            f"Discovering services in {len(all_envs)} environment(s)...",
+            expanded=True,
+        ) as status:
+            ok_count = 0
+            err_count = 0
+            for env in all_envs:
+                status.write(f"Discovering `{env.display_name}`...")
+                try:
+                    cache[env.id] = _discover_one(settings, env.id)
+                    if cache[env.id].get("services"):
+                        ok_count += 1
+                    else:
+                        err_count += 1
+                except Exception as exc:
+                    cache[env.id] = {"services": None, "error": str(exc)}
+                    err_count += 1
+                    status.write(f"  ⚠ {env.display_name}: {exc}")
+            final_state = "complete" if err_count == 0 else "error"
+            status.update(
+                label=f"Discovered {ok_count}/{len(all_envs)} environment(s)",
+                state=final_state,
+            )
         st.rerun()
 
     discovered_envs = [env for env in all_envs if env.id in cache and cache[env.id].get("services")]

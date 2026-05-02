@@ -408,7 +408,8 @@ def _render_warehouse_picker(settings) -> None:
         key="discover_wh_btn",
         width="stretch",
     ):
-        with st.spinner("Discovering..."):
+        # Unified loading pattern: st.status (was a bare st.spinner).
+        with st.status("Discovering Databricks warehouses...", expanded=True) as status:
             try:
                 from lineage_bridge.clients.databricks_discovery import list_warehouses
 
@@ -420,9 +421,10 @@ def _render_warehouse_picker(settings) -> None:
                 )
                 st.session_state.databricks_warehouses = wh_list
                 warehouses = wh_list
+                status.update(label=f"Found {len(wh_list)} warehouse(s)", state="complete")
                 st.rerun()
             except Exception as exc:
-                st.error(f"Discovery failed: {exc}")
+                status.update(label=f"Discovery failed: {exc}", state="error")
 
     if warehouses:
         wh_options = {f"{wh.name} ({wh.id}) [{wh.state}]": wh for wh in warehouses}
