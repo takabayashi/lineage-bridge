@@ -77,13 +77,56 @@ def _render_main_area():
         render_empty_state()
         return
 
-    tab_graph, tab_watcher = st.tabs(["Lineage Graph", "Change Watcher"])
+    _render_status_strip(graph)
+
+    from lineage_bridge.ui.watcher import watcher_event_count
+
+    n_events = watcher_event_count()
+    watcher_label = f"Change Watcher ({n_events})" if n_events else "Change Watcher"
+    tab_graph, tab_watcher = st.tabs(["Lineage Graph", watcher_label])
 
     with tab_graph:
         _render_graph_content(graph)
 
     with tab_watcher:
         _render_watcher_tab()
+
+
+def _render_status_strip(graph: LineageGraph) -> None:
+    """Compact one-line status strip below the header.
+
+    Shows env name + cluster + extraction time + node count so the user
+    always knows which extraction's graph they are looking at — including
+    after switching to the Change Watcher tab and back.
+    """
+    env_names = sorted(
+        {n.environment_name or n.environment_id for n in graph.nodes if n.environment_id}
+    )
+    cluster_names = sorted({n.cluster_name or n.cluster_id for n in graph.nodes if n.cluster_id})
+
+    parts: list[str] = []
+    if st.session_state.connected:
+        parts.append("<span class='strip-dot' style='background:#4CAF50'></span>Connected")
+    else:
+        parts.append("<span class='strip-dot' style='background:#9E9E9E'></span>Sample data")
+    if env_names:
+        env_str = env_names[0] if len(env_names) == 1 else f"{env_names[0]} +{len(env_names) - 1}"
+        parts.append(f"Env: <strong>{env_str}</strong>")
+    if cluster_names:
+        cl_str = (
+            cluster_names[0]
+            if len(cluster_names) == 1
+            else f"{cluster_names[0]} +{len(cluster_names) - 1}"
+        )
+        parts.append(f"Cluster: <strong>{cl_str}</strong>")
+    if st.session_state.last_extraction_time:
+        parts.append(f"Extracted at <strong>{st.session_state.last_extraction_time}</strong>")
+    parts.append(f"<strong>{graph.node_count}</strong> nodes")
+
+    st.markdown(
+        "<div class='app-status-strip'>" + " &nbsp;·&nbsp; ".join(parts) + "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def _render_watcher_tab():
@@ -258,22 +301,20 @@ _render_sidebar()
 _render_main_area()
 
 # ── Footer ────────────────────────────────────────────────────────────
+# Hidden on the empty state so it doesn't compete with the primary CTA
+# (Connect / Load Demo). Single-line everywhere else.
 
-st.markdown(
-    """
-    <div class="app-footer">
-        <strong>LineageBridge</strong> &copy; 2026 Daniel Takabayashi<br>
-        <a href="mailto:dtakabayashi@confluent.io">dtakabayashi@confluent.io</a><br>
-        Built with Streamlit &bull; Powered by Confluent Inc.<br>
-        <span style="font-size:0.8rem; margin-top:4px; display:inline-block;">
-            &#11088; Like this project?
-            <a href="https://github.com/takabayashi/lineage-bridge"
-               target="_blank">Give it a star on GitHub</a>
-        </span>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+if st.session_state.graph is not None:
+    st.markdown(
+        '<div class="app-footer">'
+        "<strong>LineageBridge</strong> &copy; 2026 Daniel Takabayashi &nbsp;·&nbsp; "
+        '<a href="mailto:dtakabayashi@confluent.io">dtakabayashi@confluent.io</a>'
+        " &nbsp;·&nbsp; "
+        '<a href="https://github.com/takabayashi/lineage-bridge" target="_blank">'
+        "GitHub</a>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 # ── CLI entry point ───────────────────────────────────────────────────

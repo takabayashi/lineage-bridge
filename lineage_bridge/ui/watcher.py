@@ -1,6 +1,15 @@
 # Copyright 2026 Daniel Takabayashi
 # Licensed under the Apache License, Version 2.0
-"""Change-detection watcher UI components."""
+"""Change-detection watcher UI components.
+
+Phase C redesign:
+- REST Polling is the default detection mode; Audit Log is gated behind a
+  "Show advanced" expander (it requires audit-log-cluster credentials that
+  almost no user has, and silently fails without them — see ADR-014).
+- Two-column layout (was three with an empty middle column).
+- Event feed renders as a card list instead of a `st.dataframe` with a
+  UUID-ish ID column nobody reads.
+"""
 
 from __future__ import annotations
 
@@ -17,53 +26,62 @@ _STATE_COLORS = {
 }
 
 _METHOD_LABELS = {
-    "poll.topics.Changed": "Topics Changed",
-    "poll.connectors.Changed": "Connectors Changed",
-    "poll.ksqldb_queries.Changed": "ksqlDB Changed",
-    "poll.flink_statements.Changed": "Flink Statements Changed",
-    "kafka.CreateTopics": "Create Topics",
-    "kafka.DeleteTopics": "Delete Topics",
-    "kafka.IncrementalAlterConfigs": "Alter Configs",
-    "connect.CreateConnector": "Create Connector",
-    "connect.DeleteConnector": "Delete Connector",
-    "connect.AlterConnector": "Alter Connector",
-    "connect.PauseConnector": "Pause Connector",
-    "connect.ResumeConnector": "Resume Connector",
+    "poll.topics.Changed": ("Topics", "•"),
+    "poll.connectors.Changed": ("Connectors", "•"),
+    "poll.ksqldb_queries.Changed": ("ksqlDB", "•"),
+    "poll.flink_statements.Changed": ("Flink", "•"),
+    "kafka.CreateTopics": ("Create topic", "+"),
+    "kafka.DeleteTopics": ("Delete topic", "✕"),
+    "kafka.IncrementalAlterConfigs": ("Alter config", "·"),
+    "connect.CreateConnector": ("Create connector", "+"),
+    "connect.DeleteConnector": ("Delete connector", "✕"),
+    "connect.AlterConnector": ("Alter connector", "·"),
+    "connect.PauseConnector": ("Pause connector", "⏸"),
+    "connect.ResumeConnector": ("Resume connector", "▶"),
 }
 
 
-def _friendly_method(method: str) -> str:
-    """Convert a method name to a human-friendly label."""
+def _friendly_method(method: str) -> tuple[str, str]:
+    """Return (label, icon) for a watcher event method name."""
     if method in _METHOD_LABELS:
         return _METHOD_LABELS[method]
-    return method
+    return method, "•"
+
+
+def watcher_event_count() -> int:
+    """Return the current number of pending watcher events (for tab badge)."""
+    engine: WatcherEngine | None = st.session_state.get("watcher_engine")
+    if engine is None:
+        return 0
+    return len(engine.event_feed)
 
 
 def render_watcher_controls() -> None:
-    """Render watcher controls in the main area (horizontal layout)."""
+    """Watcher controls — REST Polling default, Audit Log behind 'advanced'."""
     engine: WatcherEngine | None = st.session_state.get("watcher_engine")
     is_running = engine is not None and engine.is_running
 
-    # ── Controls row ──────────────────────────────────────────────
-    c_controls, _, c_right = st.columns([2, 3, 2])
+    # Two-column layout (no dead middle column)
+    c_controls, c_right = st.columns([3, 2])
+
+    audit_creds: tuple[str, str, str] | None = None
 
     with c_controls:
-        mode = st.radio(
-            "Detection mode",
-            ["Audit Log", "REST Polling"],
-            horizontal=True,
-            key="watcher_mode",
+        # ── Mode (REST Polling default) ────────────────────────────
+        use_audit = st.toggle(
+            "Use audit log (advanced)",
+            key="watcher_use_audit",
+            value=False,
             disabled=is_running,
             help=(
-                "**Audit Log**: real-time Kafka consumer on "
-                "confluent-audit-log-events (requires audit log cluster "
-                "credentials). **REST Polling**: periodic state-diffing "
-                "via REST APIs (no extra credentials needed)."
+                "Default: REST polling (no extra credentials). "
+                "Enable this only if you have audit-log cluster credentials — "
+                "see ADR-014. Without those credentials the audit-log mode "
+                "fails silently when started."
             ),
         )
 
-        if mode == "Audit Log":
-            # Show audit log credential inputs
+        if use_audit:
             settings = _try_load_settings()
             default_bs = (
                 getattr(settings, "audit_log_bootstrap_servers", "") or "" if settings else ""
@@ -71,44 +89,43 @@ def render_watcher_controls() -> None:
             default_key = getattr(settings, "audit_log_api_key", "") or "" if settings else ""
             default_secret = getattr(settings, "audit_log_api_secret", "") or "" if settings else ""
 
-            bootstrap_servers = st.text_input(
-                "Bootstrap servers",
-                value=default_bs,
-                key="watcher_audit_bootstrap",
-                disabled=is_running,
-                placeholder="pkc-xxxxx.region.cloud.confluent.cloud:9092",
-            )
-            ak1, ak2 = st.columns(2)
-            with ak1:
-                audit_key = st.text_input(
-                    "API key",
-                    value=default_key,
-                    key="watcher_audit_key",
+            with st.expander("Audit log credentials", expanded=True):
+                bootstrap_servers = st.text_input(
+                    "Bootstrap servers",
+                    value=default_bs,
+                    key="watcher_audit_bootstrap",
                     disabled=is_running,
-                    type="password",
+                    placeholder="pkc-xxxxx.region.cloud.confluent.cloud:9092",
                 )
-            with ak2:
-                audit_secret = st.text_input(
-                    "API secret",
-                    value=default_secret,
-                    key="watcher_audit_secret",
-                    disabled=is_running,
-                    type="password",
-                )
+                ak1, ak2 = st.columns(2)
+                with ak1:
+                    audit_key = st.text_input(
+                        "API key",
+                        value=default_key,
+                        key="watcher_audit_key",
+                        disabled=is_running,
+                        type="password",
+                    )
+                with ak2:
+                    audit_secret = st.text_input(
+                        "API secret",
+                        value=default_secret,
+                        key="watcher_audit_secret",
+                        disabled=is_running,
+                        type="password",
+                    )
+            audit_creds = (bootstrap_servers, audit_key, audit_secret)
+            poll_interval = 10
         else:
-            c1, c2 = st.columns(2)
-            with c1:
-                poll_interval = st.number_input(
-                    "Poll interval (s)",
-                    min_value=5,
-                    max_value=120,
-                    value=10,
-                    step=5,
-                    key="watcher_poll_interval",
-                    disabled=is_running,
-                )
-            with c2:
-                pass  # spacer
+            poll_interval = st.number_input(
+                "Poll interval (s)",
+                min_value=5,
+                max_value=120,
+                value=10,
+                step=5,
+                key="watcher_poll_interval",
+                disabled=is_running,
+            )
 
         cooldown = st.number_input(
             "Cooldown (s)",
@@ -120,6 +137,7 @@ def render_watcher_controls() -> None:
             disabled=is_running,
         )
 
+        st.caption("After change → publish to:")
         p1, p2 = st.columns(2)
         with p1:
             push_uc = st.checkbox("Push UC", key="watcher_push_uc", disabled=is_running)
@@ -128,15 +146,12 @@ def render_watcher_controls() -> None:
 
     with c_right:
         if engine is not None:
-            _render_status_badge(engine)
+            _render_status_badge(engine, mode="Audit Log" if use_audit else "REST Polling")
 
             if engine.state == WatcherState.COOLDOWN:
                 remaining = engine.cooldown_remaining
                 progress = 1.0 - (remaining / engine.cooldown_seconds)
-                st.progress(
-                    min(progress, 1.0),
-                    text=f"Cooldown: {remaining:.0f}s",
-                )
+                st.progress(min(progress, 1.0), text=f"Cooldown: {remaining:.0f}s")
 
             if getattr(engine, "last_poll_time", None):
                 st.caption(
@@ -145,14 +160,8 @@ def render_watcher_controls() -> None:
                 )
 
         if is_running:
-            # Show mode indicator
-            if engine is not None and getattr(engine, "_use_audit_log", False):
-                st.caption("Mode: Audit Log (Kafka)")
-            elif engine is not None:
-                st.caption("Mode: REST Polling")
-
             if st.button(
-                "Stop Watcher",
+                "Stop watcher",
                 key="watcher_stop_btn",
                 width="stretch",
                 type="secondary",
@@ -161,30 +170,31 @@ def render_watcher_controls() -> None:
                 st.rerun()
         else:
             has_params = st.session_state.get("last_extraction_params")
-
-            # For audit log mode, validate credentials are filled
             can_start = bool(has_params)
             start_help = ""
-            if mode == "Audit Log" and not (bootstrap_servers and audit_key and audit_secret):
-                can_start = False
-                start_help = "Fill in audit log credentials"
+            if use_audit:
+                bs, ak, asec = audit_creds or ("", "", "")
+                if not (bs and ak and asec):
+                    can_start = False
+                    start_help = "Fill audit log credentials"
 
             if st.button(
-                "Start Watcher",
+                "Start watcher",
                 key="watcher_start_btn",
                 width="stretch",
                 type="primary",
                 disabled=not can_start,
             ):
-                if mode == "Audit Log":
+                if use_audit and audit_creds is not None:
+                    bs, ak, asec = audit_creds
                     _start_watcher(
                         poll_interval=10,
                         cooldown=cooldown,
                         push_uc=push_uc,
                         push_glue=push_glue,
-                        audit_bootstrap=bootstrap_servers,
-                        audit_key=audit_key,
-                        audit_secret=audit_secret,
+                        audit_bootstrap=bs,
+                        audit_key=ak,
+                        audit_secret=asec,
                     )
                 else:
                     _start_watcher(
@@ -206,7 +216,7 @@ def render_watcher_log() -> None:
     engine: WatcherEngine | None = st.session_state.get("watcher_engine")
     if engine is None:
         st.info(
-            "Configure and start the Change Watcher above to monitor "
+            "Configure and start the change watcher above to monitor "
             "Confluent Cloud for lineage-relevant changes."
         )
         return
@@ -222,36 +232,37 @@ def render_watcher_log() -> None:
             st.session_state.selected_node = None
             st.session_state.focus_node = None
 
-    # Auto-refreshing fragment for live updates
     _render_watcher_feed(engine)
 
 
 @st.fragment(run_every=5)
 def _render_watcher_feed(engine: WatcherEngine) -> None:
-    """Auto-refreshing fragment that shows event feed and extraction history."""
-    # ── Live event feed ────────────────────────────────────────────
+    """Auto-refreshing fragment showing event feed and extraction history."""
     events = list(engine.event_feed)
-    st.subheader(f"Event Feed ({len(events)} events)")
+    st.subheader(f"Event feed ({len(events)} events)")
 
     if events:
-        rows = []
-        for event in reversed(events):
-            rows.append(
-                {
-                    "Time": event.time.strftime("%H:%M:%S"),
-                    "Change": _friendly_method(event.method_name),
-                    "Resource": event.resource_name,
-                    "Environment": event.environment_id or "",
-                    "Cluster": event.cluster_id or "",
-                    "ID": event.id,
-                }
+        # Card list — drops the unreadable UUID ID column the dataframe had
+        for event in reversed(events[-25:]):
+            label, icon = _friendly_method(event.method_name)
+            scope_parts = []
+            if event.environment_id:
+                scope_parts.append(event.environment_id)
+            if event.cluster_id:
+                scope_parts.append(event.cluster_id)
+            scope = " · ".join(scope_parts) if scope_parts else ""
+            st.markdown(
+                f"<div class='watcher-event'>"
+                f"<span class='watcher-event-time'>{event.time.strftime('%H:%M:%S')}</span>"
+                f"<span class='watcher-event-icon'>{icon}</span>"
+                f"<span class='watcher-event-label'>{label}</span>"
+                f"<span class='watcher-event-resource'>{event.resource_name}</span>"
+                f"<span class='watcher-event-scope'>{scope}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
             )
-        st.dataframe(
-            rows,
-            width="stretch",
-            hide_index=True,
-            height=min(400, 35 + 35 * len(rows)),
-        )
+        if len(events) > 25:
+            st.caption(f"Showing 25 most recent of {len(events)} events.")
     elif engine.is_running:
         poll_count = getattr(engine, "poll_count", 0)
         if poll_count > 0:
@@ -259,22 +270,21 @@ def _render_watcher_feed(engine: WatcherEngine) -> None:
             ts = last.strftime("%H:%M:%S") if last else "—"
             st.info(
                 f"Polling every {engine.poll_interval:.0f}s — "
-                f"{poll_count} polls completed, "
-                f"last at {ts}. No changes detected yet."
+                f"{poll_count} polls completed, last at {ts}. "
+                "No changes detected yet."
             )
         else:
             st.info("Starting poller... waiting for first poll.")
 
-    # ── Extraction history ─────────────────────────────────────────
     if engine.extraction_history:
-        st.subheader(f"Extraction History ({len(engine.extraction_history)} runs)")
+        st.subheader(f"Extraction history ({len(engine.extraction_history)} runs)")
         history_rows = []
         for record in reversed(engine.extraction_history):
             dur = ""
             if record.completed_at:
                 secs = (record.completed_at - record.triggered_at).total_seconds()
                 dur = f"{secs:.1f}s"
-            triggers = ", ".join(_friendly_method(e.method_name) for e in record.trigger_events)
+            triggers = ", ".join(_friendly_method(e.method_name)[0] for e in record.trigger_events)
             history_rows.append(
                 {
                     "Time": record.triggered_at.strftime("%H:%M:%S"),
@@ -294,7 +304,7 @@ def _render_watcher_feed(engine: WatcherEngine) -> None:
         )
 
 
-def _render_status_badge(engine: WatcherEngine) -> None:
+def _render_status_badge(engine: WatcherEngine, mode: str) -> None:
     """Render a colored status badge with pulse animation when active."""
     dot_color, bg_color, label = _STATE_COLORS.get(
         engine.state,
@@ -309,12 +319,12 @@ def _render_status_badge(engine: WatcherEngine) -> None:
 
     event_count = len(engine.event_feed)
     poll_count = getattr(engine, "poll_count", 0)
-    parts = [label]
+    parts = [label, mode]
     if poll_count > 0:
         parts.append(f"{poll_count} polls")
     if event_count:
         parts.append(f"{event_count} events")
-    detail = " &mdash; ".join(parts[1:]) if len(parts) > 1 else ""
+    detail = " · ".join(parts[1:])
     detail_html = f" &mdash; {detail}" if detail else ""
 
     st.markdown(
@@ -350,7 +360,6 @@ def _start_watcher(
         st.error("Settings not loaded")
         return
 
-    # Override audit log settings if provided from UI
     if audit_bootstrap and audit_key and audit_secret:
         settings.audit_log_bootstrap_servers = audit_bootstrap
         settings.audit_log_api_key = audit_key

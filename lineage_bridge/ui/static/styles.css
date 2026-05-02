@@ -245,12 +245,56 @@ section[data-testid="stSidebar"] > div:first-child {
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
+/* Global status strip below header (Phase C) */
+.app-status-strip {
+    display: flex; flex-wrap: wrap; align-items: center;
+    gap: 0; padding: 6px 12px; margin-bottom: 0.75rem;
+    background: rgba(33,150,243,0.06);
+    border: 1px solid rgba(33,150,243,0.18);
+    border-radius: 6px;
+    font-size: 0.78rem; color: #555; line-height: 1.5;
+}
+.app-status-strip strong { color: inherit; font-weight: 600; }
+.strip-dot {
+    display: inline-block; width: 8px; height: 8px;
+    border-radius: 50%; margin-right: 5px;
+    vertical-align: middle;
+}
+
+/* Watcher event cards (Phase C — replaces unreadable st.dataframe) */
+.watcher-event {
+    display: grid;
+    grid-template-columns: 64px 18px 130px 1fr auto;
+    align-items: center; gap: 8px;
+    padding: 6px 10px; margin: 3px 0;
+    background: rgba(128,128,128,0.05);
+    border: 1px solid rgba(128,128,128,0.1);
+    border-radius: 6px;
+    font-size: 0.83rem; line-height: 1.3;
+}
+.watcher-event-time {
+    font-family: 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 0.78rem; color: #888;
+}
+.watcher-event-icon { font-size: 0.95rem; text-align: center; }
+.watcher-event-label {
+    font-weight: 600; font-size: 0.8rem;
+}
+.watcher-event-resource {
+    font-family: 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 0.78rem;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.watcher-event-scope {
+    font-size: 0.72rem; color: #999; white-space: nowrap;
+}
+
 /* Footer */
 .app-footer {
-    text-align: center; padding: 1.5rem 1rem 1rem;
+    text-align: center; padding: 1rem 1rem 0.75rem;
     border-top: 1px solid rgba(128,128,128,0.15);
     margin-top: 2rem; font-size: 0.75rem;
-    color: #999; line-height: 1.6;
+    color: #999; line-height: 1.5;
 }
 .app-footer a {
     color: #1976D2; text-decoration: none;
