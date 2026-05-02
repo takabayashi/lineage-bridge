@@ -218,9 +218,13 @@ section[data-testid="stSidebar"] > div:first-child {
     font-size: 0.72rem; line-height: 1.3;
     border: 1px solid transparent;
 }
-.creds-pill-configured {
+.creds-pill-explicit {
     background: rgba(76,175,80,0.10); color: #2E7D32;
     border-color: rgba(76,175,80,0.18);
+}
+.creds-pill-global {
+    background: rgba(33,150,243,0.10); color: #1565C0;
+    border-color: rgba(33,150,243,0.18);
 }
 .creds-pill-missing {
     background: rgba(158,158,158,0.10); color: #757575;

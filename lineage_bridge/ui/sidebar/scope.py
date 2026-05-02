@@ -65,13 +65,15 @@ def _render_sidebar_scope() -> None:
     )
     selected_envs = [env_labels[selected_env_label]] if selected_env_label else []
 
-    # Per-environment credentials: status pill + Manage button (opens dialog)
+    # Per-environment credentials: status pill + Manage button (opens dialog).
+    # `settings` is passed so the pill can show "global" when the .env has
+    # SR/Flink keys and turn green when per-env keys override them.
     if selected_envs:
         st.caption("Environment credentials")
         for env in selected_envs:
             svc = cache.get(env.id, {}).get("services")
             has_flink = bool(svc and svc.has_flink)
-            render_env_credentials_row(env, has_flink)
+            render_env_credentials_row(env, has_flink, settings)
 
     # Cluster multiselect
     all_cluster_options = {}
@@ -104,7 +106,7 @@ def _render_sidebar_scope() -> None:
         if selected_clusters:
             st.caption("Cluster credentials (optional)")
             for cluster in selected_clusters:
-                render_cluster_credentials_row(cluster)
+                render_cluster_credentials_row(cluster, settings)
 
 
 def _render_sidebar_extractors() -> None:

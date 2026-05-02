@@ -7,6 +7,15 @@ Each environment / cluster gets a "Manage credentials" button in the scope
 section that opens a focused `st.dialog`. The session-state shape is
 preserved verbatim so `_resolve_extraction_context` (in actions.py) keeps
 working.
+
+Status pill priority:
+
+    explicit (green)  per-env / per-cluster keys set in this session
+                      (either typed in the dialog or restored from cache)
+    global  (blue)    no per-env/per-cluster keys, but a global key is
+                      available in .env — extraction will work via fallback
+    missing (grey)    nothing — extraction will fail unless the user
+                      provides a key
 """
 
 from __future__ import annotations
@@ -42,39 +51,73 @@ def _seed_cluster_state(cid: str) -> None:
             st.session_state[key] = val
 
 
-def env_creds_status(env_id: str, has_flink: bool) -> tuple[str, str]:
-    """Return (status, label) tuple for an env's credentials.
+def env_creds_status(env_id: str, has_flink: bool, settings: Any | None = None) -> tuple[str, str]:
+    """Return (status, label) for an environment's credentials.
 
-    status: "configured" | "partial" | "missing"
-    label: human-readable summary, e.g. "SR + Flink" or "Using global key".
+    status: ``"explicit"`` | ``"global"`` | ``"missing"``
+    label: human-readable summary that names which sources are in play.
     """
-    sr_endpoint = st.session_state.get(f"sr_endpoint_{env_id}", "").strip()
-    sr_key = st.session_state.get(f"sr_key_{env_id}", "")
-    sr_secret = st.session_state.get(f"sr_secret_{env_id}", "")
-    flink_key = st.session_state.get(f"flink_key_{env_id}", "")
-    flink_secret = st.session_state.get(f"flink_secret_{env_id}", "")
+    sr_endpoint = (st.session_state.get(f"sr_endpoint_{env_id}", "") or "").strip()
+    sr_key = st.session_state.get(f"sr_key_{env_id}", "") or ""
+    sr_secret = st.session_state.get(f"sr_secret_{env_id}", "") or ""
+    flink_key = st.session_state.get(f"flink_key_{env_id}", "") or ""
+    flink_secret = st.session_state.get(f"flink_secret_{env_id}", "") or ""
 
-    sr_set = bool(sr_endpoint and sr_key and sr_secret)
-    flink_set = bool(flink_key and flink_secret)
+    sr_explicit = bool(sr_endpoint and sr_key and sr_secret)
+    flink_explicit = bool(flink_key and flink_secret)
 
-    parts = []
-    if sr_set:
+    sr_global = bool(
+        settings
+        and getattr(settings, "schema_registry_endpoint", None)
+        and getattr(settings, "schema_registry_api_key", None)
+        and getattr(settings, "schema_registry_api_secret", None)
+    )
+    flink_global = bool(
+        settings
+        and getattr(settings, "flink_api_key", None)
+        and getattr(settings, "flink_api_secret", None)
+    )
+
+    parts: list[str] = []
+    if sr_explicit:
         parts.append("SR")
-    if has_flink and flink_set:
-        parts.append("Flink")
+    elif sr_global:
+        parts.append("SR (global)")
+    if has_flink:
+        if flink_explicit:
+            parts.append("Flink")
+        elif flink_global:
+            parts.append("Flink (global)")
 
-    if parts:
-        return "configured", " + ".join(parts)
-    return "missing", "Using global key"
+    if not parts:
+        return "missing", "No SR / Flink keys configured"
+
+    has_explicit = sr_explicit or (has_flink and flink_explicit)
+    if has_explicit:
+        return "explicit", " + ".join(parts)
+    return "global", " + ".join(parts)
 
 
-def cluster_creds_status(cluster_id: str) -> tuple[str, str]:
+def cluster_creds_status(cluster_id: str, settings: Any | None = None) -> tuple[str, str]:
     """Return (status, label) for a cluster's credentials."""
-    key = st.session_state.get(f"cluster_key_{cluster_id}", "")
-    secret = st.session_state.get(f"cluster_secret_{cluster_id}", "")
+    key = st.session_state.get(f"cluster_key_{cluster_id}", "") or ""
+    secret = st.session_state.get(f"cluster_secret_{cluster_id}", "") or ""
+
     if key and secret:
-        return "configured", "Cluster key set"
-    return "missing", "Using global key"
+        return "explicit", "Cluster key set"
+
+    cluster_creds_map = getattr(settings, "cluster_credentials", {}) or {}
+    if cluster_id in cluster_creds_map:
+        return "explicit", "Cluster key from .env"
+
+    cloud_key = getattr(settings, "confluent_cloud_api_key", None)
+    if cloud_key:
+        return "global", "Using Confluent Cloud key"
+
+    return "missing", "No key configured"
+
+
+# ── Dialogs ─────────────────────────────────────────────────────────────
 
 
 @st.dialog("Environment credentials")
@@ -183,14 +226,26 @@ def cluster_credentials_dialog(cluster_id: str, cluster_name: str) -> None:
             st.rerun()
 
 
-def render_env_credentials_row(env: Any, has_flink: bool) -> None:
-    """Inline row for one env: pill + 'Manage' button. Opens dialog on click."""
-    status, label = env_creds_status(env.id, has_flink)
+# ── Inline rows (called from scope.py) ──────────────────────────────────
+
+
+def render_env_credentials_row(env: Any, has_flink: bool, settings: Any | None = None) -> None:
+    """Inline row for one env: pill + 'Manage' button. Opens dialog on click.
+
+    Eagerly seeds cached creds into session state before computing status, so
+    the pill reflects "configured from cache" on first render rather than
+    waiting until the user opens the dialog.
+    """
+    _seed_env_state(env.id)
+    status, label = env_creds_status(env.id, has_flink, settings)
     pill = _status_pill_html(status, label)
 
     c1, c2 = st.columns([3, 2])
     with c1:
-        st.markdown(pill, unsafe_allow_html=True)
+        st.markdown(
+            f"<div class='creds-row-name'>{env.display_name}</div>{pill}",
+            unsafe_allow_html=True,
+        )
     with c2:
         if st.button(
             "Manage",
@@ -200,9 +255,10 @@ def render_env_credentials_row(env: Any, has_flink: bool) -> None:
             env_credentials_dialog(env.id, env.display_name, has_flink)
 
 
-def render_cluster_credentials_row(cluster: Any) -> None:
+def render_cluster_credentials_row(cluster: Any, settings: Any | None = None) -> None:
     """Inline row for one cluster: pill + 'Manage' button."""
-    status, label = cluster_creds_status(cluster.id)
+    _seed_cluster_state(cluster.id)
+    status, label = cluster_creds_status(cluster.id, settings)
     pill = _status_pill_html(status, label)
 
     c1, c2 = st.columns([3, 2])
@@ -221,12 +277,19 @@ def render_cluster_credentials_row(cluster: Any) -> None:
 
 
 def _status_pill_html(status: str, label: str) -> str:
-    """Small visual pill: green = configured, grey = missing/global."""
-    css_class = "creds-pill-configured" if status == "configured" else "creds-pill-missing"
-    dot_color = "#4CAF50" if status == "configured" else "#9E9E9E"
+    """Three-tone pill: green = explicit, blue = global fallback, grey = missing."""
+    if status == "explicit":
+        css_class = "creds-pill-explicit"
+        dot = "#4CAF50"
+    elif status == "global":
+        css_class = "creds-pill-global"
+        dot = "#1976D2"
+    else:
+        css_class = "creds-pill-missing"
+        dot = "#9E9E9E"
     return (
         f"<div class='creds-pill {css_class}'>"
-        f"<span class='status-dot' style='background:{dot_color}'></span>"
+        f"<span class='status-dot' style='background:{dot}'></span>"
         f"<span>{label}</span>"
         f"</div>"
     )
