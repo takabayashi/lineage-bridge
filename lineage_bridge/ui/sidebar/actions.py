@@ -1,18 +1,30 @@
 # Copyright 2026 Daniel Takabayashi
 # Licensed under the Apache License, Version 2.0
-"""Sidebar — extract / enrich / push buttons + per-platform push UI + log + load-data.
+"""Sidebar — extract / enrich / publish controls + logs + load-data.
 
-These render functions all call into `lineage_bridge.services` (per ADR-020).
-The legacy session-state shape (`_cached_*`, `extraction_log`, etc.) is
-preserved verbatim so the rest of the UI (graph_renderer, node_details)
-doesn't need to change.
+Phase A redesign:
+- Single primary "Run extraction" button + popover with Enrich / Refresh
+  (was: 3 adjacent buttons of overlapping semantics).
+- Single Publish panel with one row per target (was: 3 nested expanders
+  + 4 near-identical render functions).
+- Split `extraction_log` and `push_log` into two session-state lists so
+  pushing no longer clobbers the extraction log (was: shared list gated
+  by `_log_source`).
+- Removed duplicate "Load Demo Graph" button (kept only in empty state).
+
+Backwards-compat note: the legacy session-state shape (`_cached_*`,
+`extraction_log`, etc.) is otherwise preserved verbatim so the rest of
+the UI doesn't need to change.
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import streamlit as st
 
@@ -27,7 +39,6 @@ from lineage_bridge.ui.extraction import (
     _run_lineage_push,
     _save_selections_to_cache,
 )
-from lineage_bridge.ui.sample_data import generate_sample_graph
 from lineage_bridge.ui.state import _GRAPH_VERSION
 
 # ── extraction context ──────────────────────────────────────────────────
@@ -59,7 +70,7 @@ def _resolve_extraction_context():
         all_cluster_options[lbl].id for lbl in selected_cluster_labels if lbl in all_cluster_options
     ]
 
-    # Collect per-cluster credentials
+    # Per-cluster credentials
     ui_cluster_creds: dict[str, dict[str, str]] = {}
     for lbl in selected_cluster_labels:
         if lbl not in all_cluster_options:
@@ -70,7 +81,7 @@ def _resolve_extraction_context():
         if k and s:
             ui_cluster_creds[cid] = {"api_key": k, "api_secret": s}
 
-    # Collect per-environment SR credentials + endpoints
+    # Per-environment SR credentials + endpoints
     ui_sr_creds: dict[str, dict[str, str]] = {}
     for env in selected_envs:
         eid = env.id
@@ -86,7 +97,7 @@ def _resolve_extraction_context():
         if cred:
             ui_sr_creds[eid] = cred
 
-    # Collect per-environment Flink credentials
+    # Per-environment Flink credentials
     ui_flink_creds: dict[str, dict[str, str]] = {}
     for env in selected_envs:
         eid = env.id
@@ -105,76 +116,81 @@ def _resolve_extraction_context():
     }
 
 
-# ── extract / enrich / refresh actions ──────────────────────────────────
+def _build_extraction_params(ctx: dict) -> dict:
+    """Translate the extraction context + extractor toggles into a params dict."""
+    return {
+        "env_ids": [e.id for e in ctx["selected_envs"]],
+        "cluster_ids": ctx["selected_cluster_ids"],
+        "cluster_credentials": ctx["ui_cluster_creds"],
+        "sr_credentials": ctx["ui_sr_creds"],
+        "flink_credentials": ctx["ui_flink_creds"],
+        "enable_connect": st.session_state.get("ext_connect", True),
+        "enable_ksqldb": st.session_state.get("ext_ksqldb", False),
+        "enable_flink": st.session_state.get("ext_flink", False),
+        "enable_schema_registry": st.session_state.get("ext_sr", False),
+        "enable_stream_catalog": st.session_state.get("ext_catalog", False),
+        "enable_tableflow": st.session_state.get("ext_tf", True),
+        "enable_metrics": st.session_state.get("ext_metrics", False),
+        "metrics_lookback_hours": st.session_state.get("metrics_lookback", 1),
+        "enable_enrichment": True,
+    }
+
+
+# ── extract / enrich / refresh ──────────────────────────────────────────
 
 
 def _render_sidebar_actions() -> None:
-    """Extract, Enrich, and Refresh buttons with full-width status widgets."""
+    """Single primary 'Run extraction' button + popover for Enrich / Refresh."""
     ctx = _resolve_extraction_context()
     if not ctx:
         return
 
     settings = ctx["settings"]
-    selected_envs = ctx["selected_envs"]
     selected_cluster_ids = ctx["selected_cluster_ids"]
-
     has_graph = st.session_state.graph is not None
-    extract_label = "Re-extract" if has_graph else "Extract"
+    has_params = st.session_state.last_extraction_params is not None
+
+    extract_label = "Re-extract" if has_graph else "Extract lineage"
 
     # Track which action was triggered
-    action = None
+    action: str | None = None
 
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        if st.button(
-            extract_label,
-            key="extract_btn",
-            type="primary",
-            disabled=not selected_cluster_ids,
-            width="stretch",
-            help="Extract lineage from Confluent Cloud",
-        ):
-            action = "extract"
-    with c2:
-        if st.button(
-            "Enrich",
-            key="enrich_btn",
-            disabled=not has_graph,
-            width="stretch",
-            help="Enrich graph with catalog metadata and metrics",
-        ):
-            action = "enrich"
-    with c3:
-        has_params = st.session_state.last_extraction_params is not None
-        if st.button(
-            "Refresh",
-            key="refresh_extract_btn",
-            disabled=not has_params,
-            width="stretch",
-            help="Re-run last extraction with same parameters",
-        ):
-            action = "refresh"
+    # Primary action — full width
+    if st.button(
+        extract_label,
+        key="extract_btn",
+        type="primary",
+        disabled=not selected_cluster_ids,
+        width="stretch",
+        help="Extract lineage from Confluent Cloud using the current selection",
+    ):
+        action = "extract"
 
-    # Render status widget at full sidebar width (outside columns)
+    # Secondary actions — compact popover so they don't take row real estate
+    if has_graph or has_params:
+        with st.popover("More actions", use_container_width=True):
+            st.caption("Operates on the existing graph; does not re-extract.")
+            if st.button(
+                "Enrich existing graph",
+                key="enrich_btn",
+                disabled=not has_graph,
+                width="stretch",
+                help="Run catalog enrichment + metrics on the current graph",
+            ):
+                action = "enrich"
+            if st.button(
+                "Re-run with last params",
+                key="refresh_extract_btn",
+                disabled=not has_params,
+                width="stretch",
+                help="Repeat the previous extraction with the saved parameters",
+            ):
+                action = "refresh"
+
+    # Status widget — outside columns so it spans the sidebar
     if action == "extract":
-        params = {
-            "env_ids": [e.id for e in selected_envs],
-            "cluster_ids": selected_cluster_ids,
-            "cluster_credentials": ctx["ui_cluster_creds"],
-            "sr_credentials": ctx["ui_sr_creds"],
-            "flink_credentials": ctx["ui_flink_creds"],
-            "enable_connect": st.session_state.get("ext_connect", True),
-            "enable_ksqldb": st.session_state.get("ext_ksqldb", False),
-            "enable_flink": st.session_state.get("ext_flink", False),
-            "enable_schema_registry": st.session_state.get("ext_sr", False),
-            "enable_stream_catalog": st.session_state.get("ext_catalog", False),
-            "enable_tableflow": st.session_state.get("ext_tf", True),
-            "enable_metrics": st.session_state.get("ext_metrics", False),
-            "metrics_lookback_hours": st.session_state.get("metrics_lookback", 1),
-            "enable_enrichment": True,
-        }
+        params = _build_extraction_params(ctx)
         st.session_state.extraction_log = []
-        st.session_state._log_source = "extraction"
         with st.status("Extracting lineage...", expanded=True) as status:
             try:
                 result = _run_extraction_with_params(settings, params)
@@ -197,7 +213,6 @@ def _render_sidebar_actions() -> None:
     elif action == "enrich":
         params = st.session_state.last_extraction_params or {}
         st.session_state.extraction_log = []
-        st.session_state._log_source = "extraction"
         with st.status("Enriching graph...", expanded=True) as status:
             try:
                 result = _run_enrichment_on_graph(settings, st.session_state.graph, params)
@@ -215,7 +230,6 @@ def _render_sidebar_actions() -> None:
         params = dict(st.session_state.last_extraction_params)
         params["enable_enrichment"] = True
         st.session_state.extraction_log = []
-        st.session_state._log_source = "extraction"
         with st.status("Refreshing...", expanded=True) as status:
             try:
                 result = _run_extraction_with_params(settings, params)
@@ -233,27 +247,171 @@ def _render_sidebar_actions() -> None:
             except Exception as exc:
                 status.update(label=f"Failed: {exc}", state="error")
 
-    # Show extraction log (only if this section produced it)
-    if st.session_state.extraction_log and st.session_state.get("_log_source") == "extraction":
-        with st.expander("Extraction Log", expanded=False):
-            _render_extraction_log()
+    # Persisted extraction log (always its own list — never overwritten by push)
+    if st.session_state.get("extraction_log"):
+        with st.expander("Extraction log", expanded=False):
+            _render_log("extraction_log")
 
 
-# ── push UI per platform ────────────────────────────────────────────────
+# ── publish (single panel for all targets) ──────────────────────────────
 
 
-def _render_sidebar_databricks() -> None:
-    """Databricks warehouse discovery, push settings, and Push to UC button."""
+@dataclass
+class _PublishTarget:
+    """Metadata + render hooks for one publish target row."""
+
+    key: str
+    name: str
+    short_name: str
+    status: str  # "ready" | "no_nodes" | "not_configured"
+    detail: str  # one-line status caption
+    render_options: Callable[[], None] | None = None
+    push_fn: Callable[[Any, LineageGraph, dict], Any] | None = None
+    push_param_keys: tuple[str, ...] = ()
+    eligible_count: int = 0
+
+
+def _render_sidebar_publish() -> None:
+    """One Publish panel listing every target with status pill + inline push UI."""
     settings = _try_load_settings()
-    if not settings or not settings.databricks_workspace_url:
-        st.caption("Set `LINEAGE_BRIDGE_DATABRICKS_WORKSPACE_URL` in .env to enable.")
+    graph = st.session_state.get("graph")
+    if not settings or graph is None:
         return
 
-    st.caption("SQL Warehouse for pushing lineage metadata.")
+    targets = [
+        _databricks_target(settings, graph),
+        _glue_target(settings, graph),
+        _datazone_target(settings, graph),
+        _google_target(settings, graph),
+    ]
 
-    # Discover warehouses button
+    # Order: ready → no_nodes → not_configured (most actionable first).
+    order = {"ready": 0, "no_nodes": 1, "not_configured": 2}
+    targets.sort(key=lambda t: order[t.status])
+
+    for t in targets:
+        _render_publish_row(settings, graph, t)
+
+    if st.session_state.get("push_log"):
+        with st.expander("Push log", expanded=False):
+            _render_log("push_log")
+
+
+def _render_publish_row(settings, graph: LineageGraph, t: _PublishTarget) -> None:
+    """Render one publish-target row: header (status + name) + push controls."""
+    status_dot = {
+        "ready": "#4CAF50",
+        "no_nodes": "#FFC107",
+        "not_configured": "#9E9E9E",
+    }[t.status]
+
+    header_html = (
+        f"<div class='publish-row'>"
+        f"<span class='status-dot' style='background:{status_dot}'></span>"
+        f"<span class='publish-row-name'>{t.name}</span>"
+        f"<span class='publish-row-detail'>{t.detail}</span>"
+        f"</div>"
+    )
+    st.markdown(header_html, unsafe_allow_html=True)
+
+    if t.status != "ready" or t.push_fn is None:
+        return
+
+    with st.popover(
+        f"Push to {t.short_name}",
+        use_container_width=True,
+    ):
+        if t.render_options:
+            t.render_options()
+        if st.button(
+            f"Push to {t.short_name}",
+            key=f"push_btn_{t.key}",
+            type="primary",
+            width="stretch",
+        ):
+            params = dict(st.session_state.last_extraction_params or {})
+            for k in t.push_param_keys:
+                params[k] = st.session_state.get(k, True)
+            st.session_state.push_log = []
+            with st.status(f"Pushing to {t.short_name}...", expanded=True) as status:
+                try:
+                    result = t.push_fn(settings, graph, params)
+                    msg = _format_push_result(t.short_name, result)
+                    state = "error" if getattr(result, "errors", None) else "complete"
+                    status.update(label=msg, state=state)
+                    st.rerun()
+                except Exception as exc:
+                    status.update(label=f"Failed: {exc}", state="error")
+
+
+def _format_push_result(target: str, result) -> str:
+    parts = [f"{target}: {result.tables_updated} tables"]
+    if getattr(result, "properties_set", 0):
+        parts.append(f"{result.properties_set} props")
+    if getattr(result, "comments_set", 0):
+        parts.append(f"{result.comments_set} comments")
+    if getattr(result, "errors", None):
+        parts.append(f"{len(result.errors)} error(s)")
+    return " · ".join(parts)
+
+
+# ── per-target factories ────────────────────────────────────────────────
+
+
+def _databricks_target(settings, graph: LineageGraph) -> _PublishTarget:
+    if not settings.databricks_workspace_url:
+        return _PublishTarget(
+            key="databricks",
+            name="Databricks UC",
+            short_name="UC",
+            status="not_configured",
+            detail="Set DATABRICKS_WORKSPACE_URL in .env",
+        )
+    uc_tables = graph.filter_catalog_nodes("UNITY_CATALOG")
+    if not uc_tables:
+        return _PublishTarget(
+            key="databricks",
+            name="Databricks UC",
+            short_name="UC",
+            status="no_nodes",
+            detail="No UC tables in graph (enable Tableflow)",
+        )
+
+    def _render_options() -> None:
+        st.caption("Options")
+        st.checkbox("Set table properties", value=True, key="push_properties")
+        st.checkbox("Set table comments", value=True, key="push_comments")
+        st.checkbox("Create bridge table", value=False, key="push_bridge_table")
+        _render_warehouse_picker(settings)
+
+    def _push(settings, graph, params):
+        wh_id = st.session_state.get("databricks_selected_warehouse_id")
+        if wh_id:
+            settings = settings.model_copy(update={"databricks_warehouse_id": wh_id})
+        return _run_lineage_push(settings, graph, params)
+
+    return _PublishTarget(
+        key="databricks",
+        name="Databricks UC",
+        short_name="UC",
+        status="ready",
+        detail=f"{len(uc_tables)} UC table(s)",
+        render_options=_render_options,
+        push_fn=_push,
+        push_param_keys=("push_properties", "push_comments", "push_bridge_table"),
+        eligible_count=len(uc_tables),
+    )
+
+
+def _render_warehouse_picker(settings) -> None:
+    """Inline Databricks warehouse picker (Discover + selectbox)."""
     warehouses = st.session_state.get("databricks_warehouses", [])
-    if st.button("Discover Warehouses", key="discover_wh_btn", width="stretch"):
+
+    if st.button(
+        "Discover warehouses",
+        key="discover_wh_btn",
+        width="stretch",
+    ):
         with st.spinner("Discovering..."):
             try:
                 from lineage_bridge.clients.databricks_discovery import list_warehouses
@@ -272,7 +430,6 @@ def _render_sidebar_databricks() -> None:
 
     if warehouses:
         wh_options = {f"{wh.name} ({wh.id}) [{wh.state}]": wh for wh in warehouses}
-        # Pre-select the configured warehouse or the first RUNNING one
         default_idx = 0
         if settings.databricks_warehouse_id:
             for i, wh in enumerate(warehouses):
@@ -289,214 +446,120 @@ def _render_sidebar_databricks() -> None:
             selected_wh = wh_options[selected_label]
             st.session_state.databricks_selected_warehouse_id = selected_wh.id
             if selected_wh.state != "RUNNING":
-                st.warning(f"Warehouse is {selected_wh.state} — push may fail or start it.")
+                st.warning(f"Warehouse is {selected_wh.state} — push may start it.")
     elif settings.databricks_warehouse_id:
-        st.info(f"Using configured warehouse: `{settings.databricks_warehouse_id}`")
-
-    # Push options
-    st.checkbox("Set table properties", value=True, key="push_properties")
-    st.checkbox("Set table comments", value=True, key="push_comments")
-    st.checkbox("Create bridge table", value=False, key="push_bridge_table")
-
-    # ── Push to UC button ─────────────────────────────────────────────
-    graph = st.session_state.get("graph")
-    has_uc_tables = graph is not None and len(graph.filter_catalog_nodes("UNITY_CATALOG")) > 0
-    st.divider()
-    if not has_uc_tables:
-        st.caption("No UC tables in current graph — extract with Tableflow enabled.")
-        return
-
-    if st.button(
-        "⤴ Push to UC",
-        key="push_btn",
-        type="primary",
-        width="stretch",
-        help="Push lineage metadata to Databricks Unity Catalog",
-    ):
-        params = dict(st.session_state.last_extraction_params or {})
-        params["push_properties"] = st.session_state.get("push_properties", True)
-        params["push_comments"] = st.session_state.get("push_comments", True)
-        params["push_bridge_table"] = st.session_state.get("push_bridge_table", False)
-        wh_id = st.session_state.get("databricks_selected_warehouse_id")
-        if wh_id:
-            settings = settings.model_copy(update={"databricks_warehouse_id": wh_id})
-        st.session_state.extraction_log = []
-        st.session_state._log_source = "publish"
-        with st.status("Pushing lineage to UC...", expanded=True) as status:
-            try:
-                push_result = _run_lineage_push(settings, st.session_state.graph, params)
-                msg = (
-                    f"Pushed — {push_result.tables_updated} tables, "
-                    f"{push_result.properties_set} properties, "
-                    f"{push_result.comments_set} comments"
-                )
-                if push_result.errors:
-                    msg += f" ({len(push_result.errors)} error(s))"
-                status.update(label=msg, state="complete")
-                st.rerun()
-            except Exception as exc:
-                status.update(label=f"Failed: {exc}", state="error")
+        st.caption(f"Configured warehouse: `{settings.databricks_warehouse_id}`")
 
 
-def _render_sidebar_aws() -> None:
-    """AWS Glue + DataZone publish settings and push buttons."""
-    settings = _try_load_settings()
-    if not settings:
-        st.caption("Configure `.env` to enable.")
-        return
+def _glue_target(settings, graph: LineageGraph) -> _PublishTarget:
+    glue_tables = graph.filter_catalog_nodes("AWS_GLUE")
+    if not glue_tables:
+        return _PublishTarget(
+            key="glue",
+            name="AWS Glue",
+            short_name="Glue",
+            status="no_nodes",
+            detail=f"No Glue tables (region: {settings.aws_region})",
+        )
+    enriched = sum(1 for n in glue_tables if n.attributes.get("columns"))
 
-    st.caption(f"Region: `{settings.aws_region}`")
-    st.caption("Credentials: AWS default credential chain")
+    def _render_options() -> None:
+        st.caption("Options")
+        st.checkbox("Set table parameters", value=True, key="glue_push_parameters")
+        st.checkbox("Set table description", value=True, key="glue_push_description")
 
-    graph = st.session_state.get("graph")
-    glue_tables = graph.filter_catalog_nodes("AWS_GLUE") if graph else []
-    kafka_topics = graph.filter_by_type(NodeType.KAFKA_TOPIC) if graph else []
-    has_glue_tables = bool(glue_tables)
-
-    if has_glue_tables:
-        enriched = sum(1 for n in glue_tables if n.attributes.get("columns"))
-        st.info(f"{len(glue_tables)} Glue table(s), {enriched} enriched")
-    elif graph is not None:
-        st.caption("No Glue tables in current graph.")
-
-    # ── Glue push options + button ───────────────────────────────────
-    st.markdown("**Glue**")
-    st.checkbox("Set table parameters", value=True, key="glue_push_parameters")
-    st.checkbox("Set table description", value=True, key="glue_push_description")
-    if has_glue_tables and st.button(
-        "⤴ Push to Glue",
-        key="glue_push_btn",
-        type="primary",
-        width="stretch",
-        help="Push lineage metadata to AWS Glue table parameters and description",
-    ):
-        params = {
+    def _push(settings, graph, params):
+        opts = {
             "push_parameters": st.session_state.get("glue_push_parameters", True),
             "push_description": st.session_state.get("glue_push_description", True),
         }
-        st.session_state.extraction_log = []
-        st.session_state._log_source = "publish"
-        with st.status("Pushing lineage to Glue...", expanded=True) as status:
-            try:
-                push_result = _run_glue_push(settings, st.session_state.graph, params)
-                msg = (
-                    f"Pushed — {push_result.tables_updated} Glue tables, "
-                    f"{push_result.properties_set} parameters, "
-                    f"{push_result.comments_set} descriptions"
-                )
-                if push_result.errors:
-                    msg += f" ({len(push_result.errors)} error(s))"
-                status.update(label=msg, state="complete")
-                st.rerun()
-            except Exception as exc:
-                status.update(label=f"Failed: {exc}", state="error")
+        return _run_glue_push(settings, graph, opts)
 
-    # ── DataZone push button ─────────────────────────────────────────
-    st.divider()
-    st.markdown("**DataZone**")
+    return _PublishTarget(
+        key="glue",
+        name="AWS Glue",
+        short_name="Glue",
+        status="ready",
+        detail=f"{len(glue_tables)} table(s), {enriched} enriched",
+        render_options=_render_options,
+        push_fn=_push,
+        eligible_count=len(glue_tables),
+    )
+
+
+def _datazone_target(settings, graph: LineageGraph) -> _PublishTarget:
     if not (settings.aws_datazone_domain_id and settings.aws_datazone_project_id):
-        st.caption(
-            "Set `LINEAGE_BRIDGE_AWS_DATAZONE_DOMAIN_ID` + `..._PROJECT_ID` in .env "
-            "to enable. (Auto-wired by `make demo-glue-up` when a domain exists.)"
+        return _PublishTarget(
+            key="datazone",
+            name="AWS DataZone",
+            short_name="DataZone",
+            status="not_configured",
+            detail="Set AWS_DATAZONE_DOMAIN_ID + PROJECT_ID",
         )
-        return
-
-    st.caption(f"Domain: `{settings.aws_datazone_domain_id}`")
-    st.caption(f"Project: `{settings.aws_datazone_project_id}`")
+    kafka_topics = graph.filter_by_type(NodeType.KAFKA_TOPIC)
     if not kafka_topics:
-        st.caption("No Kafka topics in current graph — extract first.")
-        return
-    if st.button(
-        "⤴ Push to DataZone",
-        key="datazone_push_btn",
-        type="primary",
-        width="stretch",
-        help="Register Kafka topics as DataZone assets and post OpenLineage events",
-    ):
-        st.session_state.extraction_log = []
-        st.session_state._log_source = "publish"
-        with st.status("Pushing lineage to DataZone...", expanded=True) as status:
-            try:
-                push_result = _run_datazone_push(settings, st.session_state.graph, {})
-                msg = f"Pushed — {push_result.tables_updated} events"
-                if push_result.errors:
-                    msg += f" ({len(push_result.errors)} error(s))"
-                status.update(label=msg, state="complete")
-                st.rerun()
-            except Exception as exc:
-                status.update(label=f"Failed: {exc}", state="error")
+        return _PublishTarget(
+            key="datazone",
+            name="AWS DataZone",
+            short_name="DataZone",
+            status="no_nodes",
+            detail="No Kafka topics in graph",
+        )
+
+    def _push(settings, graph, params):
+        return _run_datazone_push(settings, graph, {})
+
+    return _PublishTarget(
+        key="datazone",
+        name="AWS DataZone",
+        short_name="DataZone",
+        status="ready",
+        detail=f"{len(kafka_topics)} topic(s) eligible",
+        push_fn=_push,
+        eligible_count=len(kafka_topics),
+    )
 
 
-def _render_sidebar_google() -> None:
-    """Google Data Lineage settings and push options."""
-    settings = _try_load_settings()
-    if not settings:
-        st.caption("Configure `.env` to enable.")
-        return
-
+def _google_target(settings, graph: LineageGraph) -> _PublishTarget:
     if not settings.gcp_project_id:
-        st.caption("Set `LINEAGE_BRIDGE_GCP_PROJECT_ID` in .env to enable.")
-        return
-
-    st.caption(f"Project: `{settings.gcp_project_id}`")
-    st.caption(f"Location: `{settings.gcp_location}`")
-    st.caption("Credentials: Application Default Credentials (ADC)")
-
-    graph = st.session_state.get("graph")
-    google_tables = graph.filter_catalog_nodes("GOOGLE_DATA_LINEAGE") if graph else []
-    if google_tables:
-        enriched = sum(1 for n in google_tables if n.attributes.get("columns"))
-        st.info(f"{len(google_tables)} BigQuery table(s), {enriched} enriched")
-    elif graph is not None:
-        st.caption("No Google tables in current graph.")
-
-    # ── Push to Google button ─────────────────────────────────────────
-    st.divider()
+        return _PublishTarget(
+            key="google",
+            name="Google Data Lineage",
+            short_name="Google",
+            status="not_configured",
+            detail="Set LINEAGE_BRIDGE_GCP_PROJECT_ID",
+        )
+    google_tables = graph.filter_catalog_nodes("GOOGLE_DATA_LINEAGE")
     if not google_tables:
-        st.caption("No Google tables to push — extract a BQ-targeting connector first.")
-        return
+        return _PublishTarget(
+            key="google",
+            name="Google Data Lineage",
+            short_name="Google",
+            status="no_nodes",
+            detail=f"No BQ tables (project: {settings.gcp_project_id})",
+        )
+    enriched = sum(1 for n in google_tables if n.attributes.get("columns"))
 
-    if st.button(
-        "⤴ Push to Google",
-        key="google_push_btn",
-        type="primary",
-        width="stretch",
-        help=(
-            "Push lineage as OpenLineage events to Google Data Lineage and register "
-            "Kafka topics as Dataplex Catalog entries (with schema)"
-        ),
-    ):
-        st.session_state.extraction_log = []
-        st.session_state._log_source = "publish"
-        with st.status("Pushing lineage to Google...", expanded=True) as status:
-            try:
-                push_result = _run_google_push(settings, st.session_state.graph, {})
-                msg = f"Pushed — {push_result.tables_updated} events"
-                if push_result.errors:
-                    msg += f" ({len(push_result.errors)} error(s))"
-                status.update(label=msg, state="complete")
-                st.rerun()
-            except Exception as exc:
-                status.update(label=f"Failed: {exc}", state="error")
+    def _push(settings, graph, params):
+        return _run_google_push(settings, graph, {})
+
+    return _PublishTarget(
+        key="google",
+        name="Google Data Lineage",
+        short_name="Google",
+        status="ready",
+        detail=f"{len(google_tables)} BQ table(s), {enriched} enriched",
+        push_fn=_push,
+        eligible_count=len(google_tables),
+    )
 
 
-# ── log rendering ───────────────────────────────────────────────────────
-
-
-def _render_sidebar_push_log() -> None:
-    """Render the shared Push Log expander (populated by per-platform push buttons)."""
-    if st.session_state.extraction_log and st.session_state.get("_log_source") == "publish":
-        with st.expander("Push Log", expanded=False):
-            _render_extraction_log()
+# ── log rendering (shared) ──────────────────────────────────────────────
 
 
 def _classify_log_entry(line: str) -> tuple[str, str, str]:
-    """Classify a log line into (css_class, icon, label).
-
-    Returns (css_class, icon_char, cleaned_text).
-    """
+    """Classify a log line into (css_class, icon, cleaned_text)."""
     text = line
-    # Extract bold label if present: **Label** rest
     label = ""
     if text.startswith("**"):
         end = text.find("**", 2)
@@ -515,23 +578,23 @@ def _classify_log_entry(line: str) -> tuple[str, str, str]:
         return "log-discovery", "\U0001f50d", text
     if "provision" in label_lower:
         return "log-provision", "\U0001f511", text
-    # Default
     return "log-phase", "•", text
 
 
-def _render_extraction_log() -> None:
-    """Render extraction log with severity-based styling."""
-    lines = st.session_state.extraction_log
+def _render_log(state_key: str) -> None:
+    """Render a log list (`state_key` is `extraction_log` or `push_log`)."""
+    lines = st.session_state.get(state_key, [])
+    if not lines:
+        st.caption("Empty.")
+        return
     html_parts = []
     for line in lines:
         css_class, icon, text = _classify_log_entry(line)
-        # Re-extract label for display
         label = ""
-        raw = line
-        if raw.startswith("**"):
-            end = raw.find("**", 2)
+        if line.startswith("**"):
+            end = line.find("**", 2)
             if end > 2:
-                label = raw[2:end]
+                label = line[2:end]
         label_html = f"<span class='log-label'>{label}</span>" if label else ""
         html_parts.append(
             f"<div class='log-entry {css_class}'>"
@@ -541,33 +604,29 @@ def _render_extraction_log() -> None:
         )
     st.markdown("".join(html_parts), unsafe_allow_html=True)
 
+    # Copy / download for bug reports
+    log_text = "\n".join(lines)
+    st.download_button(
+        "Download log",
+        data=log_text,
+        file_name=f"{state_key}.txt",
+        mime="text/plain",
+        key=f"download_{state_key}",
+        width="stretch",
+    )
+
 
 # ── load data ──────────────────────────────────────────────────────────
 
 
 def _render_sidebar_load_data() -> None:
-    """Load from file, upload, or demo."""
-    if st.button(
-        "Load Demo Graph",
-        key="load_demo_sidebar",
-        type="primary",
-        width="stretch",
-    ):
-        st.session_state.graph = generate_sample_graph()
-        st.session_state.graph_version = _GRAPH_VERSION
-        st.session_state.selected_node = None
-        st.session_state.focus_node = None
-        st.session_state.last_extraction_params = None
-        st.rerun()
-
-    st.markdown("---")
-
+    """Load from file or upload. (Demo button lives only in empty state.)"""
     graph_path = st.text_input(
         "File path",
         value="./lineage_graph.json",
         key="graph_path_input",
     )
-    if st.button("Load from path", key="load_path_btn"):
+    if st.button("Load from path", key="load_path_btn", width="stretch"):
         p = Path(graph_path).expanduser()
         if not p.exists():
             st.error(f"File not found: {p}")
@@ -584,7 +643,11 @@ def _render_sidebar_load_data() -> None:
                 st.error(f"Failed to parse: {exc}")
 
     uploaded = st.file_uploader("Upload JSON", type=["json"], key="json_upload")
-    if uploaded is not None and st.button("Parse uploaded file", key="parse_upload_btn"):
+    if uploaded is not None and st.button(
+        "Parse uploaded file",
+        key="parse_upload_btn",
+        width="stretch",
+    ):
         try:
             data = json.loads(uploaded.getvalue())
             g = LineageGraph.from_dict(data)
@@ -596,3 +659,18 @@ def _render_sidebar_load_data() -> None:
             st.rerun()
         except Exception as exc:
             st.error(f"Failed to parse: {exc}")
+
+
+# ── legacy export (kept for tests / external imports) ──────────────────
+
+
+def _render_extraction_log() -> None:
+    """Backwards-compat alias (used by older test fixtures)."""
+    _render_log("extraction_log")
+
+
+def _render_sidebar_push_log() -> None:
+    """Backwards-compat alias — push log now renders inside `_render_sidebar_publish`."""
+    if st.session_state.get("push_log"):
+        with st.expander("Push log", expanded=False):
+            _render_log("push_log")

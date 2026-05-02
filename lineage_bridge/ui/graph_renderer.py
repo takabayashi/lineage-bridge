@@ -344,10 +344,7 @@ def render_graph(
 
         vis_props = build_node_vis_props(node.node_type)
         vis_props["image"] = icon_for_node(node)
-        if (
-            node.node_type == NodeType.KAFKA_TOPIC
-            and node.attributes.get("role") == "dlq"
-        ):
+        if node.node_type == NodeType.KAFKA_TOPIC and node.attributes.get("role") == "dlq":
             vis_props["image"] = DLQ_TOPIC_ICON
         agraph_nodes.append(
             Node(

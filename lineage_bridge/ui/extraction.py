@@ -5,6 +5,11 @@
 This module is intentionally thin — it translates Streamlit session state
 into request models and forwards to `lineage_bridge.services`. The service
 layer is what UI, API, and watcher all converge on (see ADR-020).
+
+Phase A redesign: progress lines are routed to either `extraction_log`
+(for extract / enrich / refresh) or `push_log` (for push actions) — a
+single shared list previously caused the extraction log to be wiped on
+every push.
 """
 
 from __future__ import annotations
@@ -57,9 +62,12 @@ def _build_sr_endpoints(params: dict) -> dict[str, str]:
     return sr_endpoints
 
 
-def _ui_progress():
-    """Append-to-extraction-log progress callback used by every action."""
-    log = st.session_state.extraction_log
+def _ui_progress(state_key: str = "extraction_log"):
+    """Append-to-log progress callback. *state_key* is the session-state list to append to."""
+    log = st.session_state.get(state_key)
+    if log is None:
+        log = []
+        st.session_state[state_key] = log
 
     def on_progress(phase: str, detail: str = "") -> None:
         log.append(f"**{phase}** {detail}")
@@ -93,7 +101,7 @@ def _run_lineage_push(settings, graph, params: dict):
             "create_bridge_table": params.get("push_bridge_table", False),
         },
     )
-    return _run_async(run_push(req, settings, graph, on_progress=_ui_progress()))
+    return _run_async(run_push(req, settings, graph, on_progress=_ui_progress("push_log")))
 
 
 def _run_glue_push(settings, graph, params: dict):
@@ -106,19 +114,19 @@ def _run_glue_push(settings, graph, params: dict):
             "set_description": params.get("push_description", True),
         },
     )
-    return _run_async(run_push(req, settings, graph, on_progress=_ui_progress()))
+    return _run_async(run_push(req, settings, graph, on_progress=_ui_progress("push_log")))
 
 
 def _run_google_push(settings, graph, params: dict):
     """Push lineage as OpenLineage events to Google Data Lineage. Returns PushResult."""
     req = _push_request("google", params)
-    return _run_async(run_push(req, settings, graph, on_progress=_ui_progress()))
+    return _run_async(run_push(req, settings, graph, on_progress=_ui_progress("push_log")))
 
 
 def _run_datazone_push(settings, graph, params: dict):
     """Register Kafka assets + push OpenLineage events to AWS DataZone. Returns PushResult."""
     req = _push_request("datazone", params)
-    return _run_async(run_push(req, settings, graph, on_progress=_ui_progress()))
+    return _run_async(run_push(req, settings, graph, on_progress=_ui_progress("push_log")))
 
 
 def _run_extraction_with_params(settings, params: dict):

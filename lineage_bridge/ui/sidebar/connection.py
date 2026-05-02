@@ -1,6 +1,11 @@
 # Copyright 2026 Daniel Takabayashi
 # Licensed under the Apache License, Version 2.0
-"""Sidebar — connection status + connect/disconnect widgets."""
+"""Sidebar — connect / disconnect widgets.
+
+Phase A redesign: dropped the in-expander "Connection active." caption +
+duplicate `st.info(...)` line. The connection status badge at the sidebar
+root (in `__init__.py`) is the single source of truth for connection state.
+"""
 
 from __future__ import annotations
 
@@ -10,16 +15,10 @@ from lineage_bridge.ui.discovery import _make_cloud_client, _run_async, _try_loa
 
 
 def _render_sidebar_connection() -> None:
-    """Connection status and connect button."""
+    """Connection controls. Status itself is rendered at sidebar root."""
     settings = _try_load_settings()
 
     if st.session_state.connected:
-        if settings:
-            api_key = settings.confluent_cloud_api_key
-            masked = api_key[:4] + "..." + api_key[-4:]
-            st.info(f"Credentials: `{masked}`")
-        st.caption("Connection active.")
-
         if st.button(
             "Disconnect",
             key="disconnect_btn",
@@ -35,6 +34,7 @@ def _render_sidebar_connection() -> None:
             st.session_state.focus_node = None
             st.session_state.last_extraction_params = None
             st.session_state.extraction_log = []
+            st.session_state.push_log = []
             # Clear cached credentials
             st.session_state._cached_cluster_creds = {}
             st.session_state._cached_sr_creds = {}
@@ -45,7 +45,7 @@ def _render_sidebar_connection() -> None:
     if settings:
         api_key = settings.confluent_cloud_api_key
         masked = api_key[:4] + "..." + api_key[-4:]
-        st.info(f"Credentials: `{masked}`")
+        st.caption(f"Credentials: `{masked}`")
 
         if st.button(
             "Connect",
