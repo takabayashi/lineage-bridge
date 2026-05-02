@@ -20,19 +20,39 @@ def _try_load_settings():
     Google" / "Push to DataZone" buttons available across multi-demo workflows
     even when ``.env`` has been overwritten by a different demo.
     """
+    import logging
     import os
+
+    log = logging.getLogger(__name__)
 
     try:
         from lineage_bridge.config.settings import Settings
 
         settings = Settings()  # type: ignore[call-arg]
-    except Exception:
-        import logging
+    except Exception as exc:
+        # Pydantic-settings ValidationError on the two required Confluent
+        # Cloud fields is the expected path when no .env is present
+        # (sample-data / demo mode). Log it as a one-liner at INFO so the
+        # terminal doesn't look like the app crashed. Anything else is an
+        # actual problem and gets the full traceback.
+        from pydantic import ValidationError
 
-        logging.getLogger(__name__).warning(
-            "Failed to load settings from .env / environment variables",
-            exc_info=True,
+        msg = str(exc)
+        is_missing_creds = isinstance(exc, ValidationError) and (
+            "confluent_cloud_api_key" in msg or "confluent_cloud_api_secret" in msg
         )
+        if is_missing_creds:
+            log.info(
+                "No Confluent Cloud credentials found in .env / environment. "
+                "Running in sample-data mode — set "
+                "LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_KEY and "
+                "LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_SECRET to connect."
+            )
+        else:
+            log.warning(
+                "Failed to load settings from .env / environment variables",
+                exc_info=True,
+            )
         return None
 
     try:
