@@ -18,8 +18,11 @@ from lineage_bridge.models.graph import (
 )
 
 
-def _make_glue_node(database="db", table_name="tbl"):
+def _make_glue_node(database="db", table_name="tbl", aws_region: str | None = "us-east-1"):
     """Helper to create a GLUE_TABLE node for tests."""
+    attrs: dict[str, str] = {"database": database, "table_name": table_name}
+    if aws_region:
+        attrs["aws_region"] = aws_region
     return LineageNode(
         node_id=f"aws:glue_table:env-1:glue://{database}/{table_name}",
         system=SystemType.AWS,
@@ -27,7 +30,7 @@ def _make_glue_node(database="db", table_name="tbl"):
         catalog_type="AWS_GLUE",
         qualified_name=f"glue://{database}/{table_name}",
         display_name=f"{database}.{table_name} (glue)",
-        attributes={"database": database, "table_name": table_name},
+        attributes=attrs,
     )
 
 
@@ -94,6 +97,35 @@ class TestBuildNode:
         node, _ = provider.build_node({"aws_glue": {}}, "tf-id", "orders", "lkc-abc123", "env-abc")
         assert node.attributes["database"] == "lkc-abc123"
 
+    def test_aws_region_stamped_from_provider_at_build_time(self):
+        """build_node stamps aws_region from the configured provider region so
+        the console deep-link works even before catalog enrichment runs."""
+        provider = GlueCatalogProvider(region="ap-southeast-2")
+        node, _ = provider.build_node(
+            {"aws_glue": {"database_name": "db"}}, "tf-id", "orders", "lkc-abc", "env-abc"
+        )
+        assert node.attributes["aws_region"] == "ap-southeast-2"
+
+    def test_aws_region_from_ci_config_wins_over_provider(self):
+        """If Tableflow CI config supplies an explicit region, honour it."""
+        provider = GlueCatalogProvider(region="us-east-1")
+        node, _ = provider.build_node(
+            {"aws_glue": {"database_name": "db", "region": "eu-central-1"}},
+            "tf-id",
+            "orders",
+            "lkc-abc",
+            "env-abc",
+        )
+        assert node.attributes["aws_region"] == "eu-central-1"
+
+    def test_aws_region_omitted_when_unconfigured(self):
+        """No region anywhere → no aws_region attribute (caller can decide later)."""
+        provider = GlueCatalogProvider()
+        node, _ = provider.build_node(
+            {"aws_glue": {"database_name": "db"}}, "tf-id", "orders", "lkc-abc", "env-abc"
+        )
+        assert "aws_region" not in node.attributes
+
     def test_dots_preserved_in_table_name(self):
         """Tableflow uses the raw topic name (with dots) as the Glue table name."""
         provider = GlueCatalogProvider()
@@ -128,9 +160,50 @@ class TestBuildUrl:
             catalog_type="AWS_GLUE",
             qualified_name="glue://orders",
             display_name="orders (glue)",
-            attributes={"table_name": "orders"},
+            attributes={"table_name": "orders", "aws_region": "us-east-1"},
         )
         assert provider.build_url(node) is None
+
+    def test_returns_none_without_region(self):
+        """No region anywhere (node attr OR provider config) -> no URL.
+
+        Silently defaulting to us-east-1 would surface a button that points
+        to the wrong region's console for non-us-east-1 deployments.
+        """
+        provider = GlueCatalogProvider()  # provider has no region
+        node = _make_glue_node(database="my_db", table_name="orders", aws_region=None)
+        assert provider.build_url(node) is None
+
+    def test_uses_region_from_provider_when_node_has_none(self):
+        """When the node attr is missing, fall back to the provider's region."""
+        provider = GlueCatalogProvider(region="eu-west-2")
+        node = _make_glue_node(database="my_db", table_name="orders", aws_region=None)
+        url = provider.build_url(node)
+        assert url is not None
+        assert "eu-west-2" in url
+
+    def test_node_attribute_region_wins_over_provider(self):
+        """If both are set, the node attribute (per-node truth) wins."""
+        provider = GlueCatalogProvider(region="us-east-1")
+        node = _make_glue_node(database="db", table_name="t", aws_region="ap-south-1")
+        url = provider.build_url(node)
+        assert url is not None
+        assert "ap-south-1.console.aws.amazon.com" in url
+        assert "us-east-1.console" not in url
+
+    def test_govcloud_uses_amazonaws_us_gov_partition(self):
+        provider = GlueCatalogProvider()
+        node = _make_glue_node(database="db", table_name="t", aws_region="us-gov-west-1")
+        url = provider.build_url(node)
+        assert url is not None
+        assert "us-gov-west-1.console.amazonaws-us-gov.com" in url
+
+    def test_china_uses_amazonaws_cn_partition(self):
+        provider = GlueCatalogProvider()
+        node = _make_glue_node(database="db", table_name="t", aws_region="cn-north-1")
+        url = provider.build_url(node)
+        assert url is not None
+        assert "cn-north-1.console.amazonaws.cn" in url
 
 
 _has_boto3 = __import__("importlib").util.find_spec("boto3") is not None

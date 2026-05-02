@@ -72,7 +72,9 @@ class GoogleLineageProvider:
         google_cfg = ci_config.get("google_bigquery", ci_config)
         project_id = google_cfg.get("project_id", self._project_id or "unknown")
         dataset_id = google_cfg.get("dataset_id", cluster_id)
-        table_name = topic_name.split(".")[-1].replace("-", "_")
+        # Mirror connect.py:_build_google_tables — keep topic-prefix segments so
+        # node IDs match across the Tableflow and Connect-derived code paths.
+        table_name = topic_name.replace(".", "_").replace("-", "_")
         qualified = f"{project_id}.{dataset_id}.{table_name}"
         # Node ID retains "google_table" so existing IDs stay stable; the
         # runtime discriminator is `catalog_type`.

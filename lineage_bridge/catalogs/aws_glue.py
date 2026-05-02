@@ -22,6 +22,20 @@ from lineage_bridge.models.graph import (
 
 logger = logging.getLogger(__name__)
 
+
+def _console_host(region: str) -> str:
+    """Map an AWS region to the right console hostname per partition.
+
+    `<region>.console.aws.amazon.com` is the commercial-AWS pattern; GovCloud
+    and China sit on different domains and partition-naming conventions, so
+    a hardcoded `console.aws.amazon.com` produces 404s for those users.
+    """
+    if region.startswith("us-gov-"):
+        return f"{region}.console.amazonaws-us-gov.com"
+    if region.startswith("cn-"):
+        return f"{region}.console.amazonaws.cn"
+    return f"{region}.console.aws.amazon.com"
+
 _MAX_RETRIES = 3
 _BACKOFF_BASE = 1.0
 
@@ -51,6 +65,18 @@ class GlueCatalogProvider:
         # don't churn — the runtime discriminator is `catalog_type`.
         glue_id = f"aws:glue_table:{environment_id}:{qualified}"
 
+        # Stamp aws_region from the configured provider region (or whatever
+        # Tableflow CI tells us) so the console deep-link works even before
+        # `enrich()` runs — e.g. when the user opens the UI before the
+        # catalog enrichment phase has populated extra metadata.
+        attrs: dict[str, Any] = {
+            "database": database,
+            "table_name": topic_name,
+        }
+        region = glue_cfg.get("region") or self._region
+        if region:
+            attrs["aws_region"] = region
+
         node = LineageNode(
             node_id=glue_id,
             system=SystemType.AWS,
@@ -60,10 +86,7 @@ class GlueCatalogProvider:
             display_name=f"{database}.{topic_name} (glue)",
             environment_id=environment_id,
             cluster_id=cluster_id,
-            attributes={
-                "database": database,
-                "table_name": topic_name,
-            },
+            attributes=attrs,
         )
         edge = LineageEdge(
             src_id=tableflow_node_id,
@@ -315,14 +338,20 @@ class GlueCatalogProvider:
         return table_input
 
     def build_url(self, node: LineageNode) -> str | None:
-        """Build an AWS Glue console URL for the given table node."""
+        """Build an AWS Glue console URL for the given table node.
+
+        Returns None when the node has no `aws_region` — silently defaulting
+        to `us-east-1` would surface a button that points the user to the
+        wrong region's console, which is worse than no button at all.
+        """
         database = node.attributes.get("database")
         table_name = node.attributes.get("table_name")
-        if not database or not table_name:
+        region = node.attributes.get("aws_region") or self._region
+        if not database or not table_name or not region:
             return None
-        region = node.attributes.get("aws_region", "us-east-1")
+        host = _console_host(region)
         return (
-            f"https://{region}.console.aws.amazon.com/glue/home"
+            f"https://{host}/glue/home"
             f"?region={region}#/v2/data-catalog/tables/view/{table_name}"
             f"?database={database}"
         )

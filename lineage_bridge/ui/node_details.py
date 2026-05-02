@@ -243,6 +243,15 @@ def render_node_details(graph: LineageGraph) -> None:
 
     elif ntype == NodeType.CATALOG_TABLE:
         ct = sel_node.catalog_type
+        # Friendly console label per catalog_type — used for the "Open in <X>"
+        # deep-link button at the bottom of this section. Adding a new catalog?
+        # Add an entry here so its console button renders with the right label.
+        catalog_console_label = {
+            "UNITY_CATALOG": "Unity Catalog",
+            "AWS_GLUE": "AWS Glue",
+            "GOOGLE_DATA_LINEAGE": "BigQuery",
+            "AWS_DATAZONE": "DataZone",
+        }
         if ct == "UNITY_CATALOG":
             st.markdown("**Unity Catalog Table**")
             ucol1, ucol2 = st.columns(2)
@@ -275,14 +284,6 @@ def render_node_details(graph: LineageGraph) -> None:
                     st.markdown(f"**Table:** {a['table_name']}")
             if a.get("aws_region"):
                 st.markdown(f"**Region:** {a['aws_region']}")
-            glue_url = build_node_url(sel_node)
-            if glue_url:
-                st.markdown(
-                    f"**Console:** <a href='{glue_url}' "
-                    f"target='_blank' style='color:{ncolor};'>"
-                    f"Open in AWS Glue &#x2197;</a>",
-                    unsafe_allow_html=True,
-                )
 
         elif ct == "GOOGLE_DATA_LINEAGE":
             st.markdown("**Google BigQuery Table**")
@@ -306,12 +307,17 @@ def render_node_details(graph: LineageGraph) -> None:
                     st.metric("Size", _fmt_bytes_ui(float(a["num_bytes"])))
         if a.get("description"):
             st.markdown(f"**Description:** {a['description']}")
-        google_url = build_node_url(sel_node)
-        if google_url:
+
+        # Per-catalog deep-link button — single source of truth, dispatches to
+        # the right provider's `build_url` via `build_node_url` and labels with
+        # the catalog's own console name (no more "Open in BigQuery" on UC).
+        console_url = build_node_url(sel_node)
+        if console_url:
+            console_name = catalog_console_label.get(ct or "", "console")
             st.markdown(
-                f"**Console:** <a href='{google_url}' "
+                f"**Console:** <a href='{console_url}' "
                 f"target='_blank' style='color:{ncolor};'>"
-                f"Open in BigQuery &#x2197;</a>",
+                f"Open in {console_name} &#x2197;</a>",
                 unsafe_allow_html=True,
             )
 
