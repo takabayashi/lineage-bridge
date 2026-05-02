@@ -167,24 +167,39 @@ def render_watcher_controls() -> None:
             ak1, ak2 = st.columns(2)
             with ak1:
                 audit_key = st.text_input(
-                    "API key", value=default_key,
-                    key="watcher_audit_key", type="password", disabled=is_running,
+                    "API key",
+                    value=default_key,
+                    key="watcher_audit_key",
+                    type="password",
+                    disabled=is_running,
                 )
             with ak2:
                 audit_secret = st.text_input(
-                    "API secret", value=default_secret,
-                    key="watcher_audit_secret", type="password", disabled=is_running,
+                    "API secret",
+                    value=default_secret,
+                    key="watcher_audit_secret",
+                    type="password",
+                    disabled=is_running,
                 )
         else:
             poll_interval = st.number_input(
                 "Poll interval (s)",
-                min_value=5, max_value=120, value=10, step=5,
-                key="watcher_poll_interval", disabled=is_running,
+                min_value=5,
+                max_value=120,
+                value=10,
+                step=5,
+                key="watcher_poll_interval",
+                disabled=is_running,
             )
 
         cooldown = st.number_input(
-            "Cooldown (s)", min_value=5, max_value=300, value=30, step=5,
-            key="watcher_cooldown", disabled=is_running,
+            "Cooldown (s)",
+            min_value=5,
+            max_value=300,
+            value=30,
+            step=5,
+            key="watcher_cooldown",
+            disabled=is_running,
         )
 
         p1, p2 = st.columns(2)
@@ -194,9 +209,7 @@ def render_watcher_controls() -> None:
             push_glue = st.checkbox("Push Glue", key="watcher_push_glue", disabled=is_running)
         p3, p4 = st.columns(2)
         with p3:
-            push_google = st.checkbox(
-                "Push Google", key="watcher_push_google", disabled=is_running
-            )
+            push_google = st.checkbox("Push Google", key="watcher_push_google", disabled=is_running)
         with p4:
             push_datazone = st.checkbox(
                 "Push DataZone", key="watcher_push_datazone", disabled=is_running
@@ -216,7 +229,10 @@ def render_watcher_controls() -> None:
 
         if is_running:
             if st.button(
-                "Stop Watcher", key="watcher_stop_btn", width="stretch", type="secondary",
+                "Stop Watcher",
+                key="watcher_stop_btn",
+                width="stretch",
+                type="secondary",
             ):
                 _api_post(f"/api/v1/watcher/{watcher_id}/stop")
                 st.session_state.pop("watcher_id", None)
@@ -230,8 +246,11 @@ def render_watcher_controls() -> None:
                 start_help = "Fill in audit-log credentials"
 
             if st.button(
-                "Start Watcher", key="watcher_start_btn", width="stretch",
-                type="primary", disabled=not can_start,
+                "Start Watcher",
+                key="watcher_start_btn",
+                width="stretch",
+                type="primary",
+                disabled=not can_start,
             ):
                 _start_watcher_via_api(
                     mode=mode,
@@ -339,8 +358,7 @@ def _render_status_badge(status: dict[str, Any]) -> None:
     pulse_css = ""
     if is_active:
         pulse_css = (
-            f"animation: watcher-pulse 2s ease-in-out infinite;"
-            f"box-shadow: 0 0 0 0 {dot_color}80;"
+            f"animation: watcher-pulse 2s ease-in-out infinite;box-shadow: 0 0 0 0 {dot_color}80;"
         )
     poll_count = status.get("poll_count", 0)
     event_count = status.get("event_count", 0)

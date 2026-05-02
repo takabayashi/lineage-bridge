@@ -185,7 +185,7 @@ def test_file_task_repository_rejects_path_traversal(tmp_path: Path):
 def test_file_repository_accepts_uuid_keys(tmp_path: Path):
     """UUID4 (hyphenated hex) is the canonical key shape and must pass."""
     import uuid
+
     repo = FileGraphRepository(tmp_path / "graphs")
     # Just exercising _path through a no-op .get() — no exception means OK.
     assert repo.get(str(uuid.uuid4())) is None
-

@@ -36,6 +36,7 @@ def _console_host(region: str) -> str:
         return f"{region}.console.amazonaws.cn"
     return f"{region}.console.aws.amazon.com"
 
+
 _MAX_RETRIES = 3
 _BACKOFF_BASE = 1.0
 

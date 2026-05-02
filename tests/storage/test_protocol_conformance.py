@@ -273,9 +273,7 @@ def test_watcher_list_returns_summaries(
     assert {s.watcher_id for s in summaries} == {"w1", "w2"}
 
 
-def test_watcher_deregister_returns_true_when_present(
-    watcher_repo, watcher_config_factory
-):
+def test_watcher_deregister_returns_true_when_present(watcher_repo, watcher_config_factory):
     watcher_repo.register("w1", watcher_config_factory())
     assert watcher_repo.deregister("w1") is True
     assert watcher_repo.get_config("w1") is None

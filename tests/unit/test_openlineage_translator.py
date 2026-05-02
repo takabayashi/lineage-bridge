@@ -265,9 +265,7 @@ class TestGraphToEvents:
                 EdgeType.CONSUMES,
             )
         )
-        graph.add_edge(
-            _edge(_nid("s3-sink", NodeType.CONNECTOR), uc_node_id, EdgeType.PRODUCES)
-        )
+        graph.add_edge(_edge(_nid("s3-sink", NodeType.CONNECTOR), uc_node_id, EdgeType.PRODUCES))
 
         events_all = graph_to_events(graph, confluent_only=False)
         events_co = graph_to_events(graph, confluent_only=True)

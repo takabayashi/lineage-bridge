@@ -198,8 +198,7 @@ class WatcherService:
         from lineage_bridge.clients.audit_consumer import AuditLogConsumer
 
         bootstrap = (
-            self.config.audit_log_bootstrap_servers
-            or self.settings.audit_log_bootstrap_servers
+            self.config.audit_log_bootstrap_servers or self.settings.audit_log_bootstrap_servers
         )
         api_key = self.config.audit_log_api_key or self.settings.audit_log_api_key
         api_secret = self.config.audit_log_api_secret or self.settings.audit_log_api_secret

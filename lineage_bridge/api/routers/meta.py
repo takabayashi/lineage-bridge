@@ -43,8 +43,7 @@ async def catalogs() -> list[CatalogInfo]:
     # are kept on the response shape (with derived values) for v0.4.x
     # client compatibility.
     return [
-        CatalogInfo(catalog_type=ct, system_type=_CATALOG_SYSTEM.get(ct, ""))
-        for ct in _PROVIDERS
+        CatalogInfo(catalog_type=ct, system_type=_CATALOG_SYSTEM.get(ct, "")) for ct in _PROVIDERS
     ]
 
 

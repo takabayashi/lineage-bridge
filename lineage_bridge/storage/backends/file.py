@@ -91,8 +91,7 @@ class _DirRepo:
         # the path segment.
         if not _SAFE_KEY_RE.fullmatch(key):
             raise ValueError(
-                f"Storage key {key!r} contains invalid characters; "
-                "expected [A-Za-z0-9_-] only."
+                f"Storage key {key!r} contains invalid characters; expected [A-Za-z0-9_-] only."
             )
         return self._root / f"{key}.json"
 

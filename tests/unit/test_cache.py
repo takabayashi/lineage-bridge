@@ -210,9 +210,7 @@ def test_update_cache_provisioned_keys_keeps_replace_semantics():
         }
     )
     # Provisioner removes k1, then writes the smaller dict back.
-    update_cache(
-        provisioned_keys={"k2": {"key_id": "id2", "api_key": "a2", "api_secret": "s2"}}
-    )
+    update_cache(provisioned_keys={"k2": {"key_id": "id2", "api_key": "a2", "api_secret": "s2"}})
     loaded = load_cache()
     assert set(loaded["provisioned_keys"]) == {"k2"}
 

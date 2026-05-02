@@ -56,21 +56,15 @@ def main() -> None:
         help="Audit log Kafka bootstrap servers (forces audit-log mode if all 3 supplied)",
     )
     parser.add_argument("--audit-log-key", default=None, help="Audit log Kafka API key")
-    parser.add_argument(
-        "--audit-log-secret", default=None, help="Audit log Kafka API secret"
-    )
+    parser.add_argument("--audit-log-secret", default=None, help="Audit log Kafka API secret")
     parser.add_argument(
         "--push-uc", action="store_true", help="Push to Databricks UC after extraction"
     )
     parser.add_argument(
         "--push-glue", action="store_true", help="Push to AWS Glue after extraction"
     )
-    parser.add_argument(
-        "--push-google", action="store_true", help="Push to Google Data Lineage"
-    )
-    parser.add_argument(
-        "--push-datazone", action="store_true", help="Push to AWS DataZone"
-    )
+    parser.add_argument("--push-google", action="store_true", help="Push to Google Data Lineage")
+    parser.add_argument("--push-datazone", action="store_true", help="Push to AWS DataZone")
     args = parser.parse_args()
 
     # Local imports keep the entry point fast for `--help`.
@@ -118,14 +112,9 @@ def main() -> None:
     repositories = make_repositories(settings)
 
     if use_audit:
-        print(
-            f"Consuming audit log from {audit_bootstrap} (cooldown: {args.cooldown}s)"
-        )
+        print(f"Consuming audit log from {audit_bootstrap} (cooldown: {args.cooldown}s)")
     else:
-        print(
-            f"Polling Confluent Cloud every {args.poll_interval}s "
-            f"(cooldown: {args.cooldown}s)"
-        )
+        print(f"Polling Confluent Cloud every {args.poll_interval}s (cooldown: {args.cooldown}s)")
     print("Press Ctrl+C to stop")
 
     # Hook SIGTERM (k8s) the same way as SIGINT so containerised runs shut
@@ -133,9 +122,7 @@ def main() -> None:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    main_task = loop.create_task(
-        run_forever_blocking(config, settings, repositories.watchers)
-    )
+    main_task = loop.create_task(run_forever_blocking(config, settings, repositories.watchers))
 
     def _on_signal() -> None:
         main_task.cancel()

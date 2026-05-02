@@ -36,9 +36,7 @@ class TableflowPhase:
         if not tf_key:
             from lineage_bridge.config.cache import find_provisioned_key
 
-            tf_key, tf_secret = find_provisioned_key(
-                "lineage-bridge-tableflow-", ctx.env_id
-            )
+            tf_key, tf_secret = find_provisioned_key("lineage-bridge-tableflow-", ctx.env_id)
         if not tf_key:
             tf_key = ctx.settings.confluent_cloud_api_key
             tf_secret = ctx.settings.confluent_cloud_api_secret

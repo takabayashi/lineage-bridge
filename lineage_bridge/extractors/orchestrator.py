@@ -443,9 +443,7 @@ def main() -> None:
             merged[cid] = {"api_key": cred.api_key, "api_secret": cred.api_secret}
         settings = settings.model_copy(
             update={
-                "cluster_credentials": {
-                    cid: ClusterCredential(**c) for cid, c in merged.items()
-                }
+                "cluster_credentials": {cid: ClusterCredential(**c) for cid, c in merged.items()}
             }
         )
 
