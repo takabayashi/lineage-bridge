@@ -28,6 +28,13 @@ from typing import Protocol
 from lineage_bridge.api.task_store import TaskInfo
 from lineage_bridge.models.graph import LineageGraph
 from lineage_bridge.openlineage.models import RunEvent
+from lineage_bridge.services.watcher_models import (
+    ExtractionRecord,
+    WatcherConfig,
+    WatcherEvent,
+    WatcherStatus,
+    WatcherSummary,
+)
 
 
 @dataclass
@@ -99,3 +106,43 @@ class EventRepository(Protocol):
     def by_run_id(self, run_id: str) -> list[RunEvent]: ...
     def count(self) -> int: ...
     def clear(self) -> None: ...
+
+
+# ── watchers ────────────────────────────────────────────────────────────
+
+
+class WatcherRepository(Protocol):
+    """Persistence for watcher state — config + status + events + extractions.
+
+    Phase 2G splits the watcher into a long-running `WatcherRunner` (which
+    writes to this repo on every tick) and the API/UI (which only read from
+    it). Backed by the same storage backends as the other repos so any UI
+    instance sees the same state and a process restart doesn't lose it.
+
+    Methods are ID-scoped — every watcher gets a UUID at registration and
+    every other call references it. `register` is idempotent on conflict
+    (same id → overwrite config) so the runner can re-claim its id on
+    restart without dropping state.
+    """
+
+    def register(self, watcher_id: str, config: WatcherConfig) -> None: ...
+    def get_config(self, watcher_id: str) -> WatcherConfig | None: ...
+    def update_status(self, watcher_id: str, status: WatcherStatus) -> None: ...
+    def get_status(self, watcher_id: str) -> WatcherStatus | None: ...
+    def append_event(self, watcher_id: str, event: WatcherEvent) -> None: ...
+    def list_events(
+        self,
+        watcher_id: str,
+        *,
+        limit: int = 100,
+        since: datetime | None = None,
+    ) -> list[WatcherEvent]: ...
+    def append_extraction(self, watcher_id: str, record: ExtractionRecord) -> None: ...
+    def list_extractions(
+        self,
+        watcher_id: str,
+        *,
+        limit: int = 50,
+    ) -> list[ExtractionRecord]: ...
+    def list_watchers(self) -> list[WatcherSummary]: ...
+    def deregister(self, watcher_id: str) -> bool: ...

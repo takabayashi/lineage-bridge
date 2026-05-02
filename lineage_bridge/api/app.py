@@ -9,7 +9,7 @@ import logging
 from fastapi import FastAPI
 
 from lineage_bridge.api.auth import configure_auth
-from lineage_bridge.api.routers import datasets, graphs, jobs, lineage, meta, push, tasks
+from lineage_bridge.api.routers import datasets, graphs, jobs, lineage, meta, push, tasks, watcher
 from lineage_bridge.api.state import GraphStore
 from lineage_bridge.api.task_store import TaskStore
 from lineage_bridge.openlineage.store import EventStore
@@ -53,6 +53,10 @@ def create_app(
     app.state.graph_store = GraphStore(repositories.graphs)
     app.state.event_store = EventStore(repositories.events)
     app.state.task_store = TaskStore(repositories.tasks)
+    # Watcher uses the repository directly (no Store adapter); router reads
+    # `app.state.watcher_repo` and maintains its own per-process registry of
+    # live runner tasks in `app.state.watcher_runners`.
+    app.state.watcher_repo = repositories.watchers
 
     # Register routers
     app.include_router(meta.router, prefix="/api/v1", tags=["meta"])
@@ -62,6 +66,7 @@ def create_app(
     app.include_router(graphs.router, prefix="/api/v1/graphs", tags=["graphs"])
     app.include_router(tasks.router, prefix="/api/v1/tasks", tags=["tasks"])
     app.include_router(push.router, prefix="/api/v1/push", tags=["push"])
+    app.include_router(watcher.router, prefix="/api/v1/watcher", tags=["watcher"])
 
     return app
 
@@ -71,12 +76,14 @@ def _memory_bundle() -> Repositories:
         MemoryEventRepository,
         MemoryGraphRepository,
         MemoryTaskRepository,
+        MemoryWatcherRepository,
     )
 
     return Repositories(
         graphs=MemoryGraphRepository(),
         tasks=MemoryTaskRepository(),
         events=MemoryEventRepository(),
+        watchers=MemoryWatcherRepository(),
     )
 
 

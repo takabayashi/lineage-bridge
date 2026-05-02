@@ -17,16 +17,19 @@ from lineage_bridge.storage.backends.memory import (
     MemoryEventRepository,
     MemoryGraphRepository,
     MemoryTaskRepository,
+    MemoryWatcherRepository,
 )
 from lineage_bridge.storage.backends.sqlite import (
     SqliteEventRepository,
     SqliteGraphRepository,
     SqliteTaskRepository,
+    SqliteWatcherRepository,
 )
 from lineage_bridge.storage.protocol import (
     EventRepository,
     GraphRepository,
     TaskRepository,
+    WatcherRepository,
 )
 
 if TYPE_CHECKING:
@@ -35,11 +38,12 @@ if TYPE_CHECKING:
 
 @dataclass
 class Repositories:
-    """Bundle of the three repositories the API + watcher consume."""
+    """Bundle of the four repositories the API + watcher consume."""
 
     graphs: GraphRepository
     tasks: TaskRepository
     events: EventRepository
+    watchers: WatcherRepository
 
 
 def make_repositories(settings: Settings) -> Repositories:
@@ -58,6 +62,7 @@ def make_repositories(settings: Settings) -> Repositories:
             graphs=MemoryGraphRepository(),
             tasks=MemoryTaskRepository(),
             events=MemoryEventRepository(),
+            watchers=MemoryWatcherRepository(),
         )
 
     if backend == "file":
@@ -66,10 +71,14 @@ def make_repositories(settings: Settings) -> Repositories:
             graphs=FileGraphRepository(root / "graphs"),
             tasks=FileTaskRepository(root / "tasks"),
             events=FileEventRepository(root / "events.jsonl"),
+            # File backend doesn't yet have a watcher implementation; fall
+            # back to memory so watcher state is process-local. Operators
+            # who want watcher durability should use the sqlite backend.
+            watchers=MemoryWatcherRepository(),
         )
 
     if backend == "sqlite":
-        # All three repos point at the same `storage.db` file under the
+        # All four repos point at the same `storage.db` file under the
         # configured root. Each owns its own connection (WAL handles
         # concurrent reads); migrations run on first open.
         db_path = Path(storage.path).expanduser() / "storage.db"
@@ -77,6 +86,7 @@ def make_repositories(settings: Settings) -> Repositories:
             graphs=SqliteGraphRepository(db_path),
             tasks=SqliteTaskRepository(db_path),
             events=SqliteEventRepository(db_path),
+            watchers=SqliteWatcherRepository(db_path),
         )
 
     raise ValueError(

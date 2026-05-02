@@ -194,3 +194,108 @@ def test_event_clear(event_repo, event_factory):
     event_repo.clear()
     assert event_repo.count() == 0
     assert event_repo.all() == []
+
+
+# ── WatcherRepository ───────────────────────────────────────────────────
+
+
+def test_watcher_register_and_get_config(watcher_repo, watcher_config_factory):
+    cfg = watcher_config_factory("env-1")
+    watcher_repo.register("w1", cfg)
+    got = watcher_repo.get_config("w1")
+    assert got is not None
+    assert got.extraction.environment_ids == ["env-1"]
+
+
+def test_watcher_get_config_unknown_returns_none(watcher_repo):
+    assert watcher_repo.get_config("missing") is None
+
+
+def test_watcher_register_is_idempotent(watcher_repo, watcher_config_factory):
+    """Re-registering with the same id replaces the config (allows runner restart)."""
+    watcher_repo.register("w1", watcher_config_factory("env-1"))
+    watcher_repo.register("w1", watcher_config_factory("env-2"))
+    got = watcher_repo.get_config("w1")
+    assert got is not None
+    assert got.extraction.environment_ids == ["env-2"]
+
+
+def test_watcher_status_roundtrip(watcher_repo, watcher_config_factory, watcher_status_factory):
+    watcher_repo.register("w1", watcher_config_factory())
+    status = watcher_status_factory("w1")
+    status_with_count = status.model_copy(update={"poll_count": 5})
+    watcher_repo.update_status("w1", status_with_count)
+    got = watcher_repo.get_status("w1")
+    assert got is not None
+    assert got.poll_count == 5
+
+
+def test_watcher_get_status_unknown_returns_none(watcher_repo):
+    assert watcher_repo.get_status("missing") is None
+
+
+def test_watcher_append_and_list_events(
+    watcher_repo, watcher_config_factory, watcher_event_factory
+):
+    watcher_repo.register("w1", watcher_config_factory())
+    for _ in range(3):
+        watcher_repo.append_event("w1", watcher_event_factory("w1"))
+    events = watcher_repo.list_events("w1")
+    assert len(events) == 3
+
+
+def test_watcher_list_events_respects_limit(
+    watcher_repo, watcher_config_factory, watcher_event_factory
+):
+    watcher_repo.register("w1", watcher_config_factory())
+    for _ in range(5):
+        watcher_repo.append_event("w1", watcher_event_factory("w1"))
+    assert len(watcher_repo.list_events("w1", limit=2)) == 2
+
+
+def test_watcher_append_and_list_extractions(
+    watcher_repo, watcher_config_factory, extraction_record_factory
+):
+    watcher_repo.register("w1", watcher_config_factory())
+    for _ in range(2):
+        watcher_repo.append_extraction("w1", extraction_record_factory())
+    history = watcher_repo.list_extractions("w1")
+    assert len(history) == 2
+
+
+def test_watcher_list_returns_summaries(
+    watcher_repo, watcher_config_factory, watcher_status_factory
+):
+    watcher_repo.register("w1", watcher_config_factory("env-a"))
+    watcher_repo.register("w2", watcher_config_factory("env-b"))
+    watcher_repo.update_status("w1", watcher_status_factory("w1"))
+    summaries = watcher_repo.list_watchers()
+    assert {s.watcher_id for s in summaries} == {"w1", "w2"}
+
+
+def test_watcher_deregister_returns_true_when_present(
+    watcher_repo, watcher_config_factory
+):
+    watcher_repo.register("w1", watcher_config_factory())
+    assert watcher_repo.deregister("w1") is True
+    assert watcher_repo.get_config("w1") is None
+
+
+def test_watcher_deregister_returns_false_when_missing(watcher_repo):
+    assert watcher_repo.deregister("never-existed") is False
+
+
+def test_watcher_deregister_clears_events_and_extractions(
+    watcher_repo,
+    watcher_config_factory,
+    watcher_event_factory,
+    extraction_record_factory,
+):
+    """deregister must cascade — leaving orphan rows would leak across reuses
+    of a watcher_id (rare, but possible if a runner crashes and restarts)."""
+    watcher_repo.register("w1", watcher_config_factory())
+    watcher_repo.append_event("w1", watcher_event_factory("w1"))
+    watcher_repo.append_extraction("w1", extraction_record_factory())
+    watcher_repo.deregister("w1")
+    assert watcher_repo.list_events("w1") == []
+    assert watcher_repo.list_extractions("w1") == []

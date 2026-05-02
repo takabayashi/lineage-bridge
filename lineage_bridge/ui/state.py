@@ -24,7 +24,10 @@ _DEFAULTS = {
     "last_extraction_params": None,
     "last_extraction_time": None,
     "_cache_loaded": False,
-    "watcher_engine": None,
+    # Phase 2G: UI no longer holds the watcher in-process; it holds the id
+    # of a watcher running on the API and polls /api/v1/watcher/{id}/* for
+    # state. Stale value is fine (the UI re-validates on every render).
+    "watcher_id": None,
 }
 
 

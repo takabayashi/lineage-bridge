@@ -29,10 +29,14 @@ from lineage_bridge.storage.backends.sqlite import (
 
 
 def _file_repos(root: Path) -> Repositories:
+    from lineage_bridge.storage.backends.memory import MemoryWatcherRepository
+
     return Repositories(
         graphs=FileGraphRepository(root / "graphs"),
         tasks=FileTaskRepository(root / "tasks"),
         events=FileEventRepository(root / "events.jsonl"),
+        # No file backend for watchers — sqlite is the durable path.
+        watchers=MemoryWatcherRepository(),
     )
 
 
@@ -73,11 +77,14 @@ def test_file_backend_task_persists_across_app_recreation(tmp_path: Path):
 
 
 def _sqlite_repos(root: Path) -> Repositories:
+    from lineage_bridge.storage.backends.sqlite import SqliteWatcherRepository
+
     db_path = root / "storage.db"
     return Repositories(
         graphs=SqliteGraphRepository(db_path),
         tasks=SqliteTaskRepository(db_path),
         events=SqliteEventRepository(db_path),
+        watchers=SqliteWatcherRepository(db_path),
     )
 
 

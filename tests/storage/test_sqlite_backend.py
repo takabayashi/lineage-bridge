@@ -190,3 +190,39 @@ def test_existing_unrelated_db_file_does_not_block_init(tmp_path: Path):
     repo = SqliteGraphRepository(db)
     repo.save("g1", make_graph(), GraphMeta.now("g1"))
     assert repo.count() == 1
+
+
+# ── watcher migration ──────────────────────────────────────────────────
+
+
+def test_watcher_migration_creates_tables(tmp_path: Path):
+    """The 002_watchers.sql migration creates watchers / watcher_events /
+    watcher_extractions tables on first open of any sqlite repo."""
+    from lineage_bridge.storage.backends.sqlite import SqliteWatcherRepository
+
+    db = tmp_path / "storage.db"
+    repo = SqliteWatcherRepository(db)
+    repo.list_watchers()  # trigger lazy init
+    rows = repo.conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+    ).fetchall()
+    table_names = {r[0] for r in rows}
+    assert {"watchers", "watcher_events", "watcher_extractions"}.issubset(table_names)
+
+
+def test_watcher_lookup_indexes_exist(tmp_path: Path):
+    """Per-watcher list endpoints rely on (watcher_id, time) indexes."""
+    from lineage_bridge.storage.backends.sqlite import SqliteWatcherRepository
+
+    db = tmp_path / "storage.db"
+    repo = SqliteWatcherRepository(db)
+    repo.list_watchers()  # trigger lazy init
+    indexes = {
+        row[0]
+        for row in repo.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' "
+            "AND tbl_name IN ('watcher_events', 'watcher_extractions')"
+        ).fetchall()
+    }
+    assert "idx_watcher_events_lookup" in indexes
+    assert "idx_watcher_extractions_lookup" in indexes

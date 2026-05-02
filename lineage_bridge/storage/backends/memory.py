@@ -14,6 +14,13 @@ from datetime import UTC, datetime
 from lineage_bridge.api.task_store import TaskInfo
 from lineage_bridge.models.graph import LineageGraph
 from lineage_bridge.openlineage.models import RunEvent
+from lineage_bridge.services.watcher_models import (
+    ExtractionRecord,
+    WatcherConfig,
+    WatcherEvent,
+    WatcherStatus,
+    WatcherSummary,
+)
 from lineage_bridge.storage.protocol import GraphMeta
 
 
@@ -106,3 +113,83 @@ class MemoryEventRepository:
     def clear(self) -> None:
         self._events.clear()
         self._by_run_id.clear()
+
+
+class MemoryWatcherRepository:
+    """In-memory `WatcherRepository` (Phase 2G).
+
+    State is process-local — fine for tests and single-process API runs.
+    Multi-process / restart-survives use cases need the SQLite backend.
+    """
+
+    def __init__(self) -> None:
+        self._configs: dict[str, WatcherConfig] = {}
+        self._statuses: dict[str, WatcherStatus] = {}
+        self._events: dict[str, list[WatcherEvent]] = {}
+        self._extractions: dict[str, list[ExtractionRecord]] = {}
+
+    def register(self, watcher_id: str, config: WatcherConfig) -> None:
+        self._configs[watcher_id] = config
+        self._events.setdefault(watcher_id, [])
+        self._extractions.setdefault(watcher_id, [])
+
+    def get_config(self, watcher_id: str) -> WatcherConfig | None:
+        return self._configs.get(watcher_id)
+
+    def update_status(self, watcher_id: str, status: WatcherStatus) -> None:
+        self._statuses[watcher_id] = status
+
+    def get_status(self, watcher_id: str) -> WatcherStatus | None:
+        return self._statuses.get(watcher_id)
+
+    def append_event(self, watcher_id: str, event: WatcherEvent) -> None:
+        self._events.setdefault(watcher_id, []).append(event)
+
+    def list_events(
+        self,
+        watcher_id: str,
+        *,
+        limit: int = 100,
+        since: datetime | None = None,
+    ) -> list[WatcherEvent]:
+        all_events = self._events.get(watcher_id, [])
+        if since is not None:
+            all_events = [e for e in all_events if e.time > since]
+        # Newest first, capped at `limit`.
+        return list(reversed(all_events))[:limit]
+
+    def append_extraction(self, watcher_id: str, record: ExtractionRecord) -> None:
+        self._extractions.setdefault(watcher_id, []).append(record)
+
+    def list_extractions(
+        self,
+        watcher_id: str,
+        *,
+        limit: int = 50,
+    ) -> list[ExtractionRecord]:
+        return list(reversed(self._extractions.get(watcher_id, [])))[:limit]
+
+    def list_watchers(self) -> list[WatcherSummary]:
+        out: list[WatcherSummary] = []
+        for wid, config in self._configs.items():
+            status = self._statuses.get(wid)
+            out.append(
+                WatcherSummary(
+                    watcher_id=wid,
+                    state=status.state if status else "stopped",
+                    started_at=status.started_at if status else None,
+                    environment_ids=list(config.extraction.environment_ids),
+                    poll_count=status.poll_count if status else 0,
+                    event_count=status.event_count if status else 0,
+                )
+            )
+        return out
+
+    def deregister(self, watcher_id: str) -> bool:
+        if watcher_id not in self._configs:
+            return False
+        self._configs.pop(watcher_id, None)
+        self._statuses.pop(watcher_id, None)
+        self._events.pop(watcher_id, None)
+        self._extractions.pop(watcher_id, None)
+        return True

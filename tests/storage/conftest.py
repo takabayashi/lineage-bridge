@@ -29,6 +29,13 @@ from lineage_bridge.openlineage.models import (
     RunEvent,
     RunEventType,
 )
+from lineage_bridge.services.requests import ExtractionRequest
+from lineage_bridge.services.watcher_models import (
+    ExtractionRecord,
+    WatcherConfig,
+    WatcherEvent,
+    WatcherStatus,
+)
 from lineage_bridge.storage.backends.file import (
     FileEventRepository,
     FileGraphRepository,
@@ -38,11 +45,13 @@ from lineage_bridge.storage.backends.memory import (
     MemoryEventRepository,
     MemoryGraphRepository,
     MemoryTaskRepository,
+    MemoryWatcherRepository,
 )
 from lineage_bridge.storage.backends.sqlite import (
     SqliteEventRepository,
     SqliteGraphRepository,
     SqliteTaskRepository,
+    SqliteWatcherRepository,
 )
 
 # ── factories: one per (backend, repo type) ─────────────────────────────
@@ -79,6 +88,17 @@ def event_repo(request, tmp_path: Path):
         return FileEventRepository(tmp_path / "events.jsonl")
     if request.param == "sqlite":
         return SqliteEventRepository(tmp_path / "storage.db")
+    raise NotImplementedError(request.param)
+
+
+# Watcher repo: only memory + sqlite (no file backend implementation —
+# sqlite is the durable path for watchers per Phase 2G).
+@pytest.fixture(params=["memory", "sqlite"])
+def watcher_repo(request, tmp_path: Path):
+    if request.param == "memory":
+        return MemoryWatcherRepository()
+    if request.param == "sqlite":
+        return SqliteWatcherRepository(tmp_path / "storage.db")
     raise NotImplementedError(request.param)
 
 
@@ -125,6 +145,32 @@ def make_event(run_id: str = "run-1", job_name: str = "job-1") -> RunEvent:
     )
 
 
+def make_watcher_config(env_id: str = "env-test") -> WatcherConfig:
+    return WatcherConfig(
+        extraction=ExtractionRequest(environment_ids=[env_id]),
+    )
+
+
+def make_watcher_status(watcher_id: str = "w-1") -> WatcherStatus:
+    return WatcherStatus(watcher_id=watcher_id)
+
+
+def make_watcher_event(watcher_id: str = "w-1") -> WatcherEvent:
+    """Reuses the AuditEvent shape — the watcher's event feed IS audit events."""
+    return WatcherEvent(
+        id=f"e-{watcher_id}-{datetime.now(UTC).timestamp()}",
+        time=datetime.now(UTC),
+        method_name="kafka.CreateTopics",
+        resource_name="topic-x",
+        principal="u:test",
+        raw={},
+    )
+
+
+def make_extraction_record() -> ExtractionRecord:
+    return ExtractionRecord(triggered_at=datetime.now(UTC))
+
+
 @pytest.fixture()
 def graph_factory():
     return make_graph
@@ -133,6 +179,26 @@ def graph_factory():
 @pytest.fixture()
 def task_factory():
     return make_task
+
+
+@pytest.fixture()
+def watcher_config_factory():
+    return make_watcher_config
+
+
+@pytest.fixture()
+def watcher_status_factory():
+    return make_watcher_status
+
+
+@pytest.fixture()
+def watcher_event_factory():
+    return make_watcher_event
+
+
+@pytest.fixture()
+def extraction_record_factory():
+    return make_extraction_record
 
 
 @pytest.fixture()

@@ -24,6 +24,13 @@ from pathlib import Path
 from lineage_bridge.api.task_store import TaskInfo
 from lineage_bridge.models.graph import LineageGraph
 from lineage_bridge.openlineage.models import RunEvent
+from lineage_bridge.services.watcher_models import (
+    ExtractionRecord,
+    WatcherConfig,
+    WatcherEvent,
+    WatcherStatus,
+    WatcherSummary,
+)
 from lineage_bridge.storage.migrations import apply_pending
 from lineage_bridge.storage.protocol import GraphMeta
 
@@ -231,3 +238,127 @@ class SqliteEventRepository(_SqliteRepo):
     def clear(self) -> None:
         with self._write_lock:
             self.conn.execute("DELETE FROM events")
+
+
+# ── watchers ────────────────────────────────────────────────────────────
+
+
+class SqliteWatcherRepository(_SqliteRepo):
+    """SQLite-backed `WatcherRepository` (Phase 2G).
+
+    Three tables share this repo: `watchers` (config + status, one row per
+    watcher), `watcher_events` (append-only feed), `watcher_extractions`
+    (append-only history). All gated by the `idx_watcher_*_lookup` indexes
+    so the per-watcher list endpoints scan only the relevant rows.
+    """
+
+    def register(self, watcher_id: str, config: WatcherConfig) -> None:
+        # Idempotent overwrite of the config; preserves any existing status.
+        with self._write_lock:
+            self.conn.execute(
+                "INSERT INTO watchers(watcher_id, config_payload) VALUES (?, ?) "
+                "ON CONFLICT(watcher_id) DO UPDATE SET config_payload = excluded.config_payload",
+                (watcher_id, config.model_dump_json()),
+            )
+
+    def get_config(self, watcher_id: str) -> WatcherConfig | None:
+        row = self.conn.execute(
+            "SELECT config_payload FROM watchers WHERE watcher_id = ?", (watcher_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return WatcherConfig.model_validate_json(row[0])
+
+    def update_status(self, watcher_id: str, status: WatcherStatus) -> None:
+        with self._write_lock:
+            self.conn.execute(
+                "UPDATE watchers SET status_payload = ? WHERE watcher_id = ?",
+                (status.model_dump_json(), watcher_id),
+            )
+
+    def get_status(self, watcher_id: str) -> WatcherStatus | None:
+        row = self.conn.execute(
+            "SELECT status_payload FROM watchers WHERE watcher_id = ?", (watcher_id,)
+        ).fetchone()
+        if row is None or row[0] is None:
+            return None
+        return WatcherStatus.model_validate_json(row[0])
+
+    def append_event(self, watcher_id: str, event: WatcherEvent) -> None:
+        with self._write_lock:
+            self.conn.execute(
+                "INSERT INTO watcher_events(watcher_id, event_time, payload) VALUES (?, ?, ?)",
+                (watcher_id, event.time.isoformat(), event.model_dump_json()),
+            )
+
+    def list_events(
+        self,
+        watcher_id: str,
+        *,
+        limit: int = 100,
+        since: datetime | None = None,
+    ) -> list[WatcherEvent]:
+        # Newest-first via ORDER BY id DESC; the index covers the lookup.
+        if since is not None:
+            rows = self.conn.execute(
+                "SELECT payload FROM watcher_events "
+                "WHERE watcher_id = ? AND event_time > ? "
+                "ORDER BY id DESC LIMIT ?",
+                (watcher_id, since.isoformat(), limit),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT payload FROM watcher_events "
+                "WHERE watcher_id = ? ORDER BY id DESC LIMIT ?",
+                (watcher_id, limit),
+            ).fetchall()
+        return [WatcherEvent.model_validate_json(payload) for (payload,) in rows]
+
+    def append_extraction(self, watcher_id: str, record: ExtractionRecord) -> None:
+        with self._write_lock:
+            self.conn.execute(
+                "INSERT INTO watcher_extractions(watcher_id, triggered_at, payload) "
+                "VALUES (?, ?, ?)",
+                (watcher_id, record.triggered_at.isoformat(), record.model_dump_json()),
+            )
+
+    def list_extractions(
+        self,
+        watcher_id: str,
+        *,
+        limit: int = 50,
+    ) -> list[ExtractionRecord]:
+        rows = self.conn.execute(
+            "SELECT payload FROM watcher_extractions "
+            "WHERE watcher_id = ? ORDER BY id DESC LIMIT ?",
+            (watcher_id, limit),
+        ).fetchall()
+        return [ExtractionRecord.model_validate_json(payload) for (payload,) in rows]
+
+    def list_watchers(self) -> list[WatcherSummary]:
+        rows = self.conn.execute(
+            "SELECT watcher_id, config_payload, status_payload FROM watchers"
+        ).fetchall()
+        out: list[WatcherSummary] = []
+        for wid, config_json, status_json in rows:
+            config = WatcherConfig.model_validate_json(config_json)
+            status = WatcherStatus.model_validate_json(status_json) if status_json else None
+            out.append(
+                WatcherSummary(
+                    watcher_id=wid,
+                    state=status.state if status else "stopped",
+                    started_at=status.started_at if status else None,
+                    environment_ids=list(config.extraction.environment_ids),
+                    poll_count=status.poll_count if status else 0,
+                    event_count=status.event_count if status else 0,
+                )
+            )
+        return out
+
+    def deregister(self, watcher_id: str) -> bool:
+        with self._write_lock:
+            cur = self.conn.execute("DELETE FROM watchers WHERE watcher_id = ?", (watcher_id,))
+            # Cascade through the append-only tables.
+            self.conn.execute("DELETE FROM watcher_events WHERE watcher_id = ?", (watcher_id,))
+            self.conn.execute("DELETE FROM watcher_extractions WHERE watcher_id = ?", (watcher_id,))
+            return cur.rowcount > 0
