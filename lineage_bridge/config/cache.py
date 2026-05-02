@@ -36,6 +36,17 @@ _ENCRYPTED_FIELDS = {
     "provisioned_keys",
 }
 
+# Subset of encrypted fields that accumulate across calls — when the caller
+# saves credentials for one cluster/env, they shouldn't wipe out credentials
+# already cached for other clusters/envs. Provisioned keys are excluded
+# because the provisioner manages the full dict itself (load → modify → save)
+# and relies on replace semantics for revocation.
+_MERGE_FIELDS = {
+    "cluster_credentials",
+    "sr_credentials",
+    "flink_credentials",
+}
+
 
 def _ensure_dir() -> None:
     _CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -120,8 +131,35 @@ def save_cache(data: dict[str, Any]) -> None:
         logger.debug("Failed to save cache to %s", _CACHE_FILE, exc_info=True)
 
 
+def find_provisioned_key(prefix: str, resource_id: str) -> tuple[str | None, str | None]:
+    """Look up a cached provisioned API key by name-prefix + resource_id.
+
+    Returns ``(api_key, api_secret)`` for the first matching entry, or
+    ``(None, None)`` if no match. Used by extractor phases to recover
+    per-env / per-cluster service-account keys (ksqlDB, Tableflow) that
+    the demo provision scripts cached but ``.env`` no longer reflects.
+    """
+    cache = load_cache()
+    for name, entry in (cache.get("provisioned_keys") or {}).items():
+        if name.startswith(prefix) and entry.get("resource_id") == resource_id:
+            return entry.get("api_key"), entry.get("api_secret")
+    return None, None
+
+
 def update_cache(**kwargs: Any) -> None:
-    """Merge *kwargs* into the existing cache and save."""
+    """Merge *kwargs* into the existing cache and save.
+
+    Credential dicts (cluster_credentials, sr_credentials, flink_credentials,
+    provisioned_keys) are merged at the second level — i.e. new per-key entries
+    are added on top of the existing dict instead of replacing it. This lets
+    the user accumulate credentials across multiple clusters/environments in a
+    single cache file (extract Glue, then extract BQ → both sets persist).
+    Non-credential keys keep the original replace-semantics.
+    """
     data = load_cache()
-    data.update(kwargs)
+    for key, value in kwargs.items():
+        if key in _MERGE_FIELDS and isinstance(value, dict) and isinstance(data.get(key), dict):
+            data[key] = {**data[key], **value}
+        else:
+            data[key] = value
     save_cache(data)

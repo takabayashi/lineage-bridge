@@ -125,6 +125,46 @@ def _merge_gcp_settings(cache: dict, env: dict) -> bool:
     return True
 
 
+def _merge_databricks_settings(cache: dict, env: dict) -> bool:
+    """Mirror Databricks workspace URL + token + warehouse ID into the cache.
+
+    Without this, switching from the UC demo to another demo wipes the
+    Databricks credentials from .env, breaking the UI's "Push to UC" button
+    on a return visit.
+    """
+    workspace_url = env.get("LINEAGE_BRIDGE_DATABRICKS_WORKSPACE_URL", "").strip()
+    token = env.get("LINEAGE_BRIDGE_DATABRICKS_TOKEN", "").strip()
+    warehouse_id = env.get("LINEAGE_BRIDGE_DATABRICKS_WAREHOUSE_ID", "").strip()
+    new: dict[str, str] = {}
+    if workspace_url:
+        new["workspace_url"] = workspace_url
+    if token:
+        new["token"] = token
+    if warehouse_id:
+        new["warehouse_id"] = warehouse_id
+    if not new:
+        return False
+    existing = dict(cache.get("databricks_settings") or {})
+    existing.update(new)
+    cache["databricks_settings"] = existing
+    return True
+
+
+def _merge_aws_settings(cache: dict, env: dict) -> bool:
+    """Mirror AWS region into the cache (separate from datazone-only settings).
+
+    Glue demo configures aws_region but doesn't necessarily configure DataZone,
+    so the existing aws_datazone_settings.region path doesn't cover it.
+    """
+    region = env.get("LINEAGE_BRIDGE_AWS_REGION", "").strip()
+    if not region:
+        return False
+    existing = dict(cache.get("aws_settings") or {})
+    existing["region"] = region
+    cache["aws_settings"] = existing
+    return True
+
+
 def _merge_aws_datazone_settings(cache: dict, env: dict) -> bool:
     """Mirror AWS DataZone domain/project IDs into the cache.
 
@@ -181,6 +221,10 @@ def main() -> int:
         resource_id=args.env_id,
     ):
         merged.append("ksqldb")
+    if _merge_databricks_settings(cache, env):
+        merged.append("databricks")
+    if _merge_aws_settings(cache, env):
+        merged.append("aws")
     if _merge_gcp_settings(cache, env):
         merged.append("gcp")
     if _merge_aws_datazone_settings(cache, env):

@@ -91,12 +91,23 @@ class ProcessingPhase:
                 tasks.append(_run_connect())
 
         if ctx.enable_ksqldb:
+            # Per-env ksqlDB SA key fallback: provision scripts cache one as
+            # `lineage-bridge-ksqldb-<demo>-<env_id>` so multi-demo workflows
+            # don't 401 when .env has been overwritten by a different demo.
+            ksql_key = ctx.settings.ksqldb_api_key
+            ksql_secret = ctx.settings.ksqldb_api_secret
+            if not ksql_key:
+                from lineage_bridge.config.cache import find_provisioned_key
+
+                ksql_key, ksql_secret = find_provisioned_key(
+                    "lineage-bridge-ksqldb-", ctx.env_id
+                )
             ksql_client = KsqlDBClient(
                 cloud_api_key=ctx.settings.confluent_cloud_api_key,
                 cloud_api_secret=ctx.settings.confluent_cloud_api_secret,
                 environment_id=ctx.env_id,
-                ksqldb_api_key=ctx.settings.ksqldb_api_key,
-                ksqldb_api_secret=ctx.settings.ksqldb_api_secret,
+                ksqldb_api_key=ksql_key,
+                ksqldb_api_secret=ksql_secret,
             )
 
             async def _run_ksqldb() -> tuple[list[LineageNode], list[LineageEdge]]:

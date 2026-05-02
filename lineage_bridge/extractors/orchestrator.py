@@ -397,6 +397,18 @@ def main() -> None:
         action="store_true",
         help="Push lineage metadata to Databricks UC tables after extraction",
     )
+    parser.add_argument(
+        "--metrics",
+        action="store_true",
+        help="Enable Telemetry-based metrics enrichment (Topics/Connectors/Flink) "
+        "and graph-derived metrics (Consumer Groups/Tableflow/Catalog Tables/ksqlDB)",
+    )
+    parser.add_argument(
+        "--metrics-lookback-hours",
+        type=int,
+        default=1,
+        help="Lookback window for metrics queries (default: 1)",
+    )
     args = parser.parse_args()
 
     settings = Settings()  # type: ignore[call-arg]
@@ -405,6 +417,32 @@ def main() -> None:
         level=getattr(logging, settings.log_level.upper(), logging.INFO),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+
+    # Per-env / per-cluster credentials cached by the demo provision scripts.
+    # Merge them into settings + the run_extraction kwargs so a CLI run against
+    # any provisioned env "just works" without re-exporting the right SR /
+    # Flink / Kafka keys for every demo switch.
+    from lineage_bridge.config.cache import load_cache
+    from lineage_bridge.config.settings import ClusterCredential
+
+    cache = load_cache()
+    sr_creds = cache.get("sr_credentials") or {}
+    flink_creds = cache.get("flink_credentials") or {}
+    cached_cluster_creds = cache.get("cluster_credentials") or {}
+    sr_endpoints = {env: c["endpoint"] for env, c in sr_creds.items() if c.get("endpoint")}
+
+    if cached_cluster_creds:
+        # Settings.cluster_credentials wins (env-var override); cache fills gaps.
+        merged = dict(cached_cluster_creds)
+        for cid, cred in settings.cluster_credentials.items():
+            merged[cid] = {"api_key": cred.api_key, "api_secret": cred.api_secret}
+        settings = settings.model_copy(
+            update={
+                "cluster_credentials": {
+                    cid: ClusterCredential(**c) for cid, c in merged.items()
+                }
+            }
+        )
 
     try:
         if args.enrich_only:
@@ -418,6 +456,11 @@ def main() -> None:
                     environment_ids=args.envs,
                     cluster_ids=args.clusters,
                     enable_enrichment=not args.no_enrich,
+                    enable_metrics=args.metrics,
+                    metrics_lookback_hours=args.metrics_lookback_hours,
+                    sr_endpoints=sr_endpoints,
+                    sr_credentials=sr_creds,
+                    flink_credentials=flink_creds,
                 )
             )
 

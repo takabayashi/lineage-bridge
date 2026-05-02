@@ -168,6 +168,55 @@ def test_update_cache_with_encrypted_field():
     assert loaded["provisioned_keys"]["test-key"]["api_key"] == "ak"
 
 
+def test_update_cache_accumulates_per_cluster_credentials():
+    """Per-cluster credentials persist when subsequent saves target a different cluster.
+
+    Scenario: user extracts Glue (saves creds for lkc-glue), then extracts BQ
+    (saves creds for lkc-bq). Both sets must remain in the cache so a return
+    visit to Glue can replay them.
+    """
+    update_cache(cluster_credentials={"lkc-glue": {"api_key": "GK", "api_secret": "GS"}})
+    update_cache(cluster_credentials={"lkc-bq": {"api_key": "BK", "api_secret": "BS"}})
+
+    loaded = load_cache()
+    assert set(loaded["cluster_credentials"]) == {"lkc-glue", "lkc-bq"}
+    assert loaded["cluster_credentials"]["lkc-glue"]["api_key"] == "GK"
+    assert loaded["cluster_credentials"]["lkc-bq"]["api_key"] == "BK"
+
+
+def test_update_cache_accumulates_sr_and_flink_credentials():
+    """sr_credentials and flink_credentials follow the same per-env merge."""
+    update_cache(
+        sr_credentials={"env-glue": {"endpoint": "sr-glue", "api_key": "k", "api_secret": "s"}},
+        flink_credentials={"env-glue": {"api_key": "fk", "api_secret": "fs"}},
+    )
+    update_cache(
+        sr_credentials={"env-bq": {"endpoint": "sr-bq", "api_key": "k2", "api_secret": "s2"}},
+        flink_credentials={"env-bq": {"api_key": "fk2", "api_secret": "fs2"}},
+    )
+    loaded = load_cache()
+    assert set(loaded["sr_credentials"]) == {"env-glue", "env-bq"}
+    assert set(loaded["flink_credentials"]) == {"env-glue", "env-bq"}
+
+
+def test_update_cache_provisioned_keys_keeps_replace_semantics():
+    """provisioned_keys is provisioner-managed (load → modify → save), so it
+    must keep replace semantics — otherwise revoke flows can't delete entries.
+    """
+    update_cache(
+        provisioned_keys={
+            "k1": {"key_id": "id1", "api_key": "a1", "api_secret": "s1"},
+            "k2": {"key_id": "id2", "api_key": "a2", "api_secret": "s2"},
+        }
+    )
+    # Provisioner removes k1, then writes the smaller dict back.
+    update_cache(
+        provisioned_keys={"k2": {"key_id": "id2", "api_key": "a2", "api_secret": "s2"}}
+    )
+    loaded = load_cache()
+    assert set(loaded["provisioned_keys"]) == {"k2"}
+
+
 # ── file permissions ───────────────────────────────────────────────────
 
 

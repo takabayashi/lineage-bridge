@@ -28,8 +28,20 @@ class TableflowPhase:
             return PhaseResult()
 
         ctx.progress("Phase 4/4", "Extracting Tableflow & catalog integrations")
-        tf_key = ctx.settings.tableflow_api_key or ctx.settings.confluent_cloud_api_key
-        tf_secret = ctx.settings.tableflow_api_secret or ctx.settings.confluent_cloud_api_secret
+        # Per-env Tableflow SA key fallback (cached by demo provision scripts
+        # as `lineage-bridge-tableflow-<demo>-<env_id>`). Same multi-demo
+        # rationale as the ksqlDB phase.
+        tf_key = ctx.settings.tableflow_api_key
+        tf_secret = ctx.settings.tableflow_api_secret
+        if not tf_key:
+            from lineage_bridge.config.cache import find_provisioned_key
+
+            tf_key, tf_secret = find_provisioned_key(
+                "lineage-bridge-tableflow-", ctx.env_id
+            )
+        if not tf_key:
+            tf_key = ctx.settings.confluent_cloud_api_key
+            tf_secret = ctx.settings.confluent_cloud_api_secret
         tf_cluster_ids = [c.get("id", "") for c in ctx.clusters if c.get("id")]
         tf_client = TableflowClient(
             api_key=tf_key,
