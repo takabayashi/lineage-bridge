@@ -4,12 +4,19 @@
 
 from __future__ import annotations
 
+import os
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from lineage_bridge.api.app import create_app
+
+# `_settings(request)` in the watcher router calls Settings() lazily on first
+# request — Settings requires the two Confluent Cloud creds. CI doesn't ship a
+# .env, so set dummy values for the duration of the test module.
+os.environ.setdefault("LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_KEY", "test-cloud-key")
+os.environ.setdefault("LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_SECRET", "test-cloud-secret")
 
 
 @pytest.fixture()
