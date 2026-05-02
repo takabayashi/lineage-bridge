@@ -191,8 +191,9 @@ make format
 - [x] **Phase 4:** Polish, hardening, v0.2.0 release
 - [x] **Post-v0.2.0:** UC integration fixes, Databricks lineage push, change-detection watcher
 - [x] **v0.4.0:** Glue enrichment, Google Data Lineage / BigQuery provider, demo infrastructure (Terraform), OpenLineage API
-- [x] **Unreleased:** Official brand icons for graph nodes, comprehensive integration tests
-- [ ] **Next:** Graph comparison, additional catalog providers
+- [x] **v0.4.1:** AWS DataZone provider, official brand icons, comprehensive integration tests
+- [x] **v0.5.0:** Modularity refactor — services layer, pluggable storage (sqlite), watcher as an independent service. DLQ wiring, per-catalog console deeplinks, metrics on every node type.
+- [ ] **Next:** Snowflake + Watsonx.data catalog providers (Phase 3H), cross-process watcher stop control
 
 ## License
 

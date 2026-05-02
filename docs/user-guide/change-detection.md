@@ -185,7 +185,13 @@ The UI provides controls for the watcher:
 2. Go to **Change Watcher** tab
 3. Click **Start Watcher**
 
-The watcher runs in a background thread.
+The watcher runs as an asyncio task on the API process (not in the Streamlit
+session) — restarting the UI doesn't kill it. Multiple UI instances can see
+and control the same watcher because state lives in the storage backend.
+
+For production / containerised deployments, run `lineage-bridge-watch` as a
+separate daemon (a thin wrapper over the same `WatcherRunner`) that writes
+to the same storage backend. The UI's controls work either way.
 
 #### Status Display
 

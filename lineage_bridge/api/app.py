@@ -40,7 +40,7 @@ def create_app(
             "stream lineage for integration with data catalogs "
             "(Databricks UC, AWS Glue, Google Data Lineage, and more)."
         ),
-        version="0.4.0",
+        version="0.5.0",
         docs_url="/docs",
         redoc_url="/redoc",
     )

@@ -6,6 +6,58 @@ All notable changes to LineageBridge are documented here. The format follows [Ke
 
 See the [latest commits](https://github.com/takabayashi/lineage-bridge/commits/main) for work in progress.
 
+## [0.5.0] - 2026-05-02
+
+**Modularity refactor: services layer, pluggable storage, watcher as an independent service. Plus a stack of UX + reliability fixes that fell out during validation.**
+
+### Added
+
+- **Service layer (`lineage_bridge/services/`)** — single entry point for extraction / enrichment / push (`run_extraction`, `run_enrichment`, `run_push`). UI, API, and watcher all call into it with the same `ExtractionRequest` / `EnrichmentRequest` / `PushRequest` shape. (Phase 1A, ADR-020)
+- **Pluggable storage layer (`lineage_bridge/storage/`)** with three backends:
+  - `memory` (default) — process-local, ephemeral
+  - `file` — JSON files + `flock`-guarded writes
+  - `sqlite` — single `storage.db`, WAL mode, versioned-SQL migrations, durable across restarts; recommended for the watcher.
+  Selected via `LINEAGE_BRIDGE_STORAGE__BACKEND={memory,file,sqlite}`. (Phases 1C + 2F, ADR-022)
+- **Catalog protocol v2** — `UC_TABLE` / `GLUE_TABLE` / `GOOGLE_TABLE` collapsed into one `CATALOG_TABLE` node type with a `catalog_type` discriminator (`UNITY_CATALOG / AWS_GLUE / GOOGLE_DATA_LINEAGE / AWS_DATAZONE`). Adding a new catalog = one file in `catalogs/`. Push surface unified through `services.run_push(PushRequest)`. (Phase 1B, ADR-021 — clean break, no migration; old graph JSON raises a `ValidationError` on load)
+- **Watcher as an independent peer service** — split into `WatcherService` (pure-logic state machine, no threading), `WatcherRunner` (asyncio loop + persistence), `WatcherRepository` (memory + sqlite backends), and `api/routers/watcher.py` (6 endpoints: start / stop / status / events / history / list / deregister). Two run modes: `lineage-bridge-watch` daemon (production, survives UI restarts) or in-process API task (development). UI now polls `GET /api/v1/watcher/{id}/*` via `httpx` and holds only the `watcher_id` string. (Phase 2G, ADR-023)
+- **`POST /api/v1/push/{provider}`** endpoint — the API gains feature parity with the UI's "Push to X" buttons. (Phase 1A)
+- **Orchestrator phase abstraction** — each phase implements `Phase.execute(ctx)` and is independently testable. (Phase 1D)
+- **Per-demo credential cache accumulation** — switching `.env` between UC / Glue / BQ / DataZone demos no longer wipes the previous demo's credentials. The `~/.lineage_bridge/cache.json` deep-merges per-cluster / per-env credential dicts; the demo provision scripts mirror Databricks workspace + AWS region into the cache too.
+- **Metrics enrichment for every node type** (with `--metrics`): Telemetry-based for topics / connectors / Flink jobs; consumer-group lag → `metrics_total_lag`; tableflow inherits from upstream topic; catalog tables get `metrics_active` from the most recent of `last_modified_time` / `updated_at` / `update_time` / `create_time`; ksqlDB queries from state. New `--metrics` and `--metrics-lookback-hours` CLI flags.
+- **DLQ topic wiring** — sink connectors now expose their internal `lcc-XXXXX` resource ID via `expand=info,status,id`. The Connect extractor emits a placeholder `dlq-{lcc-id}` topic + `PRODUCES` edge, which merges with the real topic on the kafka_admin pass. DLQ topics no longer appear as orphan nodes; renderer surfaces a red "D" badge variant.
+- **Sidebar legend variants** — per-catalog brand rows (UC / Glue / BigQuery / DataZone) plus "DLQ topic" and "Topic with schema" badge rows when present in the graph.
+- **`Settings.api_url`** — UI uses this to find the API (default `http://127.0.0.1:8000`); set when API runs in a separate container.
+- **AWS partition-aware Glue console deeplinks** — `_console_host(region)` maps GovCloud (`us-gov-*`) and China (`cn-*`) regions to the right console hostname.
+- **Storage conformance suite** — same 24 tests run against memory + file + sqlite (72 cases), plus 12 watcher-repository tests × memory + sqlite (24 cases), plus 11 sqlite-specific tests + 2 sqlite API-integration tests.
+
+### Changed
+
+- **UI sidebar decomposed** — the 1,077-LOC `ui/sidebar.py` split into `ui/sidebar/{__init__,connection,scope,credentials,actions,filters}.py`. CSS extracted from `ui/app.py` to `ui/static/styles.css`. Sample graph promoted from imperative builder to bundled `ui/static/sample_graph.json`. (Phase 2E)
+- **Per-catalog console deep-link labels** — was hardcoded "Open in BigQuery" on every `CATALOG_TABLE` (visible on UC + Glue tables too); now dispatches per `catalog_type` (`Open in Unity Catalog` / `Open in AWS Glue` / `Open in BigQuery`). Duplicate Glue button removed.
+- **Per-catalog brand icons reach the actual graph nodes** — `render_graph_raw` and `render_graph` now wire `icon_for_node(node)` so UC / Glue / BigQuery / DataZone tables render with their brand icon (was: every catalog table got the generic database icon).
+- **DataZone live integration tests gate on `iam:SimulatePrincipalPolicy`** — when the caller lacks `datazone:CreateFormType` / `CreateAssetType`, the tests skip cleanly with the IAM diff in the skip reason rather than failing on `AccessDeniedException`. The graceful-degradation path is still exercised by the manual `provider.push_lineage` smoke.
+- **Dataplex live integration test** uses deterministic `GET-by-name` instead of `LIST entries → find by FQN` to avoid the eventual-consistency flake on Dataplex Catalog list endpoints.
+
+### Fixed
+
+- **Glue catalog deep-link region** — `build_url` no longer silently falls back to `us-east-1` when the node has no `aws_region`. `build_node` now stamps `aws_region` from the configured provider region (or Tableflow CI region) at build time, and `build_url` returns `None` if no region is available anywhere (no more wrong-region buttons).
+- **Google catalog table_name parity** — `GoogleLineageProvider.build_node` was producing different node IDs than `connect.py:_build_google_tables` for the same logical table (split-on-dot vs replace-on-dot). Fixed to mirror the Connect path.
+- **ksqlDB extraction 401** — when `Settings.ksqldb_api_key` is unset, the processing phase now falls back to the cached `lineage-bridge-ksqldb-{env_id}` provisioned SA key. Same pattern applied to the Tableflow phase.
+- **CSS escape bug** — `ui/static/styles.css` header comment contained the literal text `</style>`, which the browser parsed as closing the wrapping `<style>` opened by `st.markdown`, dumping the rest of the CSS as plain text on the page.
+- **Streamlit `cluster_select` widget warning** — the multiselect was passing both `key=` and `default=`. Pre-seed `st.session_state["cluster_select"]` instead, drop the `default` arg, prune stale labels.
+- **Watcher push path** — the old `WatcherEngine` imported `run_glue_push` / `run_lineage_push` (both deleted in Phase 1B); the new service uses `services.run_push` via `PushRequest`, the same path the UI + API hit.
+
+### Removed
+
+- **`lineage_bridge/watcher/engine.py:WatcherEngine`** — replaced by `services.WatcherService` + `services.WatcherRunner`. The threading wrapper is gone (the daemon owns its asyncio loop directly). The `_use_audit_log` private property is gone (mode is explicit in `WatcherConfig.mode`). The CLI no longer calls a private `_run_loop()` directly.
+- **`run_glue_push` / `run_lineage_push`** wrappers in `extractors/orchestrator.py` — the catalog protocol v2 dispatches via `services.run_push(PushRequest)` instead. (Phase 1B)
+- **`UC_TABLE` / `GLUE_TABLE` / `GOOGLE_TABLE` NodeType members** — collapsed to `CATALOG_TABLE` + `catalog_type`. (Phase 1B; clean break per ADR-021)
+
+### Tests
+- 813 → **892** baseline pytest, 7 skipped (live cloud integration; opt-in via `LINEAGE_BRIDGE_*_INTEGRATION=1`).
+- New conformance suite covers memory + file + sqlite for graphs / tasks / events; memory + sqlite for watchers.
+- Lint clean (ruff, line length 100).
+
 ## [0.4.1] - 2026-05-01
 
 **New catalog integrations, brand-icon refresh, BigQuery node enhancement, and CI/docs hardening.**
