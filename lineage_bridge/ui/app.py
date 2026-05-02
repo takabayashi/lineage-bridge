@@ -191,27 +191,63 @@ def _render_graph_content(graph: LineageGraph):
             "_clearPositions": clear_positions,
         }
 
-        clicked_node = visjs_graph(
+        graph_height = st.session_state.get("graph_height", 650)
+        click_payload = visjs_graph(
             nodes=vis_nodes,
             edges=vis_edges,
             config=vis_config,
-            height=650,
+            height=graph_height,
             key="lineage_graph",
         )
 
-        if clicked_node:
-            dismissed = st.session_state._dismissed_node
-            if clicked_node == dismissed:
-                pass
-            elif clicked_node != st.session_state.selected_node:
-                st.session_state.selected_node = clicked_node
-                st.session_state._dismissed_node = None
-                st.rerun()
+        _handle_graph_click(click_payload)
 
     # Node detail panel
     if detail_col is not None:
         with detail_col, st.container(border=True):
             render_node_details(graph)
+
+
+def _handle_graph_click(payload) -> None:
+    """Translate a vis.js click/double-click payload into session state.
+
+    Single-click → select (renders detail panel).
+    Double-click → focus (zooms graph to N-hop neighborhood).
+    Accepts the legacy bare-string payload for back-compat with cached iframes
+    that haven't reloaded yet.
+    """
+    if not payload:
+        return
+
+    if isinstance(payload, str):
+        payload = {"action": "select", "id": payload, "seq": 0}
+
+    action = payload.get("action")
+    node_id = payload.get("id")
+    seq = payload.get("seq", 0)
+    if not node_id:
+        return
+
+    last_seq = st.session_state.get("_last_click_seq")
+    if last_seq is not None and seq == last_seq:
+        return
+    st.session_state._last_click_seq = seq
+
+    if action == "focus":
+        st.session_state.focus_node = node_id
+        st.session_state.selected_node = node_id
+        st.session_state._dismissed_node = None
+        st.rerun()
+        return
+
+    # action == "select" (default)
+    dismissed = st.session_state._dismissed_node
+    if node_id == dismissed:
+        return
+    if node_id != st.session_state.selected_node:
+        st.session_state.selected_node = node_id
+        st.session_state._dismissed_node = None
+        st.rerun()
 
 
 # ═══════════════════════════════════════════════════════════════════════

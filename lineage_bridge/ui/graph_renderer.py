@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from typing import Any
 
+import streamlit as st
 from streamlit_agraph import Edge, Node
 
 from lineage_bridge.models.graph import (
@@ -383,13 +384,28 @@ def _compute_dag_layout(
     level_sep: int = 280,
     node_sep: int = 100,
 ) -> dict[str, dict[str, float]]:
-    """Compute x/y positions for a DAG using layered layout.
+    """Public wrapper — delegates to a cached implementation.
 
-    1. Assign each node to a layer (longest-path from roots).
-    2. Order nodes within each layer using the barycenter heuristic
-       (multiple sweeps) to minimise edge crossings.
-    3. Return ``{node_id: {"x": …, "y": …}}``.
+    The 4-sweep barycenter pass dominates render cost on large graphs and
+    runs on every Streamlit interaction. We cache by the (node_ids, edges)
+    tuples so unchanged filter selections re-use the prior layout.
     """
+    return _compute_dag_layout_cached(
+        tuple(node_ids),
+        tuple((s, d) for s, d in edges),
+        level_sep,
+        node_sep,
+    )
+
+
+@st.cache_data(max_entries=32, show_spinner=False)
+def _compute_dag_layout_cached(
+    node_ids: tuple[str, ...],
+    edges: tuple[tuple[str, str], ...],
+    level_sep: int,
+    node_sep: int,
+) -> dict[str, dict[str, float]]:
+    """Cache-friendly Sugiyama layout (tuples are hashable; lists are not)."""
     if not node_ids:
         return {}
 
@@ -518,11 +534,14 @@ def render_graph_raw(
     # Pre-compute topics that have schemas
     topics_with_schemas = _get_topics_with_schemas(graph)
 
-    # When searching, find matching nodes then expand to their neighborhood
+    # When searching, find matching nodes then expand to their neighborhood.
+    # Direct matches are flagged so the iframe can highlight them — without
+    # this, users see the neighborhood subgraph but can't tell which nodes
+    # they actually searched for.
     search_lower = search_query.strip().lower()
     search_neighborhood: set[str] | None = None
+    matched_id_set: set[str] = set()
     if search_lower:
-        matched_ids: list[str] = []
         for node in graph.nodes:
             if node.node_type == NodeType.SCHEMA:
                 continue
@@ -530,10 +549,9 @@ def render_graph_raw(
                 search_lower in node.display_name.lower()
                 or search_lower in node.qualified_name.lower()
             ):
-                matched_ids.append(node.node_id)
-        # Expand each match to its N-hop neighborhood
+                matched_id_set.add(node.node_id)
         search_neighborhood = set()
-        for mid in matched_ids:
+        for mid in matched_id_set:
             search_neighborhood |= _collect_hop_neighborhood(graph, mid, hops)
 
     included_ids: set[str] = set()
@@ -590,14 +608,17 @@ def render_graph_raw(
             if badge_icon:
                 vis_props["image"] = badge_icon
 
-        raw_nodes.append(
-            {
-                "id": node.node_id,
-                "label": _trunc(_short_name(node), 30),
-                "title": _build_tooltip(node),
-                **vis_props,
-            }
-        )
+        node_dict: dict[str, Any] = {
+            "id": node.node_id,
+            "label": _trunc(_short_name(node), 30),
+            "title": _build_tooltip(node),
+            **vis_props,
+        }
+        # Flag direct search matches — vis.js renders these with a thicker
+        # accent border so the user can spot the hit inside its neighborhood.
+        if node.node_id in matched_id_set:
+            node_dict["_search_match"] = True
+        raw_nodes.append(node_dict)
 
     raw_edges: list[dict[str, Any]] = []
     for edge in graph.edges:

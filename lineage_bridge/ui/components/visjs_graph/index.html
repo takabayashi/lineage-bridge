@@ -9,23 +9,29 @@
 
   #toolbar {
     display: flex; align-items: center; gap: 6px;
-    padding: 6px 10px; background: #f8f9fa;
-    border-bottom: 1px solid #e0e0e0;
+    padding: 6px 10px; background: rgba(128,128,128,0.06);
+    border-bottom: 1px solid rgba(128,128,128,0.18);
     font-size: 13px; user-select: none;
   }
+  body.dark #toolbar { background: rgba(255,255,255,0.04); }
   .tb-btn {
     display: inline-flex; align-items: center; gap: 4px;
-    padding: 4px 10px; border: 1px solid #ccc; border-radius: 6px;
-    background: #fff; cursor: pointer; font-size: 12px; color: #333;
-    transition: all 0.15s;
+    padding: 4px 10px; border: 1px solid rgba(128,128,128,0.35); border-radius: 6px;
+    background: transparent; cursor: pointer; font-size: 12px;
+    color: inherit; transition: all 0.15s;
   }
-  .tb-btn:hover { background: #e8eaed; border-color: #aaa; }
+  .tb-btn:hover { background: rgba(128,128,128,0.15); }
   .tb-btn.active { background: #1976D2; color: #fff; border-color: #1565C0; }
-  .tb-sep { width: 1px; height: 20px; background: #ddd; margin: 0 4px; }
+  .tb-sep { width: 1px; height: 20px; background: rgba(128,128,128,0.3); margin: 0 4px; }
   .tb-hint { margin-left: auto; color: #999; font-size: 11px; }
 
   #graph-wrapper { position: relative; width: 100%; }
-  #graph-container { width: 100%; border: 1px solid rgba(128,128,128,0.2); border-radius: 8px; }
+  #graph-container {
+    width: 100%;
+    border: 1px solid rgba(128,128,128,0.2);
+    border-radius: 8px;
+  }
+  body.dark #graph-container { border-color: rgba(255,255,255,0.10); }
   #select-overlay {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
     cursor: crosshair; display: none; z-index: 10;
@@ -55,7 +61,9 @@
   </button>
   <button class="tb-btn" id="btn-zin" title="Zoom in">+</button>
   <button class="tb-btn" id="btn-zout" title="Zoom out">&minus;</button>
-  <span class="tb-hint" id="hint-text">Click a node for details &middot; Shift+drag to region zoom</span>
+  <div class="tb-sep"></div>
+  <button class="tb-btn" id="btn-edge-labels" title="Toggle edge labels">Edge labels</button>
+  <span class="tb-hint" id="hint-text">Click for details &middot; Double-click to focus &middot; Shift+drag for region</span>
 </div>
 
 <div id="graph-wrapper">
@@ -88,6 +96,11 @@ var Streamlit = {
 };
 
 var network = null;
+var lastClickedAt = 0;
+var clickDebounce = null;
+var DOUBLE_CLICK_MS = 250;
+var edgeLabelsHidden = false;
+var clickSeq = 0;  // monotonic counter so repeat clicks on the same node still rerun
 
 // Listen for render events from Streamlit BEFORE signaling ready
 window.addEventListener("message", function(event) {
@@ -149,11 +162,10 @@ function initGraph(args) {
     }
   });
 
-  // Dark mode: override label colors so they're readable on dark canvas.
-  // Detect by checking the vis.js container's computed background — Streamlit
-  // sets the iframe background to match its theme regardless of OS setting.
+  // Dark mode: walk up from container to body looking for a non-transparent
+  // background, then derive luminance from it. Streamlit sets the iframe
+  // background to match its theme regardless of OS prefers-color-scheme.
   var isDark = false;
-  // Walk up from container to body looking for a non-transparent background
   var el = container;
   while (el) {
     var bg = getComputedStyle(el).backgroundColor || "";
@@ -169,6 +181,7 @@ function initGraph(args) {
     el = el.parentElement;
   }
   if (isDark) {
+    document.body.classList.add("dark");
     graphData.nodes.forEach(function(n) {
       if (n.font) {
         n.font.color = "#ffffff";
@@ -181,6 +194,30 @@ function initGraph(args) {
         e.font.strokeColor = "#000000";
       }
     });
+  }
+
+  // ── Search-match highlight ─────────────────────────────────────
+  // Nodes flagged with _search_match get a thicker accent border so the
+  // user can spot the actual search hit inside its neighborhood subgraph.
+  var matchAccent = isDark ? "#FFD54F" : "#F57C00";
+  graphData.nodes.forEach(function(n) {
+    if (n._search_match) {
+      n.borderWidth = 4;
+      n.borderWidthSelected = 5;
+      n.color = n.color || {};
+      if (typeof n.color === "string") n.color = { background: n.color };
+      n.color.border = matchAccent;
+      n.color.highlight = n.color.highlight || {};
+      n.color.highlight.border = matchAccent;
+      // Visual chip on the label so it reads even at low zoom
+      n.label = "★ " + (n.label || "");
+    }
+  });
+
+  // ── Edge labels: keep state across renders (cached in sessionStorage) ──
+  edgeLabelsHidden = sessionStorage.getItem("lb_edge_labels_hidden") === "1";
+  if (edgeLabelsHidden) {
+    graphData.edges.forEach(function(e) { e._origLabel = e.label; e.label = ""; });
   }
 
   var nodes = new vis.DataSet(graphData.nodes);
@@ -226,11 +263,30 @@ function initGraph(args) {
     }
   });
 
-  // ── Node click → send to Streamlit ────────────────────────────
+  // ── Click vs. double-click discrimination ──────────────────────
+  // Plain click selects (renders the detail panel). Double-click focuses
+  // (sets focus_node so the graph zooms into that node's neighborhood).
+  // We delay single-click delivery briefly so a follow-up click can be
+  // recognized as part of a double-click and replace the action.
   network.on("click", function(params) {
-    if (params.nodes.length > 0) {
-      Streamlit.setComponentValue(params.nodes[0]);
+    if (params.nodes.length === 0) return;
+    var nodeId = params.nodes[0];
+    if (clickDebounce) {
+      clearTimeout(clickDebounce);
+      clickDebounce = null;
     }
+    clickDebounce = setTimeout(function() {
+      clickDebounce = null;
+      clickSeq += 1;
+      Streamlit.setComponentValue({ action: "select", id: nodeId, seq: clickSeq });
+    }, DOUBLE_CLICK_MS);
+  });
+
+  network.on("doubleClick", function(params) {
+    if (params.nodes.length === 0) return;
+    if (clickDebounce) { clearTimeout(clickDebounce); clickDebounce = null; }
+    clickSeq += 1;
+    Streamlit.setComponentValue({ action: "focus", id: params.nodes[0], seq: clickSeq });
   });
 
   // ── Toolbar buttons ────────────────────────────────────────────
@@ -242,6 +298,28 @@ function initGraph(args) {
   };
   document.getElementById("btn-zout").onclick = function() {
     network.moveTo({ scale: network.getScale() / 1.4, animation: { duration: 300 } });
+  };
+
+  var btnEdgeLabels = document.getElementById("btn-edge-labels");
+  function refreshEdgeLabelsBtn() {
+    btnEdgeLabels.classList.toggle("active", !edgeLabelsHidden);
+    btnEdgeLabels.textContent = edgeLabelsHidden ? "Show edge labels" : "Edge labels";
+  }
+  refreshEdgeLabelsBtn();
+  btnEdgeLabels.onclick = function() {
+    edgeLabelsHidden = !edgeLabelsHidden;
+    sessionStorage.setItem("lb_edge_labels_hidden", edgeLabelsHidden ? "1" : "0");
+    var updates = [];
+    edges.forEach(function(e) {
+      var origLabel = e._origLabel != null ? e._origLabel : (edgeLabelsHidden ? e.label : e.label);
+      if (edgeLabelsHidden) {
+        updates.push({ id: e.id, _origLabel: origLabel, label: "" });
+      } else {
+        updates.push({ id: e.id, label: origLabel });
+      }
+    });
+    edges.update(updates);
+    refreshEdgeLabelsBtn();
   };
 
   // ── Region select mode ─────────────────────────────────────────
@@ -257,7 +335,7 @@ function initGraph(args) {
     btnSelect.classList.toggle("active", on);
     hintText.textContent = on
       ? "Drag to select a region, then release to zoom"
-      : "Click a node for details \u00b7 Shift+drag to region zoom";
+      : "Click for details · Double-click to focus · Shift+drag for region";
     if (!on) rectEl.style.display = "none";
   }
 

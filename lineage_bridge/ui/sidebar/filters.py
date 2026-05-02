@@ -107,6 +107,21 @@ def _render_sidebar_graph_filters(graph: LineageGraph) -> None:
         help="Hide nodes that have no edges.",
     )
 
+    # Graph height (Phase B): tall monitors get more canvas, short laptops
+    # avoid forced scrolling. Controls the iframe height passed to vis.js.
+    height_options = {"Compact (450)": 450, "Standard (650)": 650, "Tall (900)": 900}
+    current = st.session_state.get("graph_height", 650)
+    current_label = next(
+        (lbl for lbl, h in height_options.items() if h == current), "Standard (650)"
+    )
+    chosen = st.selectbox(
+        "Graph height",
+        options=list(height_options.keys()),
+        index=list(height_options.keys()).index(current_label),
+        key="graph_height_select",
+    )
+    st.session_state.graph_height = height_options[chosen]
+
     # ── Focus / hop controls ─────────────────────────────────────
     focus_active = st.session_state.focus_node is not None
     has_search = bool(st.session_state.get("search_input", "").strip())

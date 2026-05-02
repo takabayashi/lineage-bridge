@@ -21,10 +21,15 @@ def visjs_graph(
     config: dict[str, Any],
     height: int = 650,
     key: str | None = None,
-) -> str | None:
+) -> dict[str, Any] | str | None:
     """Render a vis.js network graph with region-select zoom.
 
-    Returns the clicked node ID (str) or None.
+    Returns one of:
+      - ``{"action": "select", "id": "...", "seq": N}`` on a single click
+      - ``{"action": "focus",  "id": "...", "seq": N}`` on a double click
+      - ``None`` when nothing has been clicked yet
+      - A bare string ``"<node_id>"`` for back-compat with older renders that
+        haven't yet upgraded their payload (callers should treat as "select").
     """
     data_json = json.dumps({"nodes": nodes, "edges": edges})
     config_json = json.dumps(config)

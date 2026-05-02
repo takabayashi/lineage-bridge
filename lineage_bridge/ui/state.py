@@ -24,6 +24,8 @@ _DEFAULTS = {
     "last_extraction_params": None,
     "last_extraction_time": None,
     "_cache_loaded": False,
+    "_last_click_seq": None,
+    "graph_height": 650,
     "watcher_engine": None,
 }
 
