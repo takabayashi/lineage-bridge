@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
@@ -16,6 +18,25 @@ from lineage_bridge.openlineage.store import EventStore
 from lineage_bridge.storage import Repositories, make_repositories
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Drain live watchers on shutdown so audit-log Kafka consumers + their
+    librdkafka threads don't leak when uvicorn exits.
+
+    Iterates the per-app `watcher_runners` registry (lazy-init'd in the
+    watcher router) and awaits each `runner.stop()`. Crashes in stop are
+    logged but don't block the shutdown.
+    """
+    yield
+    runners = getattr(app.state, "watcher_runners", {})
+    for watcher_id, runner in list(runners.items()):
+        try:
+            await runner.stop()
+        except Exception:
+            logger.warning("Watcher %s did not stop cleanly", watcher_id, exc_info=True)
+    runners.clear()
 
 
 def create_app(
@@ -43,6 +64,7 @@ def create_app(
         version="0.5.0",
         docs_url="/docs",
         redoc_url="/redoc",
+        lifespan=_lifespan,
     )
 
     configure_auth(api_key)

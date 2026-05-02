@@ -160,3 +160,32 @@ def test_file_event_run_event_json_round_trips_with_aliases(tmp_path: Path):
     loaded = repo2.all()[0]
     assert loaded.eventType == RunEventType.START
     assert loaded.job.namespace == "ns"
+
+
+# ── path-traversal protection (security review fix) ────────────────────
+
+
+def test_file_graph_repository_rejects_path_traversal(tmp_path: Path):
+    """Regression — graph_id with `..` or `/` in it must be rejected, not
+    allowed to escape the storage root. Without this, an authenticated
+    request with a crafted path-param could read/write arbitrary `.json`
+    files on the filesystem."""
+    repo = FileGraphRepository(tmp_path / "graphs")
+    for malicious in ("../../etc/passwd", "..%2Fevil", "g/../escape", "../../"):
+        with pytest.raises(ValueError, match="invalid characters"):
+            repo.get(malicious)
+
+
+def test_file_task_repository_rejects_path_traversal(tmp_path: Path):
+    repo = FileTaskRepository(tmp_path / "tasks")
+    with pytest.raises(ValueError, match="invalid characters"):
+        repo.get("../../escape")
+
+
+def test_file_repository_accepts_uuid_keys(tmp_path: Path):
+    """UUID4 (hyphenated hex) is the canonical key shape and must pass."""
+    import uuid
+    repo = FileGraphRepository(tmp_path / "graphs")
+    # Just exercising _path through a no-op .get() — no exception means OK.
+    assert repo.get(str(uuid.uuid4())) is None
+

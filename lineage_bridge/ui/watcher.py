@@ -63,11 +63,23 @@ def _api_url() -> str:
     return "http://127.0.0.1:8000"
 
 
+def _api_headers() -> dict[str, str]:
+    """Auth header to send when `Settings.api_key` is configured.
+
+    Without this, a deployment that turns on `LINEAGE_BRIDGE_API_KEY` would
+    have the UI's watcher controls all 401 — the API guards them via the
+    same `require_api_key` Depends as every other route.
+    """
+    settings = _try_load_settings()
+    api_key = getattr(settings, "api_key", None) if settings else None
+    return {"X-API-Key": api_key} if api_key else {}
+
+
 def _api_get(path: str) -> dict[str, Any] | None:
     """GET against the API. Returns parsed JSON, or None on connection / 404."""
     url = f"{_api_url()}{path}"
     try:
-        resp = httpx.get(url, timeout=5.0)
+        resp = httpx.get(url, headers=_api_headers(), timeout=5.0)
         if resp.status_code == 404:
             return None
         resp.raise_for_status()
@@ -80,7 +92,7 @@ def _api_get(path: str) -> dict[str, Any] | None:
 def _api_post(path: str, json_body: dict | None = None) -> dict[str, Any] | None:
     url = f"{_api_url()}{path}"
     try:
-        resp = httpx.post(url, json=json_body, timeout=10.0)
+        resp = httpx.post(url, json=json_body, headers=_api_headers(), timeout=10.0)
         resp.raise_for_status()
         if resp.status_code == 204 or not resp.content:
             return {}

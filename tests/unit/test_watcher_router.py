@@ -199,3 +199,64 @@ def test_deregister_drops_watcher_from_repo(client):
 def test_deregister_returns_404_when_unknown(client):
     resp = client.delete("/api/v1/watcher/never-existed")
     assert resp.status_code == 404
+
+
+# ── post-review fixes ──────────────────────────────────────────────────
+
+
+def test_status_available_immediately_after_start(client):
+    """Regression — POST /watcher used to 201 before the runner wrote a status
+    row, so the immediate `GET /status` saw 404. spawn() now writes initial
+    WATCHING synchronously."""
+    with patch(
+        "lineage_bridge.services.watcher_runner.WatcherRunner.start",
+        new=AsyncMock(),
+    ):
+        wid = client.post("/api/v1/watcher", json=_config_body()).json()["watcher_id"]
+        resp = client.get(f"/api/v1/watcher/{wid}/status")
+    assert resp.status_code == 200
+    assert resp.json()["state"] == "watching"
+
+
+def test_persisted_config_strips_credentials(client):
+    """Regression / security — audit-log + per-cluster + per-env credentials
+    must NOT survive the round-trip through the WatcherRepository (a backup
+    of `storage.db` would otherwise disclose them)."""
+    body = _config_body()
+    body["audit_log_api_key"] = "SECRET-AUDIT-KEY"
+    body["audit_log_api_secret"] = "SECRET-AUDIT-SECRET"
+    body["extraction"]["cluster_credentials"] = {
+        "lkc-1": {"api_key": "SECRET-CLUSTER-KEY", "api_secret": "SECRET-CLUSTER-SECRET"}
+    }
+
+    with patch(
+        "lineage_bridge.services.watcher_runner.WatcherRunner.start",
+        new=AsyncMock(),
+    ):
+        wid = client.post("/api/v1/watcher", json=body).json()["watcher_id"]
+
+    persisted = client.app.state.watcher_repo.get_config(wid)
+    assert persisted.audit_log_api_key is None
+    assert persisted.audit_log_api_secret is None
+    assert persisted.extraction.cluster_credentials == {}
+    # Other fields survive (mode, intervals, push flags).
+    assert persisted.extraction.environment_ids == ["env-1"]
+
+
+def test_lifespan_shutdown_drains_runners():
+    """Regression — exiting `with TestClient(...)` should drain registered
+    runners so their poller / consumer don't leak. We stub stop() and
+    verify it gets awaited."""
+    from lineage_bridge.api.app import create_app
+
+    app = create_app()
+    with TestClient(app) as c:
+        with patch(
+            "lineage_bridge.services.watcher_runner.WatcherRunner.start",
+            new=AsyncMock(),
+        ):
+            c.post("/api/v1/watcher", json=_config_body())
+        assert app.state.watcher_runners
+
+    # After the TestClient context exits, lifespan shutdown ran.
+    assert app.state.watcher_runners == {}

@@ -210,6 +210,72 @@ def test_watcher_migration_creates_tables(tmp_path: Path):
     assert {"watchers", "watcher_events", "watcher_extractions"}.issubset(table_names)
 
 
+def test_watcher_deregister_is_atomic(tmp_path: Path):
+    """Regression — deregister cascades through three tables; if a failure
+    between statements leaks orphan rows, a re-registered watcher_id would
+    inherit the old events/extractions. Verify the wrapping transaction
+    rolls back as a unit.
+
+    `sqlite3.Connection.execute` is read-only at the C level so we can't
+    monkeypatch it; instead, use a thin proxy connection that fails on the
+    second DELETE.
+    """
+    import sqlite3
+    from datetime import UTC, datetime
+
+    from lineage_bridge.services.requests import ExtractionRequest
+    from lineage_bridge.services.watcher_models import (
+        ExtractionRecord,
+        WatcherConfig,
+        WatcherEvent,
+    )
+    from lineage_bridge.storage.backends.sqlite import SqliteWatcherRepository
+
+    db = tmp_path / "storage.db"
+    repo = SqliteWatcherRepository(db)
+    cfg = WatcherConfig(extraction=ExtractionRequest(environment_ids=["env-1"]))
+    repo.register("w1", cfg)
+    repo.append_event(
+        "w1",
+        WatcherEvent(
+            id="e1",
+            time=datetime.now(UTC),
+            method_name="kafka.CreateTopics",
+            resource_name="t",
+            principal="u",
+            raw={},
+        ),
+    )
+    repo.append_extraction("w1", ExtractionRecord(triggered_at=datetime.now(UTC)))
+
+    real_conn = repo.conn
+
+    class FailingConn:
+        """Proxy that forwards every attribute to the real connection except
+        `execute` — which fails on the watcher_events delete."""
+
+        def __getattr__(self, name):
+            return getattr(real_conn, name)
+
+        def execute(self, sql, *args, **kwargs):
+            if "DELETE FROM watcher_events" in sql:
+                raise sqlite3.OperationalError("simulated failure")
+            return real_conn.execute(sql, *args, **kwargs)
+
+    import contextlib
+
+    repo._conn = FailingConn()  # type: ignore[assignment]
+    with contextlib.suppress(sqlite3.OperationalError):
+        repo.deregister("w1")
+    repo._conn = real_conn  # restore for the assertions below
+
+    # Rollback must have undone the watchers DELETE — config still readable,
+    # events + extractions still present.
+    assert repo.get_config("w1") is not None
+    assert len(repo.list_events("w1")) == 1
+    assert len(repo.list_extractions("w1")) == 1
+
+
 def test_watcher_lookup_indexes_exist(tmp_path: Path):
     """Per-watcher list endpoints rely on (watcher_id, time) indexes."""
     from lineage_bridge.storage.backends.sqlite import SqliteWatcherRepository

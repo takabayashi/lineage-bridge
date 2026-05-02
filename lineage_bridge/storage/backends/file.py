@@ -28,6 +28,7 @@ import fcntl
 import json
 import logging
 import os
+import re
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -71,6 +72,9 @@ def _read_json(path: Path) -> Any | None:
         return None
 
 
+_SAFE_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
 class _DirRepo:
     """Helper: per-entity directory of `{key}.json` files with flock-guarded writes."""
 
@@ -80,6 +84,16 @@ class _DirRepo:
         self._lock_path = root / ".lock"
 
     def _path(self, key: str) -> Path:
+        # Reject anything that isn't a plain alphanumeric / dash / underscore
+        # token. Without this, an authenticated request to (e.g.)
+        # `DELETE /api/v1/graphs/..%2F..%2Fevil` would have the `_root`-
+        # joined path escape the storage root once Starlette URL-decodes
+        # the path segment.
+        if not _SAFE_KEY_RE.fullmatch(key):
+            raise ValueError(
+                f"Storage key {key!r} contains invalid characters; "
+                "expected [A-Za-z0-9_-] only."
+            )
         return self._root / f"{key}.json"
 
     def _with_write_lock(self, fn):

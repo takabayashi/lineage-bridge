@@ -20,7 +20,17 @@ async def health() -> StatusResponse:
 
 @router.get("/version")
 async def version() -> VersionResponse:
-    return VersionResponse(version="0.4.0", name="lineage-bridge")
+    return VersionResponse(version="0.5.0", name="lineage-bridge")
+
+
+# Map catalog_type → owning cloud system, for the legacy `system_type` field
+# on CatalogInfo. Adding a new catalog = one entry here.
+_CATALOG_SYSTEM = {
+    "UNITY_CATALOG": "databricks",
+    "AWS_GLUE": "aws",
+    "GOOGLE_DATA_LINEAGE": "google",
+    "AWS_DATAZONE": "aws",
+}
 
 
 @router.get("/catalogs")
@@ -29,9 +39,13 @@ async def catalogs() -> list[CatalogInfo]:
     from lineage_bridge.catalogs import _PROVIDERS
 
     # Per ADR-021, all catalog providers create CATALOG_TABLE nodes; the
-    # discriminator is `catalog_type` itself. node_type / system_type fields
-    # were dropped from CatalogInfo in Phase 1B.
-    return [CatalogInfo(catalog_type=ct) for ct in _PROVIDERS]
+    # discriminator is `catalog_type` itself. `node_type` + `system_type`
+    # are kept on the response shape (with derived values) for v0.4.x
+    # client compatibility.
+    return [
+        CatalogInfo(catalog_type=ct, system_type=_CATALOG_SYSTEM.get(ct, ""))
+        for ct in _PROVIDERS
+    ]
 
 
 @router.get("/openapi.yaml", include_in_schema=False)

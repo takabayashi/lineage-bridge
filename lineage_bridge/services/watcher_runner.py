@@ -61,11 +61,37 @@ class WatcherRunner:
     ) -> WatcherRunner:
         """Generate a fresh watcher_id, register the config, return the runner.
 
+        Writes an initial WATCHING status row before returning so that callers
+        which immediately query `GET /watcher/{id}/status` after `POST /watcher`
+        see a row instead of a 404 (the runner's own first `_persist_status`
+        happens inside the asyncio task body, which may not have run yet).
+
+        The persisted config has audit-log + per-cluster + per-env credentials
+        stripped — the runner re-fetches them from `Settings` at start time
+        (see `WatcherService._build_audit_consumer` / `_build_rest_poller`).
+        Without this strip, a `storage.db` backup or `sqlite3 .dump` would
+        disclose Confluent / Kafka credentials in plaintext.
+
         The caller is responsible for `await runner.start()` (in the API
         process) or `await runner.run_forever()` (in the daemon).
         """
+        from datetime import UTC, datetime
+
+        from lineage_bridge.services.watcher_models import WatcherState, WatcherStatus
+
         watcher_id = uuid.uuid4().hex
-        repo.register(watcher_id, config)
+        repo.register(watcher_id, _strip_secrets(config))
+        repo.update_status(
+            watcher_id,
+            WatcherStatus(
+                watcher_id=watcher_id,
+                state=WatcherState.WATCHING,
+                started_at=datetime.now(UTC),
+            ),
+        )
+        # In-memory runner keeps the un-stripped config so it can authenticate
+        # against the data plane on the very first poll without re-reading
+        # from Settings (which it does anyway as a fallback).
         return cls(watcher_id, config, settings, repo)
 
     async def start(self) -> None:
@@ -149,6 +175,29 @@ async def run_forever_blocking(
     print(f"Watcher started: {runner.watcher_id}")
     await runner.run_forever()
     return runner.watcher_id
+
+
+def _strip_secrets(config: WatcherConfig) -> WatcherConfig:
+    """Return a copy of *config* with all credential fields blanked.
+
+    The runner re-injects them from `Settings` at start time. This keeps
+    secrets out of the persisted-config row in `storage.db` (and out of
+    the JSON the API serialises in `GET /api/v1/watcher`), so a backup
+    file or read-only DB dump doesn't leak Confluent / Kafka creds.
+    """
+    return config.model_copy(
+        update={
+            "audit_log_api_key": None,
+            "audit_log_api_secret": None,
+            "extraction": config.extraction.model_copy(
+                update={
+                    "sr_credentials": {},
+                    "flink_credentials": {},
+                    "cluster_credentials": {},
+                }
+            ),
+        }
+    )
 
 
 def stop_event_for(runner: WatcherRunner) -> asyncio.Event:

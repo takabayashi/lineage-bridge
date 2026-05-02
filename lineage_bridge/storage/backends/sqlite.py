@@ -364,9 +364,24 @@ class SqliteWatcherRepository(_SqliteRepo):
         return out
 
     def deregister(self, watcher_id: str) -> bool:
+        # Wrap the three cascading DELETEs in one transaction so a crash
+        # between statements can't leave orphan rows in watcher_events or
+        # watcher_extractions. autocommit + isolation_level=None means we
+        # need to issue BEGIN/COMMIT explicitly.
         with self._write_lock:
-            cur = self.conn.execute("DELETE FROM watchers WHERE watcher_id = ?", (watcher_id,))
-            # Cascade through the append-only tables.
-            self.conn.execute("DELETE FROM watcher_events WHERE watcher_id = ?", (watcher_id,))
-            self.conn.execute("DELETE FROM watcher_extractions WHERE watcher_id = ?", (watcher_id,))
-            return cur.rowcount > 0
+            try:
+                self.conn.execute("BEGIN")
+                cur = self.conn.execute(
+                    "DELETE FROM watchers WHERE watcher_id = ?", (watcher_id,)
+                )
+                self.conn.execute(
+                    "DELETE FROM watcher_events WHERE watcher_id = ?", (watcher_id,)
+                )
+                self.conn.execute(
+                    "DELETE FROM watcher_extractions WHERE watcher_id = ?", (watcher_id,)
+                )
+                self.conn.execute("COMMIT")
+                return cur.rowcount > 0
+            except Exception:
+                self.conn.execute("ROLLBACK")
+                raise
