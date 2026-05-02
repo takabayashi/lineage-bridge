@@ -215,6 +215,7 @@ class ConnectClient(ConfluentClient):
             direction = _classify_connector(connector_class, explicit_type)
             # Extract connector state from status block
             conn_state = detail.get("status", {}).get("connector", {}).get("state", "")
+            confluent_id = detail.get("confluent_id")  # lcc-XXXXX resource ID
 
             # Connector node
             nodes.append(
@@ -232,12 +233,48 @@ class ConnectClient(ConfluentClient):
                         "state": conn_state,
                         "tasks_max": config.get("tasks.max"),
                         "output_data_format": config.get("output.data.format"),
+                        "confluent_id": confluent_id,
                     },
                 )
             )
 
             topics = _extract_topics(config)
             conn_id = self._connector_node_id(cname)
+
+            # DLQ edge: Confluent auto-provisions a `dlq-<lcc-id>` topic per
+            # managed *sink* connector to capture failed records. Emit a
+            # placeholder topic node + PRODUCES edge so the DLQ shows in
+            # lineage instead of being an orphan node when kafka_admin lists
+            # topics. The placeholder merges with the real topic node by
+            # node_id (kafka_admin runs first, so attrs from the real topic
+            # win and our `role: dlq` annotation rides along).
+            #
+            # Restricted to sinks because source connectors don't produce
+            # DLQs in practice (Confluent doesn't auto-create the dlq topic
+            # for a source) — emitting placeholders for them would inject
+            # phantom kafka_topic nodes that have no real backing topic.
+            if confluent_id and direction == "sink":
+                dlq_name = f"dlq-{confluent_id}"
+                dlq_id = self._topic_node_id(dlq_name)
+                nodes.append(
+                    LineageNode(
+                        node_id=dlq_id,
+                        system=SystemType.CONFLUENT,
+                        node_type=NodeType.KAFKA_TOPIC,
+                        qualified_name=dlq_name,
+                        display_name=dlq_name,
+                        environment_id=self.environment_id,
+                        cluster_id=self.kafka_cluster_id,
+                        attributes={"role": "dlq", "for_connector": cname},
+                    )
+                )
+                edges.append(
+                    LineageEdge(
+                        src_id=conn_id,
+                        dst_id=dlq_id,
+                        edge_type=EdgeType.PRODUCES,
+                    )
+                )
 
             # BigQuery sinks get per-topic CATALOG_TABLE (Google) nodes instead of an
             # EXTERNAL_DATASET hub — the dataset is already encoded in each
@@ -377,7 +414,11 @@ class ConnectClient(ConfluentClient):
             f"/connect/v1/environments/{self.environment_id}"
             f"/clusters/{self.kafka_cluster_id}/connectors"
         )
-        data = await self.get(path, params={"expand": "info,status"})
+        # `expand=id` returns the internal `lcc-XXXXX` connector resource ID
+        # that Confluent uses to name auto-provisioned DLQ topics
+        # (`dlq-lcc-XXXXX`). Without this we can't link DLQs back to the
+        # connector that produced them — they end up as orphan nodes.
+        data = await self.get(path, params={"expand": "info,status,id"})
         if isinstance(data, list):
             # Plain list of names — fetch each individually
             result = []
@@ -388,7 +429,7 @@ class ConnectClient(ConfluentClient):
                 except Exception:
                     logger.warning("Failed to fetch connector %s", name, exc_info=True)
             return result
-        # Expanded response: dict of name -> {info: {...}, status: {...}}
+        # Expanded response: dict of name -> {info: {...}, status: {...}, id: {...}}
         result = []
         for name, wrapper in data.items():
             if not isinstance(wrapper, dict):
@@ -399,5 +440,9 @@ class ConnectClient(ConfluentClient):
             entry = {**info, "status": status}
             # Ensure name is set even if info didn't have it
             entry.setdefault("name", name)
+            # Surface the lcc-XXXXX resource ID for DLQ → connector linking.
+            id_block = wrapper.get("id") or {}
+            if isinstance(id_block, dict) and id_block.get("id"):
+                entry["confluent_id"] = id_block["id"]
             result.append(entry)
         return result

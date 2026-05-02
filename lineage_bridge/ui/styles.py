@@ -443,6 +443,17 @@ def build_topic_with_schema_icon() -> str:
 TOPIC_WITH_SCHEMA_ICON: str = build_topic_with_schema_icon()
 
 
+def build_dlq_topic_icon() -> str:
+    """Return a data URI for a Kafka topic icon with a red 'D' DLQ badge."""
+    body = _get_chip_body(NodeType.KAFKA_TOPIC)
+    # Red badge — DLQs hold rejected/error records, so a warning hue reads at a glance.
+    badge = _badge_overlay("#D32F2F", "D")
+    return _svg_to_data_uri(_wrap_svg(body + badge))
+
+
+DLQ_TOPIC_ICON: str = build_dlq_topic_icon()
+
+
 # ── Status badge colors & labels ─────────────────────────────────────
 # Maps status/phase/state values to (badge_color, badge_letter).
 STATUS_BADGE_MAP: dict[str, tuple[str, str]] = {

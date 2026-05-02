@@ -386,3 +386,84 @@ async def test_extract_expanded_response_format(no_sleep):
     assert conn.qualified_name == "postgres-source"
     assert conn.attributes["direction"] == "source"
     assert conn.attributes["state"] == "RUNNING"
+
+
+@respx.mock
+async def test_extract_emits_dlq_topic_for_sink_with_id(no_sleep):
+    """A sink connector with `confluent_id=lcc-XXX` emits a placeholder
+    `dlq-lcc-XXX` topic + PRODUCES edge so DLQ topics aren't orphan nodes
+    in the graph after kafka_admin lists them."""
+    expanded = {
+        "my-sink": {
+            "info": {
+                "name": "my-sink",
+                "config": {
+                    "connector.class": "io.confluent.connect.s3.S3SinkConnector",
+                    "topics": "orders",
+                    "s3.bucket.name": "my-bucket",
+                },
+                "type": "sink",
+            },
+            "status": {"name": "my-sink", "connector": {"state": "RUNNING"}, "tasks": []},
+            "id": {"id": "lcc-7w7m2w", "id_type": "ID"},
+        }
+    }
+    respx.get(f"{BASE_URL}{CONNECTORS_PATH}").mock(
+        return_value=httpx.Response(200, json=expanded),
+    )
+
+    async with _make_client() as client:
+        nodes, edges = await client.extract()
+
+    conn = next(n for n in nodes if n.node_type == NodeType.CONNECTOR)
+    assert conn.attributes["confluent_id"] == "lcc-7w7m2w"
+
+    dlq = next(
+        (
+            n for n in nodes
+            if n.node_type == NodeType.KAFKA_TOPIC and n.qualified_name.startswith("dlq-")
+        ),
+        None,
+    )
+    assert dlq is not None, "expected DLQ topic placeholder"
+    assert dlq.qualified_name == "dlq-lcc-7w7m2w"
+    assert dlq.attributes["role"] == "dlq"
+    assert dlq.attributes["for_connector"] == "my-sink"
+
+    dlq_edges = [e for e in edges if e.dst_id == dlq.node_id]
+    assert len(dlq_edges) == 1
+    assert dlq_edges[0].src_id == conn.node_id
+    assert dlq_edges[0].edge_type == EdgeType.PRODUCES
+
+
+@respx.mock
+async def test_extract_does_not_emit_dlq_for_source_connectors(no_sleep):
+    """Source connectors don't have auto-provisioned DLQ topics in Confluent
+    Cloud, so we mustn't inject phantom `dlq-lcc-*` placeholder nodes for
+    them — kafka_admin would never find a real topic to merge with."""
+    expanded = {
+        "datagen-orders": {
+            "info": {
+                "name": "datagen-orders",
+                "config": {
+                    "connector.class": "DatagenSource",
+                    "kafka.topic": "orders",
+                },
+                "type": "source",
+            },
+            "status": {"name": "datagen-orders", "connector": {"state": "RUNNING"}, "tasks": []},
+            "id": {"id": "lcc-yrxwvj", "id_type": "ID"},
+        }
+    }
+    respx.get(f"{BASE_URL}{CONNECTORS_PATH}").mock(
+        return_value=httpx.Response(200, json=expanded),
+    )
+
+    async with _make_client() as client:
+        nodes, _edges = await client.extract()
+
+    dlq_nodes = [
+        n for n in nodes
+        if n.node_type == NodeType.KAFKA_TOPIC and n.qualified_name.startswith("dlq-")
+    ]
+    assert dlq_nodes == [], "source connector must not emit a DLQ placeholder"

@@ -16,6 +16,7 @@ from lineage_bridge.models.graph import (
     NodeType,
 )
 from lineage_bridge.ui.styles import (
+    DLQ_TOPIC_ICON,
     EDGE_TYPE_LABELS,
     TOPIC_WITH_SCHEMA_ICON,
     build_confluent_cloud_url,
@@ -23,6 +24,7 @@ from lineage_bridge.ui.styles import (
     build_node_vis_props,
     build_status_badge_icon,
     color_for_node,
+    icon_for_node,
     label_for_node,
 )
 
@@ -341,6 +343,12 @@ def render_graph(
             node.url = build_confluent_cloud_url(node)
 
         vis_props = build_node_vis_props(node.node_type)
+        vis_props["image"] = icon_for_node(node)
+        if (
+            node.node_type == NodeType.KAFKA_TOPIC
+            and node.attributes.get("role") == "dlq"
+        ):
+            vis_props["image"] = DLQ_TOPIC_ICON
         agraph_nodes.append(
             Node(
                 id=node.node_id,
@@ -563,10 +571,20 @@ def render_graph_raw(
             node.url = build_confluent_cloud_url(node)
 
         vis_props = build_node_vis_props(node.node_type)
+        # Per-catalog brand icon (UC / Glue / BigQuery / DataZone) — without
+        # this, all CATALOG_TABLE nodes get the generic database icon, so e.g.
+        # AWS Glue tables look identical to Unity Catalog tables in the graph.
+        vis_props["image"] = icon_for_node(node)
 
         # Use schema-badged icon for topics with schemas
         if node.node_type == NodeType.KAFKA_TOPIC and node.node_id in topics_with_schemas:
             vis_props["image"] = TOPIC_WITH_SCHEMA_ICON
+
+        # DLQ-badged icon for connector dead-letter-queue topics. Wins over
+        # the schema badge — DLQ status is the more important visual cue and
+        # DLQ topics rarely carry user schemas.
+        if node.node_type == NodeType.KAFKA_TOPIC and node.attributes.get("role") == "dlq":
+            vis_props["image"] = DLQ_TOPIC_ICON
 
         # Status badge for nodes with phase/state
         status = node.attributes.get("phase") or node.attributes.get("state")
