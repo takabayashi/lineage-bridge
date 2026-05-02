@@ -773,7 +773,8 @@ class TestBuildTooltipFlinkJob:
             },
         )
         tip = _build_tooltip(node)
-        assert "Phase: RUNNING" in tip
+        # Status now lives in the pill (header) instead of as "Phase: X" line
+        assert "RUNNING" in tip
         assert "Pool: lfcp-abc123" in tip
         assert "Principal: sa-12345" in tip
 
@@ -789,7 +790,7 @@ class TestBuildTooltipKsqldbQuery:
             attributes={"state": "RUNNING", "ksqldb_cluster_id": "lksqlc-abc"},
         )
         tip = _build_tooltip(node)
-        assert "State: RUNNING" in tip
+        assert "RUNNING" in tip
         assert "Cluster: lksqlc-abc" in tip
 
 
@@ -808,7 +809,7 @@ class TestBuildTooltipTableflowTable:
             },
         )
         tip = _build_tooltip(node)
-        assert "Phase: Stable" in tip
+        assert "Stable" in tip
         assert "ICEBERG" in tip
         assert "DELTA" in tip
         assert "Storage: S3" in tip
@@ -853,7 +854,7 @@ class TestBuildTooltipConsumerGroup:
             attributes={"state": "STABLE", "is_simple": True},
         )
         tip = _build_tooltip(node)
-        assert "State: STABLE" in tip
+        assert "STABLE" in tip
         assert "Simple consumer" in tip
 
 

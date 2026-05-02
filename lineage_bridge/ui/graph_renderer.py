@@ -43,19 +43,54 @@ def _short_name(node: LineageNode) -> str:
     return name
 
 
+_STATUS_COLORS = {
+    "RUNNING": ("#4CAF50", "▶"),
+    "ACTIVE": ("#4CAF50", "▶"),
+    "STABLE": ("#4CAF50", "▶"),
+    "Stable": ("#4CAF50", "▶"),
+    "COMPLETED": ("#1976D2", "✓"),
+    "PAUSED": ("#FF9800", "⏸"),
+    "DEGRADED": ("#FF9800", "!"),
+    "REBALANCING": ("#FF9800", "~"),
+    "FAILED": ("#F44336", "✕"),
+    "ERROR": ("#F44336", "✕"),
+    "STOPPED": ("#F44336", "■"),
+    "SUSPENDED": ("#F44336", "■"),
+    "UNKNOWN": ("#9E9E9E", "?"),
+}
+
+
 def _build_tooltip(node: LineageNode) -> str:
     """Build an HTML tooltip card for a node.
 
-    The vis.js component converts HTML strings (starting with ``<``)
-    to DOM elements so they render as rich tooltips.  Each node type
-    surfaces the most relevant quick-view info; SQL is intentionally
-    omitted (too noisy for hover).
+    Renders inside the vis.js iframe, which has its own light/dark stylesheet
+    keyed on ``body.dark`` (see `components/visjs_graph/index.html`). Tooltip
+    uses CSS classes so colours adapt with the theme — was hardcoded ``#fff``
+    background and ``#222`` text, which made it unreadable on dark mode.
     """
     label = label_for_node(node)
     color = color_for_node(node)
     a = node.attributes
+    ntype = node.node_type
 
-    # ── Location row (prefer names over IDs) ───────────────────────
+    # ── Status pill (when the node has a phase/state) ──────────────
+    status_value = a.get("phase") or a.get("state")
+    if not status_value and a.get("suspended"):
+        status_value = "SUSPENDED"
+    status_html = ""
+    if status_value:
+        s_color, s_mark = _STATUS_COLORS.get(
+            status_value,
+            _STATUS_COLORS.get(str(status_value).upper(), ("#9E9E9E", "·")),
+        )
+        status_html = (
+            f"<span class='lb-tt-status' "
+            f"style='background:{s_color}1f;color:{s_color};border:1px solid {s_color}55'>"
+            f"{s_mark} {status_value}"
+            f"</span>"
+        )
+
+    # ── Location row ───────────────────────────────────────────────
     loc_parts: list[str] = []
     if node.environment_name or node.environment_id:
         loc_parts.append(node.environment_name or node.environment_id)
@@ -63,58 +98,67 @@ def _build_tooltip(node: LineageNode) -> str:
         loc_parts.append(node.cluster_name or node.cluster_id)
     loc_html = ""
     if loc_parts:
-        loc_html = (
-            f"<div style='font-size:11px;color:#999;margin-top:4px'>{' / '.join(loc_parts)}</div>"
-        )
+        loc_html = f"<div class='lb-tt-loc'>{' / '.join(loc_parts)}</div>"
 
     # ── Tags row ────────────────────────────────────────────────────
     tags_html = ""
     if node.tags:
         pills = " ".join(
-            f"<span style='display:inline-block;background:{color}20;"
-            f"color:{color};padding:1px 6px;border-radius:3px;"
-            f"font-size:10px;margin-right:2px'>{t}</span>"
+            f"<span class='lb-tt-tag' style='background:{color}22;color:{color}'>{t}</span>"
             for t in node.tags
         )
-        tags_html = f"<div style='margin-top:5px'>{pills}</div>"
+        tags_html = f"<div class='lb-tt-tags'>{pills}</div>"
 
     # ── Metrics bar (topics & connectors) ───────────────────────────
-    metrics_html = ""
     metric_parts: list[str] = []
     if a.get("metrics_active") is not None:
         active = a["metrics_active"]
         dot = "#4CAF50" if active else "#F44336"
         metric_parts.append(
-            f"<span style='display:inline-block;width:7px;height:7px;"
-            f"border-radius:50%;background:{dot};margin-right:3px;"
-            f"vertical-align:middle'></span>"
+            f"<span class='lb-tt-dot' style='background:{dot}'></span>"
             f"{'Active' if active else 'Inactive'}"
         )
-    for mkey, mlabel in [
+    for mkey, mlabel in (
         ("metrics_received_records", "In"),
         ("metrics_sent_records", "Out"),
-    ]:
+    ):
         val = a.get(mkey)
         if val:
             metric_parts.append(f"{mlabel}: {val:,.0f}")
-    for mkey, mlabel in [
+    for mkey, mlabel in (
         ("metrics_received_bytes", "Bytes In"),
         ("metrics_sent_bytes", "Bytes Out"),
-    ]:
+    ):
         val = a.get(mkey)
         if val:
             metric_parts.append(f"{mlabel}: {_fmt_bytes(val)}")
+    metrics_html = ""
     if metric_parts:
-        metrics_html = (
-            f"<div style='margin-top:5px;padding:3px 7px;"
-            f"background:rgba(0,0,0,0.05);border-radius:4px;"
-            f"font-size:11px;color:#666'>"
-            f"{' &middot; '.join(metric_parts)}</div>"
-        )
+        metrics_html = f"<div class='lb-tt-metrics'>{' · '.join(metric_parts)}</div>"
 
     # ── Type-specific detail lines ──────────────────────────────────
+    detail_lines = _build_tooltip_details(node, ntype, a)
+    details_html = ""
+    if detail_lines:
+        details_html = "<div class='lb-tt-details'>" + " · ".join(detail_lines) + "</div>"
+
+    short = _trunc(_short_name(node), 40)
+    return (
+        f"<div class='lb-tt' style='border-left-color:{color}'>"
+        f"<div class='lb-tt-head'>"
+        f"<span class='lb-tt-type' style='color:{color}'>{label}</span>"
+        f"{status_html}"
+        f"</div>"
+        f"<div class='lb-tt-name' title='{node.display_name}'>{short}</div>"
+        f"{loc_html}{tags_html}{details_html}{metrics_html}"
+        f"<div class='lb-tt-foot'>Click for details · Double-click to focus</div>"
+        f"</div>"
+    )
+
+
+def _build_tooltip_details(node: LineageNode, ntype: NodeType, a: dict) -> list[str]:
+    """Return the small ' · '-joined detail row for the tooltip body."""
     detail_lines: list[str] = []
-    ntype = node.node_type
 
     if ntype == NodeType.KAFKA_TOPIC:
         if a.get("partitions_count"):
@@ -141,33 +185,23 @@ def _build_tooltip(node: LineageNode) -> str:
             detail_lines.append(f"Format: {a['output_data_format']}")
 
     elif ntype == NodeType.FLINK_JOB:
-        if a.get("phase"):
-            detail_lines.append(f"Phase: {a['phase']}")
         if a.get("compute_pool_id"):
             detail_lines.append(f"Pool: {a['compute_pool_id']}")
         if a.get("principal"):
             detail_lines.append(f"Principal: {a['principal']}")
 
     elif ntype == NodeType.KSQLDB_QUERY:
-        if a.get("state"):
-            detail_lines.append(f"State: {a['state']}")
         if a.get("ksqldb_cluster_id"):
             detail_lines.append(f"Cluster: {a['ksqldb_cluster_id']}")
 
     elif ntype == NodeType.TABLEFLOW_TABLE:
-        if a.get("phase"):
-            detail_lines.append(f"Phase: {a['phase']}")
         if a.get("table_formats"):
             fmts = a["table_formats"]
             detail_lines.append(f"Formats: {', '.join(fmts) if isinstance(fmts, list) else fmts}")
         if a.get("storage_kind"):
             detail_lines.append(f"Storage: {a['storage_kind']}")
-        if a.get("suspended"):
-            detail_lines.append("SUSPENDED")
 
     elif ntype == NodeType.CATALOG_TABLE:
-        # Per-catalog detail rows. Falls back to a generic line if catalog_type
-        # is unknown (e.g. graph created by an older provider).
         ct = node.catalog_type
         if ct == "UNITY_CATALOG":
             if a.get("catalog_name"):
@@ -194,8 +228,6 @@ def _build_tooltip(node: LineageNode) -> str:
             detail_lines.append(f"{a['field_count']} fields")
 
     elif ntype == NodeType.CONSUMER_GROUP:
-        if a.get("state"):
-            detail_lines.append(f"State: {a['state']}")
         if a.get("is_simple"):
             detail_lines.append("Simple consumer")
 
@@ -203,30 +235,7 @@ def _build_tooltip(node: LineageNode) -> str:
         if a.get("inferred_from"):
             detail_lines.append(f"From: {a['inferred_from']}")
 
-    details_html = ""
-    if detail_lines:
-        details_html = (
-            "<div style='margin-top:5px;font-size:11px;"
-            "color:#666;line-height:1.5'>" + " &middot; ".join(detail_lines) + "</div>"
-        )
-
-    return (
-        f"<div style='font-family:Inter,system-ui,sans-serif;"
-        f"max-width:320px;padding:10px 12px;"
-        f"border-left:4px solid {color};"
-        f"background:#fff;border-radius:0 6px 6px 0;"
-        f"box-shadow:0 2px 8px rgba(0,0,0,0.18)'>"
-        f"<div style='font-size:10px;font-weight:700;"
-        f"text-transform:uppercase;letter-spacing:0.5px;"
-        f"color:{color}'>{label}</div>"
-        f"<div style='font-size:14px;font-weight:700;"
-        f"color:#222;margin-top:2px;"
-        f"overflow:hidden;text-overflow:ellipsis;"
-        f"white-space:nowrap;max-width:300px' "
-        f"title='{node.display_name}'>{_trunc(_short_name(node), 40)}</div>"
-        f"{loc_html}{tags_html}{details_html}{metrics_html}"
-        f"</div>"
-    )
+    return detail_lines
 
 
 def _fmt_bytes(val: float) -> str:

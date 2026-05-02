@@ -14,6 +14,8 @@ every push.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import streamlit as st
 
 from lineage_bridge.config.cache import update_cache
@@ -63,14 +65,20 @@ def _build_sr_endpoints(params: dict) -> dict[str, str]:
 
 
 def _ui_progress(state_key: str = "extraction_log"):
-    """Append-to-log progress callback. *state_key* is the session-state list to append to."""
+    """Append-to-log progress callback. *state_key* is the session-state list to append to.
+
+    Each entry is timestamped (`[HH:MM:SS]`) so users can see how long phases
+    took without inferring from line ordering. The `_classify_log_entry`
+    helper in `actions.py` strips the prefix before rendering.
+    """
     log = st.session_state.get(state_key)
     if log is None:
         log = []
         st.session_state[state_key] = log
 
     def on_progress(phase: str, detail: str = "") -> None:
-        log.append(f"**{phase}** {detail}")
+        ts = datetime.now().strftime("%H:%M:%S")
+        log.append(f"[{ts}] **{phase}** {detail}")
 
     return on_progress
 

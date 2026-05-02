@@ -41,6 +41,72 @@
     background: rgba(25, 118, 210, 0.08); border-radius: 3px;
     display: none; pointer-events: none; z-index: 11;
   }
+
+  /* Node tooltip — theme-aware (was hardcoded white background). */
+  .lb-tt {
+    font-family: Inter, system-ui, sans-serif;
+    max-width: 320px;
+    padding: 10px 12px;
+    border-left: 4px solid #1976D2;
+    background: #ffffff; color: #222;
+    border-radius: 0 6px 6px 0;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.18);
+  }
+  body.dark .lb-tt {
+    background: #1e1e1e; color: #e8e8e8;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.6);
+  }
+  .lb-tt-head { display: flex; align-items: center; gap: 6px; }
+  .lb-tt-type {
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .lb-tt-status {
+    font-size: 9.5px; font-weight: 600;
+    padding: 1px 6px; border-radius: 10px;
+    line-height: 1.4;
+    margin-left: auto;
+  }
+  .lb-tt-name {
+    font-size: 14px; font-weight: 700;
+    color: inherit; margin-top: 2px;
+    overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; max-width: 300px;
+  }
+  .lb-tt-loc {
+    font-size: 11px; color: #777; margin-top: 4px;
+  }
+  body.dark .lb-tt-loc { color: #9e9e9e; }
+  .lb-tt-tags { margin-top: 5px; }
+  .lb-tt-tag {
+    display: inline-block;
+    padding: 1px 6px; border-radius: 3px;
+    font-size: 10px; margin-right: 2px;
+  }
+  .lb-tt-details {
+    margin-top: 5px; font-size: 11px;
+    color: #666; line-height: 1.5;
+  }
+  body.dark .lb-tt-details { color: #b0b0b0; }
+  .lb-tt-metrics {
+    margin-top: 5px; padding: 3px 7px;
+    background: rgba(0,0,0,0.05); border-radius: 4px;
+    font-size: 11px; color: #555;
+  }
+  body.dark .lb-tt-metrics {
+    background: rgba(255,255,255,0.06); color: #c0c0c0;
+  }
+  .lb-tt-dot {
+    display: inline-block; width: 7px; height: 7px;
+    border-radius: 50%; margin-right: 3px;
+    vertical-align: middle;
+  }
+  .lb-tt-foot {
+    margin-top: 8px; padding-top: 6px;
+    border-top: 1px solid rgba(128,128,128,0.18);
+    font-size: 10px; color: #999;
+    text-align: right; font-style: italic;
+  }
 </style>
 </head>
 <body>

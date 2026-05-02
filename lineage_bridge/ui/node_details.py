@@ -19,11 +19,14 @@ Phase D redesign:
 
 from __future__ import annotations
 
+from collections import defaultdict
+
 import streamlit as st
 
-from lineage_bridge.models.graph import EdgeType, LineageGraph, NodeType
+from lineage_bridge.models.graph import EdgeType, LineageGraph, LineageNode, NodeType
 from lineage_bridge.ui.styles import (
     NODE_TYPE_EMOJI,
+    NODE_TYPE_LABELS,
     build_node_url,
     color_for_node,
     label_for_node,
@@ -63,22 +66,30 @@ def render_node_details(graph: LineageGraph) -> None:
 
     ntype_label = label_for_node(sel_node)
     ncolor = color_for_node(sel_node)
+    a = sel_node.attributes
+    cloud_url = sel_node.url or build_node_url(sel_node)
+    ntype = sel_node.node_type
+    type_icon = NODE_TYPE_EMOJI.get(ntype, "•")
 
-    # ── Header (with close-X) ────────────────────────────────────
-    h_left, h_right = st.columns([6, 1])
+    # ── Header: type icon + name + status pill + close-X ─────────
+    status_value = a.get("phase") or a.get("state")
+    if not status_value and a.get("suspended"):
+        status_value = "SUSPENDED"
+    status_pill = render_status_badge_html(status_value) if status_value else ""
+
+    h_left, h_right = st.columns([8, 1])
     with h_left:
         st.markdown(
-            f"<div style='background:linear-gradient(135deg,"
-            f" {ncolor}22 0%, {ncolor}08 100%);"
-            f" border-left:4px solid {ncolor};"
-            f" border-radius:0 8px 8px 0;"
-            f" padding:12px 14px;'>"
-            f"<div style='font-size:11px; color:{ncolor};"
-            f" font-weight:600; text-transform:uppercase;"
-            f" letter-spacing:0.5px;'>{ntype_label}</div>"
-            f"<div style='font-size:16px; font-weight:700;"
-            f" color:inherit; margin-top:2px;'>"
-            f"{sel_node.display_name}</div>"
+            f"<div class='detail-head' style='border-left-color:{ncolor};"
+            f"background:linear-gradient(135deg, {ncolor}22 0%, {ncolor}08 100%);'>"
+            f"<div class='detail-head-row'>"
+            f"<span class='detail-head-icon' style='color:{ncolor}'>{type_icon}</span>"
+            f"<span class='detail-head-type' style='color:{ncolor}'>{ntype_label}</span>"
+            f"<span class='detail-head-status'>{status_pill}</span>"
+            f"</div>"
+            f"<div class='detail-head-name' title='{sel_node.display_name}'>"
+            f"{sel_node.display_name}"
+            f"</div>"
             f"</div>",
             unsafe_allow_html=True,
         )
@@ -88,29 +99,45 @@ def render_node_details(graph: LineageGraph) -> None:
             st.session_state.selected_node = None
             st.rerun()
 
-    a = sel_node.attributes
-    cloud_url = sel_node.url or build_node_url(sel_node)
-    ntype = sel_node.node_type
+    # ── Action toolbar ───────────────────────────────────────────
+    _render_action_toolbar(sel_node, sel_id, cloud_url)
 
     # ── 1. Identity ──────────────────────────────────────────────
-    st.markdown(f"**Qualified Name**  \n`{sel_node.qualified_name}`")
+    # Qualified name + Node ID rendered as small <code> blocks with
+    # word-break so long names don't blow out the panel width.
+    st.markdown(
+        f"<div class='detail-id-block'>"
+        f"<div class='detail-id-label'>Qualified name</div>"
+        f"<code class='detail-id-code'>{sel_node.qualified_name}</code>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
     if cloud_url:
         st.markdown(
-            f"**ID:** <a href='{cloud_url}' target='_blank' "
-            f"style='color:{ncolor};text-decoration:none;'>"
-            f"<code>{sel_node.node_id}</code> &#x2197;</a>",
+            f"<div class='detail-id-block'>"
+            f"<div class='detail-id-label'>Node ID</div>"
+            f"<a href='{cloud_url}' target='_blank' class='detail-id-link' "
+            f"style='color:{ncolor}'>"
+            f"<code class='detail-id-code'>{sel_node.node_id}</code>"
+            f" &#x2197;</a>"
+            f"</div>",
             unsafe_allow_html=True,
         )
     else:
-        st.markdown(f"**ID:** `{sel_node.node_id}`")
-    st.markdown(f"**System:** {sel_node.system.value}")
-    seen_parts = []
+        st.markdown(
+            f"<div class='detail-id-block'>"
+            f"<div class='detail-id-label'>Node ID</div>"
+            f"<code class='detail-id-code'>{sel_node.node_id}</code>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+    seen_parts = [f"System: {sel_node.system.value}"]
     if sel_node.first_seen:
-        seen_parts.append(f"First seen: {sel_node.first_seen:%Y-%m-%d %H:%M}")
+        seen_parts.append(f"First seen {sel_node.first_seen:%Y-%m-%d %H:%M}")
     if sel_node.last_seen:
-        seen_parts.append(f"Last seen: {sel_node.last_seen:%Y-%m-%d %H:%M}")
-    if seen_parts:
-        st.caption(" | ".join(seen_parts))
+        seen_parts.append(f"Last seen {sel_node.last_seen:%Y-%m-%d %H:%M}")
+    st.caption(" · ".join(seen_parts))
 
     # ── 2. Tags (moved up to live next to identity) ──────────────
     if sel_node.tags:
@@ -213,17 +240,43 @@ def render_node_details(graph: LineageGraph) -> None:
     # ── 8. Other attributes (catch-all) ──────────────────────────
     _render_other_attributes(a)
 
-    # ── 9. Actions ───────────────────────────────────────────────
-    st.markdown("---")
-    if st.button(
-        "Focus on this node",
-        key="focus_btn",
-        type="primary",
-        width="stretch",
-        help="Zoom the graph to this node's neighborhood",
-    ):
-        st.session_state.focus_node = sel_id
-        st.rerun()
+    # Actions live in the action toolbar at the top — no second action row
+    # needed here. Keeping this section anchor for future-only additions.
+
+
+def _render_action_toolbar(sel_node: LineageNode, sel_id: str, cloud_url: str | None) -> None:
+    """Toolbar of compact actions: Focus / Copy ID / Copy URL / Open."""
+    is_focused = st.session_state.get("focus_node") == sel_id
+    cols = st.columns(4 if cloud_url else 3)
+
+    with cols[0]:
+        focus_label = "Unfocus" if is_focused else "Focus"
+        if st.button(
+            focus_label,
+            key="action_focus",
+            width="stretch",
+            type="primary" if not is_focused else "secondary",
+            help="Zoom the graph to this node's neighborhood",
+        ):
+            st.session_state.focus_node = None if is_focused else sel_id
+            st.rerun()
+
+    with cols[1], st.popover("Copy ID", use_container_width=True):
+        st.caption("Copy from the box below.")
+        st.code(sel_id, language="text")
+
+    with cols[2], st.popover("Copy name", use_container_width=True):
+        st.caption("Copy from the box below.")
+        st.code(sel_node.qualified_name, language="text")
+
+    if cloud_url:
+        with cols[3]:
+            st.link_button(
+                "Open ↗",
+                url=cloud_url,
+                width="stretch",
+                help="Open this resource in its source console",
+            )
 
 
 def _render_type_specific(
@@ -486,8 +539,16 @@ def _render_topic_schemas(graph: LineageGraph, sel_id: str, ncolor: str) -> None
                 st.code(schema_str, language=lang)
 
 
+_NEIGHBOUR_GROUP_THRESHOLD = 6
+
+
 def _render_neighbours(graph: LineageGraph, sel_id: str) -> None:
-    """Upstream / downstream neighbour buttons with type icons."""
+    """Upstream / downstream neighbour buttons with type icons.
+
+    When a side has more than _NEIGHBOUR_GROUP_THRESHOLD neighbours, group
+    them by node type into collapsible expanders so a topic with 80
+    consumers doesn't flood the panel with 80 buttons.
+    """
     _exclude = {NodeType.SCHEMA, NodeType.CONSUMER_GROUP}
     upstream = [
         n for n in graph.get_neighbors(sel_id, direction="upstream") if n.node_type not in _exclude
@@ -501,34 +562,49 @@ def _render_neighbours(graph: LineageGraph, sel_id: str) -> None:
     st.markdown("---")
     nb_col1, nb_col2 = st.columns(2)
     with nb_col1:
-        st.markdown(f"**Upstream ({len(upstream)})**")
-        if upstream:
-            for nb in upstream:
-                icon = NODE_TYPE_EMOJI.get(nb.node_type, "•")
-                if st.button(
-                    f"{icon}  {nb.display_name}",
-                    key=f"nb_up_{nb.node_id}",
-                    width="stretch",
-                ):
-                    st.session_state.selected_node = nb.node_id
-                    st.rerun()
-        else:
-            st.caption("None")
-
+        _render_neighbour_side("up", "Upstream", upstream)
     with nb_col2:
-        st.markdown(f"**Downstream ({len(downstream)})**")
-        if downstream:
-            for nb in downstream:
-                icon = NODE_TYPE_EMOJI.get(nb.node_type, "•")
-                if st.button(
-                    f"{icon}  {nb.display_name}",
-                    key=f"nb_dn_{nb.node_id}",
-                    width="stretch",
-                ):
-                    st.session_state.selected_node = nb.node_id
-                    st.rerun()
-        else:
-            st.caption("None")
+        _render_neighbour_side("dn", "Downstream", downstream)
+
+
+def _render_neighbour_side(prefix: str, title: str, neighbours: list[LineageNode]) -> None:
+    """Render one column of neighbours: flat list if short, grouped if long."""
+    st.markdown(f"**{title} ({len(neighbours)})**")
+    if not neighbours:
+        st.caption("None")
+        return
+
+    if len(neighbours) <= _NEIGHBOUR_GROUP_THRESHOLD:
+        for nb in neighbours:
+            _render_neighbour_button(prefix, nb)
+        return
+
+    # Group by NodeType for long lists. Each type group becomes an expander
+    # so the whole panel stays scannable even at 80+ neighbours.
+    grouped: dict[NodeType, list[LineageNode]] = defaultdict(list)
+    for nb in neighbours:
+        grouped[nb.node_type].append(nb)
+
+    # Show largest groups first so the most-relevant ones are at the top.
+    sorted_groups = sorted(grouped.items(), key=lambda kv: -len(kv[1]))
+    for ntype, group in sorted_groups:
+        icon = NODE_TYPE_EMOJI.get(ntype, "•")
+        type_label = NODE_TYPE_LABELS.get(ntype, ntype.value)
+        with st.expander(f"{icon} {type_label} ({len(group)})", expanded=False):
+            for nb in group:
+                _render_neighbour_button(prefix, nb)
+
+
+def _render_neighbour_button(prefix: str, nb: LineageNode) -> None:
+    """One button — clicking sets selected_node to the neighbour."""
+    icon = NODE_TYPE_EMOJI.get(nb.node_type, "•")
+    if st.button(
+        f"{icon}  {nb.display_name}",
+        key=f"nb_{prefix}_{nb.node_id}",
+        width="stretch",
+    ):
+        st.session_state.selected_node = nb.node_id
+        st.rerun()
 
 
 # Keys consumed by the explicit type-specific branches above. Anything not
@@ -591,9 +667,33 @@ _KNOWN_KEYS: frozenset[str] = frozenset(
 
 
 def _render_other_attributes(a: dict) -> None:
-    """Catch-all expander for attributes not explicitly handled above."""
+    """Catch-all expander for attributes not explicitly handled above.
+
+    Scalars render as a key/value table; nested dicts/lists render as a
+    pretty-printed JSON code block so structure is readable instead of
+    collapsed into a single ``str()`` line.
+    """
     extra = {k: v for k, v in a.items() if k not in _KNOWN_KEYS}
     if not extra:
         return
-    with st.expander("Other attributes", expanded=False):
-        st.table([{"Key": k, "Value": str(v)} for k, v in extra.items()])
+
+    scalars: dict[str, str] = {}
+    nested: dict[str, object] = {}
+    for k, v in extra.items():
+        if isinstance(v, (dict, list)) and v:
+            nested[k] = v
+        else:
+            scalars[k] = "—" if v is None else str(v)
+
+    with st.expander(f"Other attributes ({len(extra)})", expanded=False):
+        if scalars:
+            st.table([{"Key": k, "Value": v} for k, v in scalars.items()])
+        for k, v in nested.items():
+            st.caption(f"**{k}**")
+            try:
+                import json as _json
+
+                rendered = _json.dumps(v, indent=2, default=str)
+            except (TypeError, ValueError):
+                rendered = str(v)
+            st.code(rendered, language="json")

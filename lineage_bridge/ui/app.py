@@ -21,6 +21,7 @@ from lineage_bridge.ui.graph_renderer import (
     _compute_dag_layout,
     render_graph_raw,
 )
+from lineage_bridge.ui.logs import render_logs_drawer
 from lineage_bridge.ui.node_details import render_node_details
 from lineage_bridge.ui.sidebar import _render_sidebar
 from lineage_bridge.ui.state import ensure_defaults, load_cached_selections
@@ -299,6 +300,12 @@ def _handle_graph_click(payload) -> None:
 
 _render_sidebar()
 _render_main_area()
+
+# ── Activity log (bottom drawer) ──────────────────────────────────────
+# One home for both extraction and push logs; collapses to a compact
+# summary strip when not in active use. Only renders when at least one
+# of the logs has content.
+render_logs_drawer()
 
 # ── Footer ────────────────────────────────────────────────────────────
 # Hidden on the empty state so it doesn't compete with the primary CTA

@@ -247,10 +247,8 @@ def _render_sidebar_actions() -> None:
             except Exception as exc:
                 status.update(label=f"Failed: {exc}", state="error")
 
-    # Persisted extraction log (always its own list — never overwritten by push)
-    if st.session_state.get("extraction_log"):
-        with st.expander("Extraction log", expanded=False):
-            _render_log("extraction_log")
+    # Logs render in the bottom drawer (see lineage_bridge/ui/logs.py); no
+    # in-sidebar expander any more — the sidebar is too narrow for them.
 
 
 # ── publish (single panel for all targets) ──────────────────────────────
@@ -292,9 +290,7 @@ def _render_sidebar_publish() -> None:
     for t in targets:
         _render_publish_row(settings, graph, t)
 
-    if st.session_state.get("push_log"):
-        with st.expander("Push log", expanded=False):
-            _render_log("push_log")
+    # Push log renders in the bottom drawer (see lineage_bridge/ui/logs.py).
 
 
 def _render_publish_row(settings, graph: LineageGraph, t: _PublishTarget) -> None:
@@ -554,68 +550,6 @@ def _google_target(settings, graph: LineageGraph) -> _PublishTarget:
     )
 
 
-# ── log rendering (shared) ──────────────────────────────────────────────
-
-
-def _classify_log_entry(line: str) -> tuple[str, str, str]:
-    """Classify a log line into (css_class, icon, cleaned_text)."""
-    text = line
-    label = ""
-    if text.startswith("**"):
-        end = text.find("**", 2)
-        if end > 2:
-            label = text[2:end]
-            text = text[end + 2 :].strip()
-
-    label_lower = label.lower()
-    if "warning" in label_lower:
-        return "log-warning", "⚠", text
-    if "skip" in label_lower:
-        return "log-skip", "⏭", text
-    if "phase" in label_lower:
-        return "log-phase", "▶", text
-    if "discover" in label_lower:
-        return "log-discovery", "\U0001f50d", text
-    if "provision" in label_lower:
-        return "log-provision", "\U0001f511", text
-    return "log-phase", "•", text
-
-
-def _render_log(state_key: str) -> None:
-    """Render a log list (`state_key` is `extraction_log` or `push_log`)."""
-    lines = st.session_state.get(state_key, [])
-    if not lines:
-        st.caption("Empty.")
-        return
-    html_parts = []
-    for line in lines:
-        css_class, icon, text = _classify_log_entry(line)
-        label = ""
-        if line.startswith("**"):
-            end = line.find("**", 2)
-            if end > 2:
-                label = line[2:end]
-        label_html = f"<span class='log-label'>{label}</span>" if label else ""
-        html_parts.append(
-            f"<div class='log-entry {css_class}'>"
-            f"<span class='log-icon'>{icon}</span>"
-            f"<span class='log-text'>{label_html}{text}</span>"
-            f"</div>"
-        )
-    st.markdown("".join(html_parts), unsafe_allow_html=True)
-
-    # Copy / download for bug reports
-    log_text = "\n".join(lines)
-    st.download_button(
-        "Download log",
-        data=log_text,
-        file_name=f"{state_key}.txt",
-        mime="text/plain",
-        key=f"download_{state_key}",
-        width="stretch",
-    )
-
-
 # ── load data ──────────────────────────────────────────────────────────
 
 
@@ -665,12 +599,14 @@ def _render_sidebar_load_data() -> None:
 
 
 def _render_extraction_log() -> None:
-    """Backwards-compat alias (used by older test fixtures)."""
-    _render_log("extraction_log")
+    """Backwards-compat alias — log now renders in the bottom drawer."""
+    from lineage_bridge.ui.logs import render_logs_drawer
+
+    render_logs_drawer()
 
 
 def _render_sidebar_push_log() -> None:
-    """Backwards-compat alias — push log now renders inside `_render_sidebar_publish`."""
-    if st.session_state.get("push_log"):
-        with st.expander("Push log", expanded=False):
-            _render_log("push_log")
+    """Backwards-compat alias — log now renders in the bottom drawer."""
+    from lineage_bridge.ui.logs import render_logs_drawer
+
+    render_logs_drawer()

@@ -136,20 +136,64 @@ section[data-testid="stSidebar"] > div:first-child {
     background: rgba(128,128,128,0.1); padding: 2px 8px; border-radius: 4px;
 }
 
-/* Extraction log entries */
-.log-entry {
-    display: flex; align-items: flex-start; gap: 6px;
-    padding: 4px 8px; margin: 2px 0; border-radius: 4px;
-    font-size: 0.8rem; line-height: 1.4;
+/* Extraction log — entries, toolbar, severity colours */
+.log-list {
+    max-height: 360px; overflow-y: auto;
+    padding-right: 4px; margin-top: 4px;
+    border: 1px solid rgba(128,128,128,0.10);
+    border-radius: 6px;
+    background: rgba(128,128,128,0.025);
+    padding: 6px 4px;
 }
-.log-phase { background: rgba(33,150,243,0.08); color: #1976D2; }
-.log-discovery { background: rgba(76,175,80,0.08); color: #388E3C; }
-.log-warning { background: rgba(255,152,0,0.1); color: #E65100; }
-.log-skip { background: rgba(158,158,158,0.1); color: #757575; }
-.log-provision { background: rgba(156,39,176,0.08); color: #7B1FA2; }
-.log-icon { flex-shrink: 0; font-size: 0.85rem; }
-.log-text { flex: 1; }
+.log-entry {
+    display: grid;
+    grid-template-columns: auto 18px 1fr;
+    align-items: baseline; gap: 6px;
+    padding: 3px 8px; margin: 2px 0; border-radius: 4px;
+    font-size: 0.78rem; line-height: 1.45;
+    border-left: 3px solid transparent;
+}
+.log-time {
+    font-family: 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 0.7rem; color: #999;
+    min-width: 56px;
+}
+.log-phase { background: rgba(33,150,243,0.06); color: #1976D2; border-left-color: rgba(33,150,243,0.30); }
+.log-discovery { background: rgba(76,175,80,0.06); color: #388E3C; border-left-color: rgba(76,175,80,0.30); }
+.log-warning { background: rgba(255,152,0,0.12); color: #E65100; border-left-color: rgba(255,152,0,0.55); }
+.log-error { background: rgba(244,67,54,0.12); color: #B71C1C; border-left-color: rgba(244,67,54,0.6); font-weight: 500; }
+.log-skip { background: rgba(158,158,158,0.10); color: #757575; border-left-color: rgba(158,158,158,0.35); }
+.log-provision { background: rgba(156,39,176,0.06); color: #7B1FA2; border-left-color: rgba(156,39,176,0.30); }
+.log-icon { flex-shrink: 0; font-size: 0.85rem; text-align: center; }
+.log-text { flex: 1; word-break: break-word; }
 .log-label { font-weight: 600; margin-right: 4px; }
+.log-summary {
+    font-size: 0.72rem; color: #888;
+    padding: 2px 4px;
+    margin: 4px 0 2px;
+}
+.log-summary-alert { color: #E65100; font-weight: 600; }
+
+/* Bottom-drawer activity log (Phase: logs-drawer) */
+.logs-anchor { margin-top: 1.5rem; }
+.logs-summary {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin: 0 0 8px 0; font-size: 0.85rem;
+    align-items: center;
+}
+.logs-summary-alert .logs-summary-pill { border-color: rgba(255,152,0,0.4); }
+.logs-summary-pill {
+    padding: 4px 10px; border-radius: 12px;
+    background: rgba(128,128,128,0.08);
+    border: 1px solid rgba(128,128,128,0.18);
+    line-height: 1.5;
+}
+.logs-summary-pill strong {
+    font-weight: 600; margin-right: 4px;
+}
+.logs-alert {
+    color: #E65100; font-weight: 600;
+}
 
 /* Compact legend grid */
 .legend-grid {
@@ -292,6 +336,50 @@ section[data-testid="stSidebar"] > div:first-child {
 .watcher-event-scope {
     font-size: 0.72rem; color: #999; white-space: nowrap;
 }
+
+/* Detail panel header (Phase D / logs+details refresh) */
+.detail-head {
+    border-left: 4px solid #1976D2;
+    border-radius: 0 8px 8px 0;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+}
+.detail-head-row {
+    display: flex; align-items: center; gap: 6px;
+    flex-wrap: wrap;
+}
+.detail-head-icon {
+    font-size: 1.05rem; line-height: 1;
+}
+.detail-head-type {
+    font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px;
+}
+.detail-head-status { margin-left: auto; }
+.detail-head-name {
+    font-size: 16px; font-weight: 700;
+    color: inherit; margin-top: 4px;
+    word-break: break-all; line-height: 1.3;
+}
+.detail-id-block { margin: 6px 0; }
+.detail-id-label {
+    font-size: 11px; font-weight: 600;
+    color: #888; text-transform: uppercase; letter-spacing: 0.4px;
+    margin-bottom: 2px;
+}
+.detail-id-code {
+    display: inline-block; word-break: break-all;
+    font-size: 0.78rem;
+    background: rgba(128,128,128,0.10);
+    padding: 2px 6px; border-radius: 4px;
+    line-height: 1.5;
+    max-width: 100%;
+}
+.detail-id-link {
+    text-decoration: none;
+    word-break: break-all;
+}
+.detail-id-link:hover .detail-id-code { background: rgba(128,128,128,0.18); }
 
 /* Footer */
 .app-footer {
