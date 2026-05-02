@@ -479,6 +479,32 @@ STATUS_BADGE_MAP: dict[str, tuple[str, str]] = {
 }
 
 
+def render_status_badge_html(status: str | None) -> str:
+    """Return inline HTML for a phase/state pill, sourced from STATUS_BADGE_MAP.
+
+    Single source of truth — node_details previously hardcoded
+    ``"#4CAF50" if phase == "RUNNING" else "#FF9800"`` six places, which
+    drifted from STATUS_BADGE_MAP every time the latter changed.
+    """
+    if not status:
+        return ""
+    badge_info = STATUS_BADGE_MAP.get(status, STATUS_BADGE_MAP.get(status.upper()))
+    if badge_info is None:
+        return (
+            f"<span style='display:inline-block;padding:2px 8px;border-radius:10px;"
+            f"background:rgba(158,158,158,0.15);color:#757575;font-size:0.78rem;"
+            f"font-weight:600;'>{status}</span>"
+        )
+    color, mark = badge_info
+    return (
+        f"<span style='display:inline-flex;align-items:center;gap:4px;"
+        f"padding:2px 8px;border-radius:10px;background:{color}22;color:{color};"
+        f"font-size:0.78rem;font-weight:600;'>"
+        f"<span style='font-size:0.78rem'>{mark}</span>{status}"
+        f"</span>"
+    )
+
+
 # Cache for status-badged icons: (node_type, status) -> data URI
 _status_icon_cache: dict[tuple[NodeType, str], str] = {}
 

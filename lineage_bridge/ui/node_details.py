@@ -1,6 +1,21 @@
 # Copyright 2026 Daniel Takabayashi
 # Licensed under the Apache License, Version 2.0
-"""Node detail panel rendering for the LineageBridge UI."""
+"""Node detail panel rendering for the LineageBridge UI.
+
+Phase D redesign:
+- Single dismiss action (top-right "Close" only; "Clear selection" at the
+  bottom was removed — same effect, two locations was confusing).
+- Section order: Identity → Location → Type-specific → Tags → Metrics →
+  Schemas → Neighbours → Other Attributes → Actions. Tags and metrics now
+  sit next to identity instead of after a long scroll past neighbours.
+- Status pills (RUNNING/PAUSED/FAILED…) route through one
+  `render_status_badge_html` in `styles.py` instead of six separate inline
+  ternaries that drifted from `STATUS_BADGE_MAP` every time it changed.
+- Neighbour buttons show a unicode marker for the neighbour's node type so
+  users can tell topic/connector/Flink apart at a glance.
+- "Open in <catalog>" deep-link surfaces a hint when unavailable instead of
+  silently disappearing.
+"""
 
 from __future__ import annotations
 
@@ -8,9 +23,11 @@ import streamlit as st
 
 from lineage_bridge.models.graph import EdgeType, LineageGraph, NodeType
 from lineage_bridge.ui.styles import (
+    NODE_TYPE_EMOJI,
     build_node_url,
     color_for_node,
     label_for_node,
+    render_status_badge_html,
 )
 
 
@@ -21,6 +38,17 @@ def _fmt_bytes_ui(val: float) -> str:
             return f"{val:,.1f} {unit}"
         val /= 1024
     return f"{val:,.1f} PB"
+
+
+def _status_line(label: str, status: str | None) -> None:
+    """Render a labelled status pill, e.g. 'Phase: [RUNNING]'."""
+    if not status:
+        return
+    badge = render_status_badge_html(status)
+    st.markdown(
+        f"<div style='margin:4px 0'><strong>{label}:</strong> {badge}</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def render_node_details(graph: LineageGraph) -> None:
@@ -36,40 +64,36 @@ def render_node_details(graph: LineageGraph) -> None:
     ntype_label = label_for_node(sel_node)
     ncolor = color_for_node(sel_node)
 
-    # Panel header
-    st.markdown(
-        f"<div style='background:linear-gradient(135deg,"
-        f" {ncolor}22 0%, {ncolor}08 100%);"
-        f" border-left:4px solid {ncolor};"
-        f" border-radius:0 8px 8px 0;"
-        f" padding:12px 14px; margin-bottom:12px;'>"
-        f"<div style='font-size:11px; color:{ncolor};"
-        f" font-weight:600; text-transform:uppercase;"
-        f" letter-spacing:0.5px;'>{ntype_label}</div>"
-        f"<div style='font-size:16px; font-weight:700;"
-        f" color:inherit; margin-top:2px;'>"
-        f"{sel_node.display_name}</div>"
-        f"</div>",
-        unsafe_allow_html=True,
-    )
-
-    if st.button(
-        "Close",
-        key="close_detail_btn",
-        width="stretch",
-    ):
-        st.session_state._dismissed_node = sel_id
-        st.session_state.selected_node = None
-        st.rerun()
+    # ── Header (with close-X) ────────────────────────────────────
+    h_left, h_right = st.columns([6, 1])
+    with h_left:
+        st.markdown(
+            f"<div style='background:linear-gradient(135deg,"
+            f" {ncolor}22 0%, {ncolor}08 100%);"
+            f" border-left:4px solid {ncolor};"
+            f" border-radius:0 8px 8px 0;"
+            f" padding:12px 14px;'>"
+            f"<div style='font-size:11px; color:{ncolor};"
+            f" font-weight:600; text-transform:uppercase;"
+            f" letter-spacing:0.5px;'>{ntype_label}</div>"
+            f"<div style='font-size:16px; font-weight:700;"
+            f" color:inherit; margin-top:2px;'>"
+            f"{sel_node.display_name}</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+    with h_right:
+        if st.button("✕", key="close_detail_btn", help="Close panel"):
+            st.session_state._dismissed_node = sel_id
+            st.session_state.selected_node = None
+            st.rerun()
 
     a = sel_node.attributes
     cloud_url = sel_node.url or build_node_url(sel_node)
     ntype = sel_node.node_type
 
-    # ── 1. Resource Info ─────────────────────────────────────────
+    # ── 1. Identity ──────────────────────────────────────────────
     st.markdown(f"**Qualified Name**  \n`{sel_node.qualified_name}`")
-
-    # Node ID — clickable link to Confluent Cloud
     if cloud_url:
         st.markdown(
             f"**ID:** <a href='{cloud_url}' target='_blank' "
@@ -79,11 +103,7 @@ def render_node_details(graph: LineageGraph) -> None:
         )
     else:
         st.markdown(f"**ID:** `{sel_node.node_id}`")
-
-    # System
     st.markdown(f"**System:** {sel_node.system.value}")
-
-    # First/last seen
     seen_parts = []
     if sel_node.first_seen:
         seen_parts.append(f"First seen: {sel_node.first_seen:%Y-%m-%d %H:%M}")
@@ -92,14 +112,24 @@ def render_node_details(graph: LineageGraph) -> None:
     if seen_parts:
         st.caption(" | ".join(seen_parts))
 
-    # ── 2. Environment & Cluster ─────────────────────────────────
+    # ── 2. Tags (moved up to live next to identity) ──────────────
+    if sel_node.tags:
+        tag_html = " ".join(
+            f"<span style='background:{ncolor};"
+            f" color:white; padding:2px 8px;"
+            f" border-radius:12px; margin-right:4px;"
+            f" font-size:12px;'>{t}</span>"
+            for t in sel_node.tags
+        )
+        st.markdown(f"**Tags:** {tag_html}", unsafe_allow_html=True)
+
+    # ── 3. Location ──────────────────────────────────────────────
     if sel_node.environment_id or sel_node.cluster_id:
         st.markdown("---")
         st.markdown("**Location**")
         if sel_node.environment_id:
-            env_base = "https://confluent.cloud/environments"
             env_link = (
-                f"<a href='{env_base}/{sel_node.environment_id}' "
+                f"<a href='https://confluent.cloud/environments/{sel_node.environment_id}' "
                 f"target='_blank' style='color:{ncolor};text-decoration:none;'>"
                 f"{sel_node.environment_id} &#x2197;</a>"
             )
@@ -136,238 +166,11 @@ def render_node_details(graph: LineageGraph) -> None:
             else:
                 st.markdown(f"**Cluster:** {cluster_link}", unsafe_allow_html=True)
 
-    # ── 3. Type-specific attributes ──────────────────────────────
+    # ── 4. Type-specific attributes ──────────────────────────────
     st.markdown("---")
+    _render_type_specific(graph, sel_node, sel_id, ntype, a, ncolor)
 
-    if ntype == NodeType.KAFKA_TOPIC:
-        st.markdown("**Topic Configuration**")
-        tcol1, tcol2, tcol3 = st.columns(3)
-        with tcol1:
-            if a.get("partitions_count") is not None:
-                st.metric("Partitions", a["partitions_count"])
-        with tcol2:
-            if a.get("replication_factor") is not None:
-                st.metric("Replication Factor", a["replication_factor"])
-        with tcol3:
-            if a.get("is_internal"):
-                st.markdown(
-                    "<span style='color:#F44336;font-weight:600;'>Internal</span>",
-                    unsafe_allow_html=True,
-                )
-        if a.get("description"):
-            st.markdown(f"**Description:** {a['description']}")
-        if a.get("owner"):
-            st.markdown(f"**Owner:** {a['owner']}")
-
-    elif ntype == NodeType.CONNECTOR:
-        st.markdown("**Connector Configuration**")
-        if a.get("connector_class"):
-            st.markdown(f"**Class:** `{a['connector_class']}`")
-        ccol1, ccol2 = st.columns(2)
-        with ccol1:
-            if a.get("direction"):
-                dir_icon = "&#x2B07;" if a["direction"] == "sink" else "&#x2B06;"
-                st.markdown(
-                    f"**Direction:** {dir_icon} {a['direction'].upper()}",
-                    unsafe_allow_html=True,
-                )
-            if a.get("tasks_max"):
-                st.metric("Max Tasks", a["tasks_max"])
-        with ccol2:
-            if a.get("output_data_format"):
-                st.markdown(f"**Output Format:** {a['output_data_format']}")
-
-    elif ntype == NodeType.FLINK_JOB:
-        st.markdown("**Flink Job**")
-        fcol1, fcol2 = st.columns(2)
-        with fcol1:
-            if a.get("phase"):
-                phase = a["phase"]
-                phase_color = "#4CAF50" if phase == "RUNNING" else "#FF9800"
-                st.markdown(
-                    f"**Phase:** <span style='color:{phase_color};font-weight:600;'>{phase}</span>",
-                    unsafe_allow_html=True,
-                )
-            if a.get("compute_pool_id"):
-                st.markdown(f"**Compute Pool:** `{a['compute_pool_id']}`")
-        with fcol2:
-            if a.get("principal"):
-                st.markdown(f"**Principal:** `{a['principal']}`")
-        if a.get("sql"):
-            with st.expander("SQL Statement", expanded=False):
-                st.code(a["sql"], language="sql")
-
-    elif ntype == NodeType.KSQLDB_QUERY:
-        st.markdown("**ksqlDB Query**")
-        kcol1, kcol2 = st.columns(2)
-        with kcol1:
-            if a.get("state"):
-                state = a["state"]
-                state_color = "#4CAF50" if state == "RUNNING" else "#FF9800"
-                st.markdown(
-                    f"**State:** <span style='color:{state_color};font-weight:600;'>{state}</span>",
-                    unsafe_allow_html=True,
-                )
-        with kcol2:
-            if a.get("ksqldb_cluster_id"):
-                st.markdown(f"**ksqlDB Cluster:** `{a['ksqldb_cluster_id']}`")
-        if a.get("sql"):
-            with st.expander("SQL Statement", expanded=False):
-                st.code(a["sql"], language="sql")
-
-    elif ntype == NodeType.TABLEFLOW_TABLE:
-        st.markdown("**Tableflow**")
-        tcol1, tcol2 = st.columns(2)
-        with tcol1:
-            if a.get("phase"):
-                phase = a["phase"]
-                phase_color = "#4CAF50" if phase == "ACTIVE" else "#FF9800"
-                st.markdown(
-                    f"**Phase:** <span style='color:{phase_color};font-weight:600;'>{phase}</span>",
-                    unsafe_allow_html=True,
-                )
-            if a.get("table_formats"):
-                fmts = a["table_formats"]
-                fmt_str = ", ".join(fmts) if isinstance(fmts, list) else str(fmts)
-                st.markdown(f"**Table Formats:** {fmt_str}")
-        with tcol2:
-            if a.get("storage_kind"):
-                st.markdown(f"**Storage:** {a['storage_kind']}")
-            if a.get("suspended"):
-                st.markdown(
-                    "**Status:** <span style='color:#F44336;font-weight:600;'>SUSPENDED</span>",
-                    unsafe_allow_html=True,
-                )
-        if a.get("table_path"):
-            st.markdown(f"**Table Path:** `{a['table_path']}`")
-
-    elif ntype == NodeType.CATALOG_TABLE:
-        ct = sel_node.catalog_type
-        # Friendly console label per catalog_type — used for the "Open in <X>"
-        # deep-link button at the bottom of this section. Adding a new catalog?
-        # Add an entry here so its console button renders with the right label.
-        catalog_console_label = {
-            "UNITY_CATALOG": "Unity Catalog",
-            "AWS_GLUE": "AWS Glue",
-            "GOOGLE_DATA_LINEAGE": "BigQuery",
-            "AWS_DATAZONE": "DataZone",
-        }
-        if ct == "UNITY_CATALOG":
-            st.markdown("**Unity Catalog Table**")
-            ucol1, ucol2 = st.columns(2)
-            with ucol1:
-                if a.get("catalog_name"):
-                    st.markdown(f"**Catalog:** {a['catalog_name']}")
-                if a.get("schema_name"):
-                    st.markdown(f"**Schema:** {a['schema_name']}")
-            with ucol2:
-                if a.get("table_name"):
-                    st.markdown(f"**Table:** {a['table_name']}")
-            if a.get("workspace_url"):
-                st.markdown(
-                    f"**Workspace:** <a href='{a['workspace_url']}' "
-                    f"target='_blank' style='color:{ncolor};'>"
-                    f"{a['workspace_url']} &#x2197;</a>",
-                    unsafe_allow_html=True,
-                )
-            if a.get("database"):
-                st.markdown(f"**Database:** {a['database']}")
-
-        elif ct == "AWS_GLUE":
-            st.markdown("**AWS Glue Table**")
-            gcol1, gcol2 = st.columns(2)
-            with gcol1:
-                if a.get("database"):
-                    st.markdown(f"**Database:** {a['database']}")
-            with gcol2:
-                if a.get("table_name"):
-                    st.markdown(f"**Table:** {a['table_name']}")
-            if a.get("aws_region"):
-                st.markdown(f"**Region:** {a['aws_region']}")
-
-        elif ct == "GOOGLE_DATA_LINEAGE":
-            st.markdown("**Google BigQuery Table**")
-            gcol1, gcol2 = st.columns(2)
-            with gcol1:
-                if a.get("project_id"):
-                    st.markdown(f"**Project:** {a['project_id']}")
-                if a.get("dataset_id"):
-                    st.markdown(f"**Dataset:** {a['dataset_id']}")
-            with gcol2:
-                if a.get("table_name"):
-                    st.markdown(f"**Table:** {a['table_name']}")
-                if a.get("location"):
-                    st.markdown(f"**Location:** {a['location']}")
-        if a.get("num_rows"):
-            rcol1, rcol2 = st.columns(2)
-            with rcol1:
-                st.metric("Rows", f"{int(a['num_rows']):,}")
-            with rcol2:
-                if a.get("num_bytes"):
-                    st.metric("Size", _fmt_bytes_ui(float(a["num_bytes"])))
-        if a.get("description"):
-            st.markdown(f"**Description:** {a['description']}")
-
-        # Per-catalog deep-link button — single source of truth, dispatches to
-        # the right provider's `build_url` via `build_node_url` and labels with
-        # the catalog's own console name (no more "Open in BigQuery" on UC).
-        console_url = build_node_url(sel_node)
-        if console_url:
-            console_name = catalog_console_label.get(ct or "", "console")
-            st.markdown(
-                f"**Console:** <a href='{console_url}' "
-                f"target='_blank' style='color:{ncolor};'>"
-                f"Open in {console_name} &#x2197;</a>",
-                unsafe_allow_html=True,
-            )
-
-    elif ntype == NodeType.SCHEMA:
-        st.markdown("**Schema Details**")
-        scol1, scol2, scol3 = st.columns(3)
-        with scol1:
-            if a.get("schema_type"):
-                st.metric("Format", a["schema_type"])
-        with scol2:
-            if a.get("version"):
-                st.metric("Version", a["version"])
-        with scol3:
-            if a.get("field_count"):
-                st.metric("Fields", a["field_count"])
-        if a.get("schema_id"):
-            st.markdown(f"**Schema ID:** `{a['schema_id']}`")
-        # Show which topics use this schema
-        schema_topics = [
-            e for e in graph.edges if e.dst_id == sel_id and e.edge_type == EdgeType.HAS_SCHEMA
-        ]
-        if schema_topics:
-            st.markdown(f"**Used by {len(schema_topics)} topic(s):**")
-            for se in schema_topics:
-                topic_node = graph.get_node(se.src_id)
-                if topic_node:
-                    role = se.attributes.get("role", "value")
-                    st.caption(f"- {topic_node.display_name} ({role})")
-
-    elif ntype == NodeType.CONSUMER_GROUP:
-        st.markdown("**Consumer Group**")
-        gcol1, gcol2 = st.columns(2)
-        with gcol1:
-            if a.get("state"):
-                state = a["state"]
-                state_color = "#4CAF50" if state in ("STABLE", "Stable") else "#FF9800"
-                st.markdown(
-                    f"**State:** <span style='color:{state_color};font-weight:600;'>{state}</span>",
-                    unsafe_allow_html=True,
-                )
-        with gcol2:
-            if a.get("is_simple") is not None:
-                st.markdown(f"**Simple:** {'Yes' if a['is_simple'] else 'No'}")
-
-    elif ntype == NodeType.EXTERNAL_DATASET:
-        st.markdown("**External Dataset**")
-        if a.get("inferred_from"):
-            st.markdown(f"**Inferred from connector:** `{a['inferred_from']}`")
-
-    # ── 4. Metrics ───────────────────────────────────────────────
+    # ── 5. Metrics ───────────────────────────────────────────────
     has_metrics = any(
         a.get(k) is not None
         for k in (
@@ -384,14 +187,10 @@ def render_node_details(graph: LineageGraph) -> None:
         mcol1, mcol2 = st.columns(2)
         with mcol1:
             if a.get("metrics_active") is not None:
-                status = "Active" if a["metrics_active"] else "Inactive"
-                status_color = "#4CAF50" if a["metrics_active"] else "#F44336"
-                st.markdown(
-                    f"<span style='color:{status_color};font-weight:600;'>"
-                    f"{'&#9679;' if a['metrics_active'] else '&#9675;'} "
-                    f"{status}</span>",
-                    unsafe_allow_html=True,
+                status_html = render_status_badge_html(
+                    "ACTIVE" if a["metrics_active"] else "STOPPED"
                 )
+                st.markdown(status_html, unsafe_allow_html=True)
             if a.get("metrics_received_records") is not None:
                 st.metric("Records In", f"{a['metrics_received_records']:,.0f}")
             if a.get("metrics_received_bytes") is not None:
@@ -404,67 +203,339 @@ def render_node_details(graph: LineageGraph) -> None:
             if a.get("metrics_sent_bytes") is not None:
                 st.metric("Bytes Out", _fmt_bytes_ui(a["metrics_sent_bytes"]))
 
-    # ── 5. Schemas (for topics: associated schemas; for schema nodes: self) ──
+    # ── 6. Schemas ───────────────────────────────────────────────
     if ntype == NodeType.KAFKA_TOPIC:
-        schema_edges = [
-            e for e in graph.edges if e.src_id == sel_id and e.edge_type == EdgeType.HAS_SCHEMA
-        ]
-        if schema_edges:
-            st.markdown("---")
-            st.markdown(f"**Schemas ({len(schema_edges)})**")
-            for _idx, se in enumerate(schema_edges):
-                schema_node = graph.get_node(se.dst_id)
-                if not schema_node:
-                    continue
-                role = se.attributes.get("role", "value")
-                role_color = "#1976D2" if role == "value" else "#7B1FA2"
-                sa = schema_node.attributes
+        _render_topic_schemas(graph, sel_id, ncolor)
+
+    # ── 7. Neighbours ────────────────────────────────────────────
+    _render_neighbours(graph, sel_id)
+
+    # ── 8. Other attributes (catch-all) ──────────────────────────
+    _render_other_attributes(a)
+
+    # ── 9. Actions ───────────────────────────────────────────────
+    st.markdown("---")
+    if st.button(
+        "Focus on this node",
+        key="focus_btn",
+        type="primary",
+        width="stretch",
+        help="Zoom the graph to this node's neighborhood",
+    ):
+        st.session_state.focus_node = sel_id
+        st.rerun()
+
+
+def _render_type_specific(
+    graph: LineageGraph,
+    sel_node,
+    sel_id: str,
+    ntype: NodeType,
+    a: dict,
+    ncolor: str,
+) -> None:
+    """Type-specific attribute block."""
+    if ntype == NodeType.KAFKA_TOPIC:
+        st.markdown("**Topic configuration**")
+        tcol1, tcol2, tcol3 = st.columns(3)
+        with tcol1:
+            if a.get("partitions_count") is not None:
+                st.metric("Partitions", a["partitions_count"])
+        with tcol2:
+            if a.get("replication_factor") is not None:
+                st.metric("Replication factor", a["replication_factor"])
+        with tcol3:
+            if a.get("is_internal"):
                 st.markdown(
-                    f"<div style='padding:6px 10px;"
-                    f"background:rgba(128,128,128,0.08);"
-                    f"border-radius:6px;border-left:3px solid {role_color};"
-                    f"margin:4px 0;'>"
-                    f"<span style='background:{role_color};color:white;"
-                    f"padding:1px 6px;border-radius:4px;font-size:11px;'>"
-                    f"{role}</span> "
-                    f"<strong>{schema_node.display_name}</strong>"
-                    f"<br><span style='font-size:12px;color:#999;'>"
-                    f"{sa.get('schema_type', '')} "
-                    f"{'v' + str(sa['version']) if sa.get('version') else ''}"
-                    f"{' | ' + str(sa['field_count']) + ' fields' if sa.get('field_count') else ''}"
-                    f"{' | ID: ' + str(sa['schema_id']) if sa.get('schema_id') else ''}"
-                    f"</span></div>",
+                    render_status_badge_html("INTERNAL"),
                     unsafe_allow_html=True,
                 )
-                schema_str = sa.get("schema_string", "")
-                if schema_str:
-                    schema_type = sa.get("schema_type", "AVRO")
-                    lang = "json" if schema_type in ("AVRO", "JSON") else "protobuf"
-                    # Pretty-print JSON-based schemas
-                    if lang == "json":
-                        try:
-                            import json as _json
+        if a.get("description"):
+            st.markdown(f"**Description:** {a['description']}")
+        if a.get("owner"):
+            st.markdown(f"**Owner:** {a['owner']}")
 
-                            schema_str = _json.dumps(_json.loads(schema_str), indent=2)
-                        except (ValueError, TypeError):
-                            pass
-                    with st.expander(f"Schema Definition ({role})", expanded=False):
-                        st.code(schema_str, language=lang)
+    elif ntype == NodeType.CONNECTOR:
+        st.markdown("**Connector configuration**")
+        if a.get("connector_class"):
+            st.markdown(f"**Class:** `{a['connector_class']}`")
+        ccol1, ccol2 = st.columns(2)
+        with ccol1:
+            if a.get("direction"):
+                dir_arrow = "↓" if a["direction"] == "sink" else "↑"
+                st.markdown(f"**Direction:** {dir_arrow} {a['direction'].upper()}")
+            if a.get("tasks_max"):
+                st.metric("Max Tasks", a["tasks_max"])
+        with ccol2:
+            if a.get("output_data_format"):
+                st.markdown(f"**Output Format:** {a['output_data_format']}")
 
-    # ── 6. Tags & Metadata ───────────────────────────────────────
-    if sel_node.tags:
-        st.markdown("---")
-        tag_html = " ".join(
-            f"<span style='background:{ncolor};"
-            f" color:white; padding:2px 8px;"
-            f" border-radius:12px; margin-right:4px;"
-            f" font-size:12px;'>{t}</span>"
-            for t in sel_node.tags
+    elif ntype == NodeType.FLINK_JOB:
+        st.markdown("**Flink job**")
+        fcol1, fcol2 = st.columns(2)
+        with fcol1:
+            _status_line("Phase", a.get("phase"))
+            if a.get("compute_pool_id"):
+                st.markdown(f"**Compute Pool:** `{a['compute_pool_id']}`")
+        with fcol2:
+            if a.get("principal"):
+                st.markdown(f"**Principal:** `{a['principal']}`")
+        if a.get("sql"):
+            with st.expander("SQL Statement", expanded=False):
+                st.code(a["sql"], language="sql")
+
+    elif ntype == NodeType.KSQLDB_QUERY:
+        st.markdown("**ksqlDB query**")
+        kcol1, kcol2 = st.columns(2)
+        with kcol1:
+            _status_line("State", a.get("state"))
+        with kcol2:
+            if a.get("ksqldb_cluster_id"):
+                st.markdown(f"**ksqlDB Cluster:** `{a['ksqldb_cluster_id']}`")
+        if a.get("sql"):
+            with st.expander("SQL Statement", expanded=False):
+                st.code(a["sql"], language="sql")
+
+    elif ntype == NodeType.TABLEFLOW_TABLE:
+        st.markdown("**Tableflow**")
+        tcol1, tcol2 = st.columns(2)
+        with tcol1:
+            _status_line("Phase", a.get("phase"))
+            if a.get("table_formats"):
+                fmts = a["table_formats"]
+                fmt_str = ", ".join(fmts) if isinstance(fmts, list) else str(fmts)
+                st.markdown(f"**Table Formats:** {fmt_str}")
+        with tcol2:
+            if a.get("storage_kind"):
+                st.markdown(f"**Storage:** {a['storage_kind']}")
+            if a.get("suspended"):
+                _status_line("Status", "SUSPENDED")
+        if a.get("table_path"):
+            st.markdown(f"**Table Path:** `{a['table_path']}`")
+
+    elif ntype == NodeType.CATALOG_TABLE:
+        _render_catalog_table(sel_node, a, ncolor)
+
+    elif ntype == NodeType.SCHEMA:
+        st.markdown("**Schema**")
+        scol1, scol2, scol3 = st.columns(3)
+        with scol1:
+            if a.get("schema_type"):
+                st.metric("Format", a["schema_type"])
+        with scol2:
+            if a.get("version"):
+                st.metric("Version", a["version"])
+        with scol3:
+            if a.get("field_count"):
+                st.metric("Fields", a["field_count"])
+        if a.get("schema_id"):
+            st.markdown(f"**Schema ID:** `{a['schema_id']}`")
+        schema_topics = [
+            e for e in graph.edges if e.dst_id == sel_id and e.edge_type == EdgeType.HAS_SCHEMA
+        ]
+        if schema_topics:
+            st.markdown(f"**Used by {len(schema_topics)} topic(s):**")
+            for se in schema_topics:
+                topic_node = graph.get_node(se.src_id)
+                if topic_node:
+                    role = se.attributes.get("role", "value")
+                    st.caption(f"- {topic_node.display_name} ({role})")
+
+    elif ntype == NodeType.CONSUMER_GROUP:
+        st.markdown("**Consumer group**")
+        gcol1, gcol2 = st.columns(2)
+        with gcol1:
+            _status_line("State", a.get("state"))
+        with gcol2:
+            if a.get("is_simple") is not None:
+                st.markdown(f"**Simple:** {'Yes' if a['is_simple'] else 'No'}")
+
+    elif ntype == NodeType.EXTERNAL_DATASET:
+        st.markdown("**External dataset**")
+        if a.get("inferred_from"):
+            st.markdown(f"**Inferred from connector:** `{a['inferred_from']}`")
+
+
+def _render_catalog_table(sel_node, a: dict, ncolor: str) -> None:
+    """Catalog-table type-specific rendering — UC / Glue / BigQuery / DataZone."""
+    ct = sel_node.catalog_type
+    catalog_console_label = {
+        "UNITY_CATALOG": "Unity Catalog",
+        "AWS_GLUE": "AWS Glue",
+        "GOOGLE_DATA_LINEAGE": "BigQuery",
+        "AWS_DATAZONE": "DataZone",
+    }
+    if ct == "UNITY_CATALOG":
+        st.markdown("**Unity Catalog table**")
+        ucol1, ucol2 = st.columns(2)
+        with ucol1:
+            if a.get("catalog_name"):
+                st.markdown(f"**Catalog:** {a['catalog_name']}")
+            if a.get("schema_name"):
+                st.markdown(f"**Schema:** {a['schema_name']}")
+        with ucol2:
+            if a.get("table_name"):
+                st.markdown(f"**Table:** {a['table_name']}")
+        if a.get("workspace_url"):
+            st.markdown(
+                f"**Workspace:** <a href='{a['workspace_url']}' "
+                f"target='_blank' style='color:{ncolor};'>"
+                f"{a['workspace_url']} &#x2197;</a>",
+                unsafe_allow_html=True,
+            )
+        if a.get("database"):
+            st.markdown(f"**Database:** {a['database']}")
+
+    elif ct == "AWS_GLUE":
+        st.markdown("**AWS Glue table**")
+        gcol1, gcol2 = st.columns(2)
+        with gcol1:
+            if a.get("database"):
+                st.markdown(f"**Database:** {a['database']}")
+        with gcol2:
+            if a.get("table_name"):
+                st.markdown(f"**Table:** {a['table_name']}")
+        if a.get("aws_region"):
+            st.markdown(f"**Region:** {a['aws_region']}")
+
+    elif ct == "GOOGLE_DATA_LINEAGE":
+        st.markdown("**Google BigQuery table**")
+        gcol1, gcol2 = st.columns(2)
+        with gcol1:
+            if a.get("project_id"):
+                st.markdown(f"**Project:** {a['project_id']}")
+            if a.get("dataset_id"):
+                st.markdown(f"**Dataset:** {a['dataset_id']}")
+        with gcol2:
+            if a.get("table_name"):
+                st.markdown(f"**Table:** {a['table_name']}")
+            if a.get("location"):
+                st.markdown(f"**Location:** {a['location']}")
+
+    if a.get("num_rows"):
+        rcol1, rcol2 = st.columns(2)
+        with rcol1:
+            st.metric("Rows", f"{int(a['num_rows']):,}")
+        with rcol2:
+            if a.get("num_bytes"):
+                st.metric("Size", _fmt_bytes_ui(float(a["num_bytes"])))
+    if a.get("description"):
+        st.markdown(f"**Description:** {a['description']}")
+
+    # Per-catalog deep link (or a hint when unavailable)
+    console_url = build_node_url(sel_node)
+    console_name = catalog_console_label.get(ct or "", "console")
+    if console_url:
+        st.markdown(
+            f"**Console:** <a href='{console_url}' target='_blank' "
+            f"style='color:{ncolor};'>Open in {console_name} &#x2197;</a>",
+            unsafe_allow_html=True,
         )
-        st.markdown(f"**Tags:** {tag_html}", unsafe_allow_html=True)
+    else:
+        st.caption(
+            f"Deep link to {console_name} unavailable — "
+            "set the workspace / project URL in `.env` to enable."
+        )
 
-    # ── 7. Other attributes (catch-all) ──────────────────────────
-    _known_keys = {
+
+def _render_topic_schemas(graph: LineageGraph, sel_id: str, ncolor: str) -> None:
+    """Schemas-attached-to-topic block."""
+    schema_edges = [
+        e for e in graph.edges if e.src_id == sel_id and e.edge_type == EdgeType.HAS_SCHEMA
+    ]
+    if not schema_edges:
+        return
+    st.markdown("---")
+    st.markdown(f"**Schemas ({len(schema_edges)})**")
+    for se in schema_edges:
+        schema_node = graph.get_node(se.dst_id)
+        if not schema_node:
+            continue
+        role = se.attributes.get("role", "value")
+        role_color = "#1976D2" if role == "value" else "#7B1FA2"
+        sa = schema_node.attributes
+        st.markdown(
+            f"<div style='padding:6px 10px;"
+            f"background:rgba(128,128,128,0.08);"
+            f"border-radius:6px;border-left:3px solid {role_color};"
+            f"margin:4px 0;'>"
+            f"<span style='background:{role_color};color:white;"
+            f"padding:1px 6px;border-radius:4px;font-size:11px;'>"
+            f"{role}</span> "
+            f"<strong>{schema_node.display_name}</strong>"
+            f"<br><span style='font-size:12px;color:#999;'>"
+            f"{sa.get('schema_type', '')} "
+            f"{'v' + str(sa['version']) if sa.get('version') else ''}"
+            f"{' | ' + str(sa['field_count']) + ' fields' if sa.get('field_count') else ''}"
+            f"{' | ID: ' + str(sa['schema_id']) if sa.get('schema_id') else ''}"
+            f"</span></div>",
+            unsafe_allow_html=True,
+        )
+        schema_str = sa.get("schema_string", "")
+        if schema_str:
+            schema_type = sa.get("schema_type", "AVRO")
+            lang = "json" if schema_type in ("AVRO", "JSON") else "protobuf"
+            if lang == "json":
+                try:
+                    import json as _json
+
+                    schema_str = _json.dumps(_json.loads(schema_str), indent=2)
+                except (ValueError, TypeError):
+                    pass
+            with st.expander(f"Schema definition ({role})", expanded=False):
+                st.code(schema_str, language=lang)
+
+
+def _render_neighbours(graph: LineageGraph, sel_id: str) -> None:
+    """Upstream / downstream neighbour buttons with type icons."""
+    _exclude = {NodeType.SCHEMA, NodeType.CONSUMER_GROUP}
+    upstream = [
+        n for n in graph.get_neighbors(sel_id, direction="upstream") if n.node_type not in _exclude
+    ]
+    downstream = [
+        n
+        for n in graph.get_neighbors(sel_id, direction="downstream")
+        if n.node_type not in _exclude
+    ]
+
+    st.markdown("---")
+    nb_col1, nb_col2 = st.columns(2)
+    with nb_col1:
+        st.markdown(f"**Upstream ({len(upstream)})**")
+        if upstream:
+            for nb in upstream:
+                icon = NODE_TYPE_EMOJI.get(nb.node_type, "•")
+                if st.button(
+                    f"{icon}  {nb.display_name}",
+                    key=f"nb_up_{nb.node_id}",
+                    width="stretch",
+                ):
+                    st.session_state.selected_node = nb.node_id
+                    st.rerun()
+        else:
+            st.caption("None")
+
+    with nb_col2:
+        st.markdown(f"**Downstream ({len(downstream)})**")
+        if downstream:
+            for nb in downstream:
+                icon = NODE_TYPE_EMOJI.get(nb.node_type, "•")
+                if st.button(
+                    f"{icon}  {nb.display_name}",
+                    key=f"nb_dn_{nb.node_id}",
+                    width="stretch",
+                ):
+                    st.session_state.selected_node = nb.node_id
+                    st.rerun()
+        else:
+            st.caption("None")
+
+
+# Keys consumed by the explicit type-specific branches above. Anything not
+# in this set falls through to the "Other Attributes" expander — drift
+# protection is manual but at least centralized in one place now.
+_KNOWN_KEYS: frozenset[str] = frozenset(
+    {
         "partitions_count",
         "replication_factor",
         "is_internal",
@@ -514,74 +585,15 @@ def render_node_details(graph: LineageGraph) -> None:
         "metrics_received_bytes",
         "metrics_sent_bytes",
         "metrics_window_hours",
+        "role",
     }
-    extra_attrs = {k: v for k, v in a.items() if k not in _known_keys}
-    if extra_attrs:
-        with st.expander("Other Attributes", expanded=False):
-            st.table([{"Key": k, "Value": str(v)} for k, v in extra_attrs.items()])
+)
 
-    # ── 8. Neighbors ─────────────────────────────────────────────
-    # Exclude schema and consumer group nodes — they are shown in
-    # their own sections and are not part of the data lineage flow.
-    _neighbor_exclude = {NodeType.SCHEMA, NodeType.CONSUMER_GROUP}
-    st.markdown("---")
-    upstream = [
-        n
-        for n in graph.get_neighbors(sel_id, direction="upstream")
-        if n.node_type not in _neighbor_exclude
-    ]
-    downstream = [
-        n
-        for n in graph.get_neighbors(sel_id, direction="downstream")
-        if n.node_type not in _neighbor_exclude
-    ]
 
-    nb_col1, nb_col2 = st.columns(2)
-    with nb_col1:
-        st.markdown(f"**Upstream ({len(upstream)})**")
-        if upstream:
-            for nb in upstream:
-                if st.button(
-                    f"{nb.display_name}",
-                    key=f"nb_up_{nb.node_id}",
-                    width="stretch",
-                ):
-                    st.session_state.selected_node = nb.node_id
-                    st.rerun()
-        else:
-            st.caption("None")
-
-    with nb_col2:
-        st.markdown(f"**Downstream ({len(downstream)})**")
-        if downstream:
-            for nb in downstream:
-                if st.button(
-                    f"{nb.display_name}",
-                    key=f"nb_dn_{nb.node_id}",
-                    width="stretch",
-                ):
-                    st.session_state.selected_node = nb.node_id
-                    st.rerun()
-        else:
-            st.caption("None")
-
-    # Actions
-    st.markdown("---")
-    act1, act2 = st.columns(2)
-    with act1:
-        if st.button(
-            "Focus on this node",
-            key="focus_btn",
-            width="stretch",
-        ):
-            st.session_state.focus_node = sel_id
-            st.rerun()
-    with act2:
-        if st.button(
-            "Clear selection",
-            key="clear_sel_btn",
-            width="stretch",
-        ):
-            st.session_state._dismissed_node = sel_id
-            st.session_state.selected_node = None
-            st.rerun()
+def _render_other_attributes(a: dict) -> None:
+    """Catch-all expander for attributes not explicitly handled above."""
+    extra = {k: v for k, v in a.items() if k not in _KNOWN_KEYS}
+    if not extra:
+        return
+    with st.expander("Other attributes", expanded=False):
+        st.table([{"Key": k, "Value": str(v)} for k, v in extra.items()])

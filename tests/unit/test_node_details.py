@@ -57,7 +57,9 @@ def _setup_st_mock(st_mock: MagicMock, sel_id: str) -> None:
     st_mock.button.return_value = False
 
     def columns_side_effect(n):
-        return [_mock_col() for _ in range(n)]
+        # Accepts either an int (st.columns(3)) or a list of ratios (st.columns([6, 1])).
+        count = len(n) if isinstance(n, list) else n
+        return [_mock_col() for _ in range(count)]
 
     st_mock.columns.side_effect = columns_side_effect
     st_mock.expander.return_value = _mock_col()
@@ -90,7 +92,7 @@ class TestRenderKafkaTopic:
         render_node_details(graph)
 
         _assert_markdown_contains(st_mock, "Kafka Topic")
-        _assert_markdown_contains(st_mock, "Topic Configuration")
+        _assert_markdown_contains(st_mock, "Topic configuration")
 
 
 class TestRenderConnector:
@@ -107,7 +109,7 @@ class TestRenderConnector:
         render_node_details(graph)
 
         _assert_markdown_contains(st_mock, "Connector")
-        _assert_markdown_contains(st_mock, "Connector Configuration")
+        _assert_markdown_contains(st_mock, "Connector configuration")
 
 
 class TestRenderFlinkJob:
@@ -224,7 +226,7 @@ class TestRenderSchema:
 
         render_node_details(graph)
 
-        _assert_markdown_contains(st_mock, "Schema Details")
+        _assert_markdown_contains(st_mock, "Schema")
 
 
 class TestRenderConsumerGroup:
