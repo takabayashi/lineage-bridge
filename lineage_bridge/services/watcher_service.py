@@ -76,7 +76,8 @@ class WatcherService:
         self._cooldown_deadline: float = 0.0
         self._pending_events: list[WatcherEvent] = []
 
-        # Lazy-init poller / consumer on first poll() so construction is cheap.
+        # Lazy-init on first poll() so construction is cheap and tests
+        # aren't forced into an async context just to instantiate the service.
         self._poller = None
         self._consumer = None
 
@@ -157,6 +158,9 @@ class WatcherService:
         if events:
             self._pending_events.extend(events)
             self._event_count += len(events)
+            # Reset cooldown on every event batch — debouncing strategy: more
+            # changes within the cooldown window push the deadline forward,
+            # so the extraction batches the whole burst into one run.
             self._cooldown_deadline = time.monotonic() + self.config.cooldown_seconds
             self._state = WatcherState.COOLDOWN
             logger.info(

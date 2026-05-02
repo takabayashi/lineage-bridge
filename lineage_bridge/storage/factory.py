@@ -71,9 +71,11 @@ def make_repositories(settings: Settings) -> Repositories:
             graphs=FileGraphRepository(root / "graphs"),
             tasks=FileTaskRepository(root / "tasks"),
             events=FileEventRepository(root / "events.jsonl"),
-            # File backend doesn't yet have a watcher implementation; fall
-            # back to memory so watcher state is process-local. Operators
-            # who want watcher durability should use the sqlite backend.
+            # No file-backend watcher implementation by design: sqlite is
+            # the watcher's durable path (one DB file, transactional appends,
+            # cheap by-watcher_id indexes). The memory fallback keeps watcher
+            # state alive within the API process; operators who want
+            # cross-restart watchers should set storage.backend=sqlite.
             watchers=MemoryWatcherRepository(),
         )
 

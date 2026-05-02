@@ -82,6 +82,10 @@ async def trigger_extraction(
     task = store.create(TaskType.EXTRACT, body.model_dump())
 
     bg = asyncio.create_task(_run_extraction(task.task_id, request.app, body))
+    # Hold a strong ref in `_background_tasks` so the loop doesn't GC this
+    # task before it runs (asyncio only weak-refs scheduled tasks). The
+    # done callback drops the ref once the task finishes so the set
+    # doesn't grow unbounded.
     _background_tasks.add(bg)
     bg.add_done_callback(_background_tasks.discard)
 

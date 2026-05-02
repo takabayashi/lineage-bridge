@@ -60,6 +60,11 @@ def apply_pending(conn: sqlite3.Connection) -> list[int]:
         if version in applied:
             continue
         try:
+            # `executescript` runs many statements but resets autocommit
+            # between them, dropping any open transaction. Prefixing with
+            # `BEGIN;` keeps the whole migration + the version-row insert
+            # below in one atomic transaction so a partial schema can't
+            # land if the process dies mid-migration.
             conn.executescript("BEGIN; " + sql)
             conn.execute(
                 "INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES (?, ?)",

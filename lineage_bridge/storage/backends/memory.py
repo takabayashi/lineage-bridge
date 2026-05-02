@@ -155,7 +155,8 @@ class MemoryWatcherRepository:
         all_events = self._events.get(watcher_id, [])
         if since is not None:
             all_events = [e for e in all_events if e.time > since]
-        # Newest first, capped at `limit`.
+        # The list was appended in chronological order — `reversed()` then
+        # `[:limit]` yields the newest `limit` entries without sorting.
         return list(reversed(all_events))[:limit]
 
     def append_extraction(self, watcher_id: str, record: ExtractionRecord) -> None:

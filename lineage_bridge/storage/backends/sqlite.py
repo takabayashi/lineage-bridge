@@ -41,8 +41,16 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(
         db_path,
+        # check_same_thread=False: the repo instance is shared across the
+        # threads Streamlit + uvicorn both schedule callers from. The
+        # `_write_lock` in `_SqliteRepo` makes that safe for writes; WAL
+        # mode covers concurrent reads without locks.
         check_same_thread=False,
-        isolation_level=None,  # autocommit; explicit BEGIN/COMMIT below
+        # isolation_level=None: stdlib sqlite3 wraps statements in implicit
+        # transactions by default; that fights `PRAGMA journal_mode=WAL`
+        # which we set right below. Switch to autocommit and let callers
+        # (and the migration runner) issue BEGIN/COMMIT explicitly.
+        isolation_level=None,
     )
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")

@@ -53,7 +53,13 @@ class ListWatchersResponse(BaseModel):
 
 
 def _runners(request: Request) -> dict[str, WatcherRunner]:
-    """Per-app registry of live runner tasks, keyed by watcher_id."""
+    """Per-app registry of live runner tasks, keyed by watcher_id.
+
+    Lazy-init: test apps that never touch the watcher router shouldn't pay
+    for the dict allocation, and `app.state` doesn't have a hook to set
+    defaults. The registry is per-process by design — see the module
+    docstring for the cross-process-stop limitation.
+    """
     if not hasattr(request.app.state, "watcher_runners"):
         request.app.state.watcher_runners = {}
     return request.app.state.watcher_runners
