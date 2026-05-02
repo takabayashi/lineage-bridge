@@ -12,8 +12,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from lineage_bridge.api.openlineage.models import Job, RunEvent
 from lineage_bridge.models.graph import LineageEdge, LineageNode
+from lineage_bridge.openlineage.models import Job, RunEvent
 
 # ── Simple responses ──────────────────────────────────────────────────────
 
@@ -130,17 +130,22 @@ class TaskCreatedResponse(BaseModel):
 
 class CatalogInfo(BaseModel):
     catalog_type: str
-    node_type: str
-    system_type: str
+    # Post-ADR-021 these are derived values held for backward compatibility
+    # with v0.4.x clients that parsed the old shape. node_type is always
+    # "catalog_table" (the discriminator moved to catalog_type itself);
+    # system_type maps from catalog_type → the cloud system that owns the
+    # provider (databricks / aws / google).
+    node_type: str = "catalog_table"
+    system_type: str = ""
 
     model_config = {
         "json_schema_extra": {
             "examples": [
                 {
                     "catalog_type": "UNITY_CATALOG",
-                    "node_type": "uc_table",
+                    "node_type": "catalog_table",
                     "system_type": "databricks",
-                }
+                },
             ],
         }
     }

@@ -107,3 +107,58 @@ class TestMergeAwsDatazoneSettings:
         mod._merge_aws_datazone_settings(cache, env)
         assert cache["aws_datazone_settings"]["domain_id"] == "dzd-new"
         assert cache["aws_datazone_settings"]["project_id"] == "prj-new"
+
+
+class TestMergeDatabricksSettings:
+    def test_merges_workspace_token_warehouse(self):
+        cache: dict = {}
+        env = {
+            "LINEAGE_BRIDGE_DATABRICKS_WORKSPACE_URL": "https://dbc-x.cloud.databricks.com",
+            "LINEAGE_BRIDGE_DATABRICKS_TOKEN": "dapi-secret",
+            "LINEAGE_BRIDGE_DATABRICKS_WAREHOUSE_ID": "wh-123",
+        }
+        assert mod._merge_databricks_settings(cache, env) is True
+        assert cache["databricks_settings"] == {
+            "workspace_url": "https://dbc-x.cloud.databricks.com",
+            "token": "dapi-secret",
+            "warehouse_id": "wh-123",
+        }
+
+    def test_skips_when_all_missing(self):
+        cache: dict = {}
+        assert mod._merge_databricks_settings(cache, {}) is False
+        assert "databricks_settings" not in cache
+
+    def test_partial_fields_are_merged(self):
+        cache: dict = {}
+        env = {"LINEAGE_BRIDGE_DATABRICKS_WORKSPACE_URL": "https://dbc-y"}
+        assert mod._merge_databricks_settings(cache, env) is True
+        assert cache["databricks_settings"] == {"workspace_url": "https://dbc-y"}
+
+    def test_preserves_existing_other_fields(self):
+        # Re-cache after rotating only the token; the warehouse_id from a prior
+        # demo-up call must survive.
+        cache = {"databricks_settings": {"warehouse_id": "wh-keep"}}
+        env = {"LINEAGE_BRIDGE_DATABRICKS_TOKEN": "new-token"}
+        mod._merge_databricks_settings(cache, env)
+        assert cache["databricks_settings"]["warehouse_id"] == "wh-keep"
+        assert cache["databricks_settings"]["token"] == "new-token"
+
+
+class TestMergeAwsSettings:
+    def test_merges_region(self):
+        cache: dict = {}
+        env = {"LINEAGE_BRIDGE_AWS_REGION": "us-west-2"}
+        assert mod._merge_aws_settings(cache, env) is True
+        assert cache["aws_settings"] == {"region": "us-west-2"}
+
+    def test_skips_when_region_missing(self):
+        cache: dict = {}
+        assert mod._merge_aws_settings(cache, {}) is False
+        assert "aws_settings" not in cache
+
+    def test_overwrites_region(self):
+        cache = {"aws_settings": {"region": "us-east-1"}}
+        env = {"LINEAGE_BRIDGE_AWS_REGION": "eu-west-1"}
+        mod._merge_aws_settings(cache, env)
+        assert cache["aws_settings"]["region"] == "eu-west-1"

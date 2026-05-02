@@ -63,6 +63,46 @@ def _datazone_enabled() -> tuple[bool, str]:
         )
     except Exception as exc:
         return False, f"boto3 datazone client unavailable: {exc}"
+
+    # Preflight: these tests register real assets via CreateFormType +
+    # CreateAssetType. Both are typically blocked unless the caller is a
+    # PROJECT_OWNER in the DataZone domain (SSO-mapped IAM rarely is). Skip
+    # cleanly rather than failing with AccessDeniedException — the
+    # graceful-degradation path is covered by `aws_datazone._AssetBootstrapSkippedError`
+    # and exercised by the manual `provider.push_lineage` smoke (lineage events
+    # post even when bootstrap is denied).
+    try:
+        sts = boto3.client("sts")
+        iam = boto3.client("iam")
+        caller = sts.get_caller_identity()
+        principal_arn = caller["Arn"]
+        # `assumed-role/<role>/<session>` → `role/<role>`. simulate-principal-policy
+        # rejects assumed-role ARNs.
+        if ":assumed-role/" in principal_arn:
+            parts = principal_arn.split(":assumed-role/")[1].split("/")
+            account_id = caller["Account"]
+            principal_arn = f"arn:aws:iam::{account_id}:role/{parts[0]}"
+        sim = iam.simulate_principal_policy(
+            PolicySourceArn=principal_arn,
+            ActionNames=["datazone:CreateFormType", "datazone:CreateAssetType"],
+        )
+        denied = [
+            r["EvalActionName"]
+            for r in sim.get("EvaluationResults", [])
+            if r.get("EvalDecision") != "allowed"
+        ]
+        if denied:
+            return False, (
+                f"caller IAM lacks {', '.join(denied)} — required to bootstrap "
+                f"the LineageBridgeKafkaSchemaForm asset type. Attach a policy "
+                f"with datazone:CreateFormType, CreateAssetType, GetFormType, "
+                f"GetAssetType, CreateAsset, CreateAssetRevision, Search to "
+                f"{principal_arn}, or run as a DataZone PROJECT_OWNER."
+            )
+    except Exception as exc:
+        # Probe failed (no iam:SimulatePrincipalPolicy, etc.) — proceed and let
+        # the test itself surface the real error.
+        return True, f"(IAM probe inconclusive: {exc})"
     return True, ""
 
 
@@ -127,7 +167,8 @@ def integration_graph() -> LineageGraph:
     glue = LineageNode(
         node_id=f"aws:glue_table:env-int:db.{glue_table}",
         system=SystemType.AWS,
-        node_type=NodeType.GLUE_TABLE,
+        node_type=NodeType.CATALOG_TABLE,
+        catalog_type="AWS_GLUE",
         qualified_name=f"db.{glue_table}",
         display_name=glue_table,
         environment_id="env-int",

@@ -63,7 +63,7 @@ Living document. Every significant design or implementation decision made by the
 
 ## ADR-006: Separate node types per catalog (UC_TABLE, GLUE_TABLE)
 
-- **Status:** Accepted
+- **Status:** SUPERSEDED by ADR-021 (2026-05-01) — node types collapsed into one `CATALOG_TABLE` with a `catalog_type` discriminator. Per-catalog dispatch and styling moved to runtime helpers (`get_provider(catalog_type)`, `icon_for_node(node)`).
 - **Date:** 2026-04-04
 - **Decided by:** Blueprint
 - **Context:** Graph needs to represent tables from different catalogs.
@@ -171,7 +171,7 @@ Living document. Every significant design or implementation decision made by the
 
 ## ADR-016: Google Data Lineage provider
 
-- **Status:** Accepted
+- **Status:** Accepted (the `GOOGLE_TABLE` enum value referenced below was collapsed into `CATALOG_TABLE` + `catalog_type=GOOGLE_DATA_LINEAGE` by ADR-021, 2026-05-01; the provider itself is unchanged)
 - **Date:** 2026-04-14
 - **Decided by:** Blueprint, Weaver
 - **Context:** Google Data Lineage (part of Dataplex) natively speaks OpenLineage via its `ProcessOpenLineageRunEvent` endpoint. This makes it a natural integration point and proof that the OpenLineage API works end-to-end.
@@ -218,3 +218,115 @@ Living document. Every significant design or implementation decision made by the
 - **Alternatives:** (1) Encode schema in OpenLineage facets and rely on the processor — rejected, both Google and DataZone strip facets. (2) Use system-provided entry/asset types — rejected, neither service ships a "Kafka topic" type with the schema shape we need, and `dataplex-types` system entry types aren't accessible from user projects. (3) Skip catalog registration and document the limitation — rejected because the user explicitly wants schema visible in the catalog UI.
 - **Tradeoff:** Adds one bootstrap call per project/domain (idempotent, ~5s on first run, near-zero after) plus one upsert per topic (~200ms each). Failures are non-fatal — collected into `PushResult.errors` so a missing IAM permission only loses schema visibility for the affected topics, not the whole push. Catalog entries are not auto-deleted when topics disappear from Confluent — manual cleanup is the user's call.
 - **Files:** `catalogs/google_dataplex.py`, `catalogs/aws_datazone.py`, `catalogs/google_lineage.py`, `extractors/orchestrator.py`, `ui/sidebar.py`, `config/settings.py`
+
+## ADR-020: Service layer between API/UI and orchestrator
+
+- **Status:** Accepted
+- **Date:** 2026-05-01
+- **Decided by:** Blueprint, Forge, Lens
+- **Context:** The UI (`ui/extraction.py:126-163`) and the API (`api/routers/tasks.py:94-211`) each wrap the orchestrator with **divergent signatures**: the UI passes nine `enable_*` flags plus per-cluster credential merging; the API takes only `environment_ids` and hardcodes `enable_enrichment=True`. Adding any feature requires touching both call sites, and the API silently lags the UI. The watcher (`watcher/engine.py:_do_extraction`) is a third copy of the same anti-pattern. There is no shared request shape, no shared progress contract, and no place for cross-cutting concerns (validation, request logging, future authz). `extractors/orchestrator.py:116` types `ProgressCallback` as `Any`, so neither caller has type-checked progress payloads.
+- **Decision:** Introduce `lineage_bridge/services/` as the single entry point for extraction, enrichment, and push. The package owns:
+  - **Pydantic v2 request models** — `ExtractionRequest`, `EnrichmentRequest`, `PushRequest` — with `model_config = ConfigDict(frozen=True)` so the same instance can be passed across threads/processes safely.
+  - **`extraction_service.run_extraction(req, on_progress) -> LineageGraph`** — the only function that calls the orchestrator. Replaces the inline orchestrator wiring in UI, API, and watcher.
+  - **`enrichment_service.run_enrichment(req, graph) -> LineageGraph`** — collapses the per-catalog enrichment fan-out behind one entry.
+  - **`push_service.run_push(provider_name, graph, options) -> PushResult`** — a single dispatcher replacing the three near-identical `run_lineage_push` / `run_glue_push` / `run_google_push` functions in the orchestrator.
+  - **`request_builder.build_extraction_request(session_dict) -> ExtractionRequest`** — pure function (no Streamlit imports) that the UI calls to translate `st.session_state` into a request. The API parses its JSON body into the same model. A parity test asserts both paths produce identical instances for equivalent inputs.
+  - **`ProgressCallback` Protocol** — typed payloads (`PhaseStarted`, `PhaseCompleted`, `Warning`, `Error`) replacing `Any` at `extractors/orchestrator.py:116`.
+
+  As a structural cleanup, `api/openlineage/` moves up to `lineage_bridge/openlineage/` so `catalogs/google_lineage.py` can import the translator without dragging in FastAPI (fixes the backwards layering at `catalogs/google_lineage.py:233`).
+- **Alternatives:** (1) Lift the UI's `_resolve_extraction_context` into a shared helper but keep two call sites — rejected, doesn't solve API parity and leaves the request shape implicit. (2) Move the orchestrator's signature to match the UI's nine-flag form — rejected, locks the API into UI-shaped concerns and doesn't address watcher duplication. (3) Build a CQRS-style command bus — rejected as over-engineered for three operations and one process.
+- **Tradeoff:** One extra layer between callers and the orchestrator, and a small amount of duplication between Pydantic request models and the orchestrator's internal kwargs. In return, every feature lands in one place, the API is no longer behind the UI by construction, the watcher converges on the same code path (eliminating the dual-mode hazard at `watcher/cli.py:132-133`), and progress payloads become type-checked. Callers outside this repo (CLI, tests, future SDKs) get a stable request surface that doesn't change when orchestrator internals change.
+- **Files:** `services/extraction_service.py`, `services/enrichment_service.py`, `services/push_service.py`, `services/request_builder.py` (all new); `openlineage/` (moved from `api/openlineage/`); `api/routers/tasks.py`, `api/routers/push.py` (new), `ui/extraction.py`, `extractors/orchestrator.py`, `catalogs/google_lineage.py`
+
+## ADR-021: Catalog protocol v2 — discriminated MaterializationContext, single CATALOG_TABLE node type
+
+- **Status:** Accepted (supersedes ADR-006 once Phase 1B lands; ADR-016's `GOOGLE_TABLE` enum value is collapsed by this ADR)
+- **Date:** 2026-05-01
+- **Decided by:** Blueprint, Weaver, Lens
+- **Context:** `catalogs/protocol.py:18-42` defines only `build_node`, `enrich`, and `build_url`. Three problems block scaling to Snowflake, Watsonx, and beyond:
+  1. **`push_lineage()` is missing.** Push is implemented as bespoke `run_lineage_push` / `run_glue_push` / `run_google_push` functions inside `extractors/orchestrator.py`, one per catalog, with no shared signature.
+  2. **`build_node()` is Tableflow-shaped.** Its signature `(ci_config, tableflow_node_id, topic_name, ...)` assumes a Confluent Tableflow integration is the only materialization origin. Snowflake (via Kafka Connect Sink) and Watsonx (via Iceberg) cannot be expressed without bending the contract.
+  3. **Per-catalog `NodeType` enums** (`UC_TABLE`, `GLUE_TABLE`, `GOOGLE_TABLE`) cascade through `models/graph.py`, API schemas, `ui/styles.py`, and sample data. Each new catalog adds an enum value and edits four unrelated files — the opposite of the ADR-002 promise that "adding a new catalog = one file in `catalogs/`".
+
+  ADR-006 chose separate node types for type-safe filtering and per-type styling. With three catalogs already in tree and four more on the roadmap (Snowflake, Watsonx, BigQuery direct, Polaris), the cost has flipped: the enum is no longer a natural extension point.
+- **Decision:** Rev the catalog protocol to v2 as a **clean breaking change** — no migration helper, no compatibility shim. Concretely:
+  - **New protocol** in `catalogs/protocol.py`:
+    ```python
+    class CatalogProvider(Protocol):
+        catalog_type: str
+        supported_origins: tuple[OriginType, ...]  # TABLEFLOW, KAFKA_CONNECT, ICEBERG, DIRECT_INGEST
+
+        def build_node(self, ctx: MaterializationContext) -> tuple[LineageNode, LineageEdge]: ...
+        async def enrich(self, graph: LineageGraph, options: EnrichOptions) -> None: ...
+        async def push_lineage(self, graph: LineageGraph, options: PushOptions) -> PushResult: ...
+        def build_url(self, node: LineageNode) -> str | None: ...
+        async def discover(self) -> list[DiscoveredTable]: ...  # optional
+    ```
+  - **`MaterializationContext`** is a Pydantic discriminated union over `OriginType`. Each origin variant carries the fields that origin needs (Tableflow integration config, Kafka Connect connector class + config, Iceberg table reference, etc.). Providers declare which origins they accept via `supported_origins`; the dispatcher in `extractors/phases/tableflow.py` routes by origin → provider.
+  - **Single `NodeType.CATALOG_TABLE`** replaces `UC_TABLE`, `GLUE_TABLE`, `GOOGLE_TABLE`. A new `catalog_type: str` attribute on the node (values `"UNITY_CATALOG"`, `"AWS_GLUE"`, `"GOOGLE_DATA_LINEAGE"`, `"SNOWFLAKE"`, `"WATSONX"`, …) drives provider dispatch, styling, and URL building. `ui/styles.py` keys colors and icons on `catalog_type` instead of `NodeType`.
+  - **No migration code.** LineageBridge has no production users and no stored-graph compatibility surface to defend. The pre-v2 NodeType values (`UC_TABLE` / `GLUE_TABLE` / `GOOGLE_TABLE`) are deleted outright. Old JSON files fail Pydantic validation on load with a standard enum-mismatch traceback — re-extract instead of porting. If a real user with stored data appears later, a one-shot rewriter is a small follow-up PR. (Phase 2F's SQLite schema is greenfield for the same reason — no `002_v1_to_v2_node_types.sql` migration shipped.)
+  - **Optional dependencies** in `pyproject.toml` (`snowflake`, `watsonx`, `bigquery` extras) keep catalog-specific imports lazy inside provider methods so missing extras don't break import.
+- **Alternatives:** (1) Keep ADR-006's per-catalog node types and add `push_lineage` to the protocol only — rejected, doesn't solve the build_node Tableflow shape and still cascades enum changes through the codebase. (2) Generic `dict[str, Any]` for the materialization context — rejected, loses type safety exactly where we need it (provider dispatch). (3) Inheritance hierarchy (`CatalogTable(LineageNode)` with subclasses per catalog) — rejected, fights Pydantic v2 discriminated unions and breaks the protocol-not-ABC choice from ADR-001. (4) Introduce v2 alongside v1 with a shim layer — rejected, doubles surface area indefinitely. (5) Ship a `scripts/migrate_graphs_to_v2.py` rewriter + `LineageGraph.from_dict()` shim (the original ADR-021 plan) — rejected after re-evaluation: zero production users, zero promised stable JSON interchange, all test fixtures + sample data are source code that gets updated atomically with the protocol change. The migration helper would be ~150 LOC + tests + docs defending data that doesn't exist.
+- **Tradeoff:** This is a breaking change for any out-of-tree code that imports `NodeType.UC_TABLE` / `GLUE_TABLE` / `GOOGLE_TABLE` directly. Cost is bounded: there are no known external consumers and no stored data to port. Old JSON files raise a standard Pydantic enum-mismatch ValidationError on `LineageGraph.from_dict()` — noisy but accurate. The discriminated union adds Pydantic ceremony, but it's the standard v2 pattern and gives provider dispatch type-checked routing for free. The `catalog_type` string is intentionally not an enum so that out-of-tree providers can register themselves without editing this repo.
+- **Files:** `catalogs/protocol.py`, `catalogs/__init__.py`, `catalogs/databricks_uc.py`, `catalogs/aws_glue.py`, `catalogs/google_lineage.py`, `models/graph.py`, `extractors/orchestrator.py`, `ui/styles.py`, `config/settings.py`, `pyproject.toml`
+
+## ADR-022: Pluggable storage layer with file → sqlite tier
+
+- **Status:** Accepted
+- **Date:** 2026-05-01
+- **Decided by:** Weaver, Blueprint, Lens
+- **Context:** Four ad-hoc in-memory stores have grown up independently: `api/state.py:GraphStore`, `api/task_store.py:TaskStore`, `api/openlineage/store.py:EventStore`, and `config/cache.py`. Each reimplements dict-backed storage with its own locking style, serialization, and lifecycle. Consequences: a process restart loses every graph, task, and OpenLineage event; a multi-worker uvicorn deployment splits state across workers (a task started on worker A is invisible to worker B); there's no path to swap in a real backend. ADR-015 explicitly accepted in-memory stores for the API ("the source of truth is the upstream systems"), but the in-memory choice is now blocking three things: multi-worker deployment, the watcher-as-service refactor (ADR-023, which needs cross-process state), and any future Postgres/S3 tier.
+- **Decision:** Introduce `lineage_bridge/storage/` with a per-entity repository protocol and pluggable backends. Backend selection is a single env var; the rest of the codebase calls the protocol.
+  - **Protocols** (all async, in `storage/protocol.py`):
+    ```python
+    class GraphRepository(Protocol):
+        async def save(self, graph_id: str, graph: LineageGraph) -> None: ...
+        async def get(self, graph_id: str) -> LineageGraph | None: ...
+        async def list(self, *, limit: int = 50) -> list[GraphSummary]: ...
+        async def delete(self, graph_id: str) -> bool: ...
+        async def touch(self, graph_id: str) -> None: ...
+    ```
+    Same shape for `TaskRepository`, `EventRepository`, and (added by ADR-023) `WatcherRepository`.
+  - **Backends** (`storage/backends/`):
+    - `memory.py` — current in-memory behavior. Default for tests.
+    - `file.py` — JSON files under `~/.lineage_bridge/storage/{graphs,tasks,events,watchers}/` with `portalocker` for cross-process safety. Default for local single-node use.
+    - `sqlite.py` (Phase 2F) — `aiosqlite`, single-file DB, schema versioned via `storage/migrations/NNN_*.sql`. Default for production single-node.
+  - **Factory** (`storage/factory.py`) — `make_repositories(settings) -> Repositories` bundle, called once at app startup. `api/app.py` injects the bundle into routers via FastAPI's dependency injection; the watcher daemon and CLI use the same factory.
+  - **Settings** — `LINEAGE_BRIDGE_STORAGE__BACKEND={memory,file,sqlite}` and `LINEAGE_BRIDGE_STORAGE__PATH=...`. Defaults: `memory` for tests, `file` for local CLI, `sqlite` for the docker-compose API/watcher containers.
+  - **Conformance test suite** — one set of tests in `tests/storage/test_protocol_conformance.py` parametrized over all backends. Adding a new backend = one fixture + zero new tests. Existing `tests/api/test_state.py` etc. continue to pass against the memory adapter.
+  - **Existing stores become thin adapters** — `GraphStore`, `TaskStore`, `EventStore` keep their public signatures but delegate to the repository protocol. No router or test needs to change in the same PR.
+- **Alternatives:** (1) Jump straight to Postgres — rejected, adds a deployment dependency for a tool whose primary user is a single developer at a laptop. The file backend is the right default for that user. (2) Use SQLAlchemy across all backends — rejected, drags in an ORM for what are key/value lookups + a few list queries; `aiosqlite` directly is enough. (3) Keep the four stores and add file persistence to each — rejected, locks in the ad-hoc shape and fails the "switching backend is a config flag" principle. (4) Use Redis as the default backend — rejected, adds a process to run for the laptop user.
+- **Tradeoff:** Adds an abstraction layer and requires every backend to pass the conformance suite, which is real work for each new backend. In return: process restarts preserve state, multi-worker deployment works, the watcher service has a place to write its event feed and extraction history (ADR-023), and Postgres/S3/Redis become single-PR additions when there's a real driver. The file backend's per-write fsync + portalocker is slower than in-memory but is fine for this tool's throughput (tens of writes/sec at peak, not thousands). SQLite is the explicit production-tier ceiling for now — Postgres and S3 are deferred until a concrete driver appears (documented as future work in this ADR).
+- **Files:** `storage/protocol.py`, `storage/factory.py`, `storage/backends/memory.py`, `storage/backends/file.py`, `storage/backends/sqlite.py` (Phase 2F), `storage/migrations/` (Phase 2F) — all new; `api/state.py`, `api/task_store.py`, `api/openlineage/store.py`, `api/app.py`, `config/settings.py`, `pyproject.toml`, `docker-compose.yml`
+
+## ADR-023: Watcher as an independent service with persisted state
+
+- **Status:** Accepted (supersedes the in-process threading model from ADR-014; the polling cadence and debounce semantics from ADR-014 are kept)
+- **Date:** 2026-05-01
+- **Decided by:** Forge, Blueprint, Weaver, Lens
+- **Context:** ADR-014 chose REST polling + a 30s debounce for change detection, which is still correct. What is *not* correct is the deployment shape: `watcher/engine.py:WatcherEngine` is created and started by the UI (`ui/watcher.py:374-383`) as a **`threading.Thread` inside the Streamlit process**, with all state (`event_feed` deque, `extraction_history` list, `last_graph`, `poll_count`) living on the engine instance and the UI reaching into those attributes directly (`ui/watcher.py:215, 233, 269`). This produces five concrete problems:
+  1. Two Streamlit instances spawn two watcher threads, both polling Confluent independently.
+  2. The API has no `/watcher` router — it cannot start, stop, or query a running watcher.
+  3. `watcher/cli.py:132-133` bypasses the threading wrapper and calls `engine._run_loop()` in the main thread, so the CLI runs the same engine in a different mode than the UI does.
+  4. Restarting Streamlit kills the watcher and loses all event history.
+  5. `_do_extraction()` (`watcher/engine.py:317-352`) calls the orchestrator directly — a third copy of the divergent extraction call site that ADR-020 is collapsing.
+
+  ADR-022's storage layer creates the missing piece: a place to put watcher state that survives process restarts and is visible to other processes.
+- **Decision:** Promote the watcher to the **third peer service** alongside the API and UI. It becomes its own deployable process, persists state via the storage layer, and is controlled exclusively through the API.
+  - **`services/watcher_service.py`** — pure logic, no threading. Wraps the polling loop and debounce behind one `WatcherService` class. Calls `services.extraction_service.run_extraction()` (per ADR-020), so the CLI / UI / watcher all run the same extraction code path.
+  - **`services/watcher_runner.py`** — the long-running asyncio loop that owns the event loop. Persists state on every tick to `WatcherRepository`. Designed to run as either a foreground CLI process or a containerized daemon.
+  - **`api/routers/watcher.py`** — REST endpoints:
+    - `POST /api/v1/watcher/start` (body: `WatcherConfig`; returns `watcher_id`)
+    - `POST /api/v1/watcher/{id}/stop`
+    - `GET /api/v1/watcher/{id}/status`
+    - `GET /api/v1/watcher/{id}/events?limit=&since=`
+    - `GET /api/v1/watcher/{id}/history?limit=`
+    - `GET /api/v1/watcher` (list all known watchers across processes)
+  - **`WatcherRepository`** — added to `storage/protocol.py` (extends ADR-022). Stores config, status, event feed, and extraction history. Implemented against memory, file, and sqlite backends; covered by the conformance suite from ADR-022.
+  - **CLI** — `lineage-bridge-watch` becomes a thin wrapper over `services.watcher_runner.run_forever(config)`. It registers the watcher in storage, prints the assigned `watcher_id`, and handles signals. Same code path as the daemon.
+  - **UI** — stops creating `WatcherEngine` instances. The `@st.fragment(run_every=5)` poller in `ui/watcher.py:229` calls the API instead of reading engine attributes. Session state holds a `watcher_id` (UUID string) instead of a thread handle. Multiple UI instances see consistent state because they all read from the same storage backend via the API.
+  - **Deployment** — `infra/docker/Dockerfile.watcher` updated for the daemon entry point; `docker-compose.yml` runs `watcher` as its own service pointed at the same storage backend as `api`.
+  - **Cleanup** — `watcher/engine.py:WatcherEngine` deleted; logic lives entirely in `services/watcher_service.py`. `_use_audit_log` private flag removed — mode is explicit in `WatcherConfig`. The `watcher/` package becomes a thin re-export shim or goes away (decided during Phase 2G implementation).
+- **Alternatives:** (1) Keep the threading model but add an API router that pokes the in-process engine — rejected, doesn't solve multi-worker safety, dies-with-UI, or the dual-mode hazard. (2) Run the watcher as a `multiprocessing.Process` spawned by the API — rejected, ties the watcher's lifecycle to the API process and complicates k8s deployment (one container, two roles). (3) Rebuild the watcher on top of Celery / Arq / RQ — rejected, drags in a queue + broker for what is one long-running process per Confluent environment. (4) Push state into the existing in-memory stores instead of a real repository — rejected, loses the cross-process visibility that's the whole point.
+- **Tradeoff:** Adds a third deployable unit and a network hop between the UI and the watcher, plus the WatcherRepository implementation work across three backends. In return: the watcher survives UI restarts, multiple UI instances see the same watcher state, the API gains full programmatic control (currently a gap), the CLI and UI/API converge on one execution path (no more `engine._run_loop()` shortcut), and the watcher scales independently in k8s. The latency cost of "UI polls API polls storage" instead of "UI reads engine attribute" is ~50-100ms per refresh, well under the 5-second fragment cadence. The deployment-complexity cost is bounded by the docker-compose template — single-binary local use is preserved through `lineage-bridge-watch` running against the file backend, no daemon container required.
+- **Files:** `services/watcher_service.py`, `services/watcher_runner.py`, `api/routers/watcher.py`, `storage/protocol.py` (extend with `WatcherRepository`) — all new; `watcher/engine.py` (delete), `watcher/cli.py`, `ui/watcher.py`, `api/app.py`, `config/settings.py`, `infra/docker/Dockerfile.watcher`, `docker-compose.yml`

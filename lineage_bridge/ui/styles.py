@@ -6,12 +6,30 @@ from __future__ import annotations
 
 import base64
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from lineage_bridge.models.graph import EdgeType, NodeType
 
 _ICONS_DIR = Path(__file__).parent / "assets" / "icons"
+
+
+# ── Per-catalog visual style ───────────────────────────────────────────
+# All catalog tables share `NodeType.CATALOG_TABLE` (per ADR-021); each
+# `catalog_type` value gets its own color / label / brand icon below.
+# A single dict-of-dataclass keeps the four attributes in sync — adding a new
+# catalog (e.g. Snowflake) means one entry here, not three or four.
+
+
+@dataclass(frozen=True)
+class CatalogStyle:
+    """Visual style for one catalog_type — color, label, optional brand icon."""
+
+    color: str
+    label: str
+    icon: _IconSpec | None = None  # None = generic database-cylinder fallback
+
 
 # ── Color palette per node type ────────────────────────────────────────
 NODE_COLORS: dict[NodeType, str] = {
@@ -20,9 +38,7 @@ NODE_COLORS: dict[NodeType, str] = {
     NodeType.KSQLDB_QUERY: "#42A5F5",  # Confluent light blue
     NodeType.FLINK_JOB: "#D32F2F",  # Flink red
     NodeType.TABLEFLOW_TABLE: "#1565C0",  # Confluent medium blue
-    NodeType.UC_TABLE: "#F9A825",  # Databricks amber/yellow
-    NodeType.GLUE_TABLE: "#E65100",  # AWS orange
-    NodeType.GOOGLE_TABLE: "#4285F4",  # Google blue
+    NodeType.CATALOG_TABLE: "#F9A825",  # default catalog color (amber)
     NodeType.SCHEMA: "#90CAF9",  # Confluent pale blue
     NodeType.EXTERNAL_DATASET: "#757575",  # neutral gray
     NodeType.CONSUMER_GROUP: "#2196F3",  # Confluent mid blue
@@ -35,9 +51,7 @@ NODE_SIZES: dict[NodeType, int] = {
     NodeType.KSQLDB_QUERY: 38,
     NodeType.FLINK_JOB: 38,
     NodeType.TABLEFLOW_TABLE: 36,
-    NodeType.UC_TABLE: 36,
-    NodeType.GLUE_TABLE: 36,
-    NodeType.GOOGLE_TABLE: 36,
+    NodeType.CATALOG_TABLE: 36,
     NodeType.SCHEMA: 28,
     NodeType.EXTERNAL_DATASET: 34,
     NodeType.CONSUMER_GROUP: 30,
@@ -80,9 +94,7 @@ NODE_TYPE_LABELS: dict[NodeType, str] = {
     NodeType.KSQLDB_QUERY: "ksqlDB Query",
     NodeType.FLINK_JOB: "Flink Job",
     NodeType.TABLEFLOW_TABLE: "Tableflow Table",
-    NodeType.UC_TABLE: "Unity Catalog Table",
-    NodeType.GLUE_TABLE: "AWS Glue Table",
-    NodeType.GOOGLE_TABLE: "Google BigQuery Table",
+    NodeType.CATALOG_TABLE: "Catalog Table",  # generic; use label_for_node() for per-catalog
     NodeType.SCHEMA: "Schema",
     NodeType.EXTERNAL_DATASET: "External Dataset",
     NodeType.CONSUMER_GROUP: "Consumer Group",
@@ -104,9 +116,7 @@ NODE_SHAPES: dict[NodeType, str] = {
     NodeType.KSQLDB_QUERY: "image",
     NodeType.FLINK_JOB: "image",
     NodeType.TABLEFLOW_TABLE: "image",
-    NodeType.UC_TABLE: "image",
-    NodeType.GLUE_TABLE: "image",
-    NodeType.GOOGLE_TABLE: "image",
+    NodeType.CATALOG_TABLE: "image",
     NodeType.SCHEMA: "image",
     NodeType.EXTERNAL_DATASET: "image",
     NodeType.CONSUMER_GROUP: "image",
@@ -192,28 +202,10 @@ _SYMBOLS: dict[NodeType, str] = {
         '<line x1="-12" y1="7" x2="12" y2="7" stroke="#fff" stroke-width="1.5"/>'
         '<line x1="-2" y1="2" x2="-2" y2="14" stroke="#fff" stroke-width="1.5"/>'
     ),
-    # UC Table — database cylinder (classic DB icon)
-    NodeType.UC_TABLE: (
-        '<ellipse cx="0" cy="-9" rx="13" ry="6" fill="#fff"/>'
-        '<rect x="-13" y="-9" width="26" height="16" fill="#fff"/>'
-        '<ellipse cx="0" cy="7" rx="13" ry="6" fill="#fff"/>'
-        '<ellipse cx="0" cy="-9" rx="13" ry="6" fill="none" '
-        'stroke="rgba(0,0,0,0.2)" stroke-width="1"/>'
-        '<ellipse cx="0" cy="-2" rx="13" ry="5" fill="none" '
-        'stroke="rgba(0,0,0,0.12)" stroke-width="0.8"/>'
-    ),
-    # Glue Table — database cylinder (classic DB icon)
-    NodeType.GLUE_TABLE: (
-        '<ellipse cx="0" cy="-9" rx="13" ry="6" fill="#fff"/>'
-        '<rect x="-13" y="-9" width="26" height="16" fill="#fff"/>'
-        '<ellipse cx="0" cy="7" rx="13" ry="6" fill="#fff"/>'
-        '<ellipse cx="0" cy="-9" rx="13" ry="6" fill="none" '
-        'stroke="rgba(0,0,0,0.2)" stroke-width="1"/>'
-        '<ellipse cx="0" cy="-2" rx="13" ry="5" fill="none" '
-        'stroke="rgba(0,0,0,0.12)" stroke-width="0.8"/>'
-    ),
-    # Google Table — database cylinder (classic DB icon)
-    NodeType.GOOGLE_TABLE: (
+    # Catalog table — database cylinder (classic DB icon). Used as the
+    # fallback when a brand-specific SVG (UC / Glue / BigQuery) isn't loaded;
+    # see _OFFICIAL_ICON_FILES_BY_CATALOG.
+    NodeType.CATALOG_TABLE: (
         '<ellipse cx="0" cy="-9" rx="13" ry="6" fill="#fff"/>'
         '<rect x="-13" y="-9" width="26" height="16" fill="#fff"/>'
         '<ellipse cx="0" cy="7" rx="13" ry="6" fill="#fff"/>'
@@ -348,20 +340,51 @@ def _load_official_chip_body(spec: _IconSpec, fallback_stroke: str) -> str:
 _OFFICIAL_ICON_FILES: dict[NodeType, _IconSpec] = {
     NodeType.KAFKA_TOPIC: _IconSpec("apache-kafka.svg"),
     NodeType.FLINK_JOB: _IconSpec("apache-flink.svg"),
-    # Databricks brand red recoloured to palette amber/yellow.
-    NodeType.UC_TABLE: _IconSpec("databricks.svg", fill_override="#F9A825"),
-    NodeType.GOOGLE_TABLE: _IconSpec("google-bigquery.svg"),
-    # Use AWS Architecture Icon as a full-bleed tile (gradient + white squid).
-    NodeType.GLUE_TABLE: _IconSpec("aws-glue.svg", mode="tile"),
+}
+
+# Single source of truth per catalog: color, label, optional brand icon.
+# Adding a new catalog (Snowflake, Watsonx, ...) = one entry here. Keeps
+# the three knobs from drifting out of sync.
+CATALOG_STYLES: dict[str, CatalogStyle] = {
+    "UNITY_CATALOG": CatalogStyle(
+        color="#F9A825",  # Databricks amber/yellow
+        label="Unity Catalog Table",
+        # Databricks brand red recoloured to palette amber/yellow.
+        icon=_IconSpec("databricks.svg", fill_override="#F9A825"),
+    ),
+    "AWS_GLUE": CatalogStyle(
+        color="#E65100",  # AWS orange
+        label="AWS Glue Table",
+        # AWS Architecture Icon as a full-bleed tile (gradient + white squid).
+        icon=_IconSpec("aws-glue.svg", mode="tile"),
+    ),
+    "GOOGLE_DATA_LINEAGE": CatalogStyle(
+        color="#4285F4",  # Google blue
+        label="Google BigQuery Table",
+        icon=_IconSpec("google-bigquery.svg"),
+    ),
+    "AWS_DATAZONE": CatalogStyle(
+        color="#FF9900",  # AWS DataZone orange
+        label="AWS DataZone Asset",
+        icon=None,  # generic database cylinder; DataZone has no native graph node today
+    ),
 }
 
 
-def _get_chip_body(ntype: NodeType) -> str:
+def _get_chip_body(ntype: NodeType, catalog_type: str | None = None) -> str:
     """Return the inner body SVG for a node icon (no <svg> wrapper)."""
-    if ntype in _OFFICIAL_ICON_FILES:
-        fallback = NODE_COLORS.get(ntype, "#cccccc")
-        return _load_official_chip_body(_OFFICIAL_ICON_FILES[ntype], fallback)
-    color = NODE_COLORS.get(ntype, "#757575")
+    catalog_style = CATALOG_STYLES.get(catalog_type) if catalog_type else None
+
+    spec = _OFFICIAL_ICON_FILES.get(ntype)
+    if spec is None and catalog_style is not None:
+        spec = catalog_style.icon
+    if spec is not None:
+        fallback = (
+            catalog_style.color if catalog_style is not None else NODE_COLORS.get(ntype, "#cccccc")
+        )
+        return _load_official_chip_body(spec, fallback)
+
+    color = catalog_style.color if catalog_style is not None else NODE_COLORS.get(ntype, "#757575")
     symbol = _SYMBOLS.get(ntype, "")
     return (
         f'<rect x="2" y="2" width="60" height="60" rx="14" '
@@ -380,11 +403,22 @@ def _wrap_svg(body: str) -> str:
 
 
 def _build_node_icons() -> dict[NodeType, str]:
-    """Pre-build SVG data URIs for all node types."""
+    """Pre-build SVG data URIs for non-catalog node types and the generic catalog default."""
     return {ntype: _svg_to_data_uri(_wrap_svg(_get_chip_body(ntype))) for ntype in NodeType}
 
 
 NODE_ICONS: dict[NodeType, str] = _build_node_icons()
+
+
+def _build_catalog_icons() -> dict[str, str]:
+    """Pre-build SVG data URIs per catalog_type."""
+    return {
+        ct: _svg_to_data_uri(_wrap_svg(_get_chip_body(NodeType.CATALOG_TABLE, ct)))
+        for ct in CATALOG_STYLES
+    }
+
+
+CATALOG_ICONS: dict[str, str] = _build_catalog_icons()
 
 
 def _badge_overlay(badge_color: str, badge_text: str) -> str:
@@ -407,6 +441,17 @@ def build_topic_with_schema_icon() -> str:
 
 
 TOPIC_WITH_SCHEMA_ICON: str = build_topic_with_schema_icon()
+
+
+def build_dlq_topic_icon() -> str:
+    """Return a data URI for a Kafka topic icon with a red 'D' DLQ badge."""
+    body = _get_chip_body(NodeType.KAFKA_TOPIC)
+    # Red badge — DLQs hold rejected/error records, so a warning hue reads at a glance.
+    badge = _badge_overlay("#D32F2F", "D")
+    return _svg_to_data_uri(_wrap_svg(body + badge))
+
+
+DLQ_TOPIC_ICON: str = build_dlq_topic_icon()
 
 
 # ── Status badge colors & labels ─────────────────────────────────────
@@ -467,9 +512,7 @@ NODE_TYPE_EMOJI: dict[NodeType, str] = {
     NodeType.KSQLDB_QUERY: "\u2a37",  # ⨷ (query)
     NodeType.FLINK_JOB: "\u26a1",  # ⚡ (bolt)
     NodeType.TABLEFLOW_TABLE: "\u2637",  # ☷ (grid)
-    NodeType.UC_TABLE: "\u26c1",  # ⛁ (database)
-    NodeType.GLUE_TABLE: "\u26c1",  # ⛁ (database)
-    NodeType.GOOGLE_TABLE: "\u26c1",  # ⛁ (database)
+    NodeType.CATALOG_TABLE: "\u26c1",  # ⛁ (database)
     NodeType.SCHEMA: "\u2637",  # ☷ (document)
     NodeType.EXTERNAL_DATASET: "\u2601",  # ☁ (cloud)
     NodeType.CONSUMER_GROUP: "\u2638",  # ☸ (group)
@@ -568,17 +611,15 @@ def _build_external_dataset_url(node: Any) -> str | None:
 
 def build_node_url(node: Any) -> str | None:
     """Build a URL for any node type — dispatches to catalog providers for catalog nodes."""
-    from lineage_bridge.catalogs.aws_glue import GlueCatalogProvider
-    from lineage_bridge.catalogs.databricks_uc import DatabricksUCProvider
-    from lineage_bridge.catalogs.google_lineage import GoogleLineageProvider
+    from lineage_bridge.catalogs import get_provider
     from lineage_bridge.models.graph import NodeType
 
-    if node.node_type == NodeType.UC_TABLE:
-        return DatabricksUCProvider().build_url(node)
-    if node.node_type == NodeType.GLUE_TABLE:
-        return GlueCatalogProvider().build_url(node)
-    if node.node_type == NodeType.GOOGLE_TABLE:
-        return GoogleLineageProvider().build_url(node)
+    if node.node_type == NodeType.CATALOG_TABLE:
+        catalog_type = getattr(node, "catalog_type", None)
+        if not catalog_type:
+            return None
+        provider = get_provider(catalog_type)
+        return provider.build_url(node) if provider else None
     if node.node_type == NodeType.EXTERNAL_DATASET:
         return _build_external_dataset_url(node)
     return build_confluent_cloud_url(node)
@@ -605,3 +646,41 @@ def build_edge_vis_props(etype: EdgeType) -> dict[str, Any]:
             "align": "top",
         },
     }
+
+
+# ── Node-aware accessors ───────────────────────────────────────────────
+# These resolve a node's color / label / icon, taking `catalog_type` into
+# account so per-catalog distinctions (UC vs Glue vs BigQuery icons) survive
+# the ADR-021 NodeType collapse. Callers with only a NodeType in hand can
+# keep using the dicts directly — they'll get the catalog-default styling.
+
+
+def _catalog_style(node: Any) -> CatalogStyle | None:
+    """Return the CatalogStyle for a node, or None if it isn't a catalog table."""
+    if node.node_type != NodeType.CATALOG_TABLE:
+        return None
+    ct = getattr(node, "catalog_type", None)
+    return CATALOG_STYLES.get(ct) if ct else None
+
+
+def color_for_node(node: Any) -> str:
+    """Resolve a node's color, considering catalog_type for catalog tables."""
+    style = _catalog_style(node)
+    if style is not None:
+        return style.color
+    return NODE_COLORS.get(node.node_type, "#757575")
+
+
+def label_for_node(node: Any) -> str:
+    """Resolve a node's human-readable label, with per-catalog override."""
+    style = _catalog_style(node)
+    if style is not None:
+        return style.label
+    return NODE_TYPE_LABELS.get(node.node_type, node.node_type.value)
+
+
+def icon_for_node(node: Any) -> str:
+    """Resolve a node's pre-built icon data URI, with per-catalog override."""
+    if node.node_type == NodeType.CATALOG_TABLE and getattr(node, "catalog_type", None):
+        return CATALOG_ICONS.get(node.catalog_type, NODE_ICONS.get(NodeType.CATALOG_TABLE, ""))
+    return NODE_ICONS.get(node.node_type, "")

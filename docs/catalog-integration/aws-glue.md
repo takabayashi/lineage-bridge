@@ -31,7 +31,7 @@ graph LR
 
 The `GlueCatalogProvider` offers native integration with AWS analytics services:
 
-- **Build Nodes**: Creates `GLUE_TABLE` nodes from Tableflow catalog integrations
+- **Build Nodes**: Creates `CATALOG_TABLE` nodes (with `catalog_type=AWS_GLUE`) from Tableflow catalog integrations
 - **Enrich Metadata**: Fetches table schema, partitions, storage format, and SerDe info via the Glue API
 - **Push Lineage**: Writes Confluent lineage metadata as table parameters and description text
 
@@ -128,7 +128,7 @@ Attach this policy to an IAM user or role used by LineageBridge.
 
 ### 1. Node Creation (build_node)
 
-When Tableflow reports an AWS Glue integration, the provider creates a `GLUE_TABLE` node:
+When Tableflow reports an AWS Glue integration, the provider creates a `CATALOG_TABLE` node (with `catalog_type=AWS_GLUE`):
 
 ```python
 # Node ID format
@@ -267,7 +267,7 @@ uv run lineage-bridge-extract
 Check the extracted graph for Glue table nodes with enriched metadata:
 
 ```bash
-cat lineage_graph.json | jq '.nodes[] | select(.node_type == "GLUE_TABLE")'
+cat lineage_graph.json | jq '.nodes[] | select(.node_type == "catalog_table" and .catalog_type == "AWS_GLUE")'
 ```
 
 Expected attributes: `table_type`, `columns`, `partition_keys`, `storage_location`, `serde_info`

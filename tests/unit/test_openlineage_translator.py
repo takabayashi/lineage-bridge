@@ -6,7 +6,15 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from lineage_bridge.api.openlineage.models import (
+from lineage_bridge.models.graph import (
+    EdgeType,
+    LineageEdge,
+    LineageGraph,
+    LineageNode,
+    NodeType,
+    SystemType,
+)
+from lineage_bridge.openlineage.models import (
     ConfluentKafkaDatasetFacet,
     DatasetFacets,
     InputDataset,
@@ -16,18 +24,10 @@ from lineage_bridge.api.openlineage.models import (
     RunEvent,
     RunEventType,
 )
-from lineage_bridge.api.openlineage.translator import (
+from lineage_bridge.openlineage.translator import (
     _build_namespace,
     events_to_graph,
     graph_to_events,
-)
-from lineage_bridge.models.graph import (
-    EdgeType,
-    LineageEdge,
-    LineageGraph,
-    LineageNode,
-    NodeType,
-    SystemType,
 )
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -73,7 +73,7 @@ class TestBuildNamespace:
     def test_databricks_namespace(self):
         node = _node(
             "table",
-            NodeType.UC_TABLE,
+            NodeType.CATALOG_TABLE,
             SystemType.DATABRICKS,
             env="ws",
             cluster="",
@@ -84,7 +84,7 @@ class TestBuildNamespace:
     def test_aws_namespace(self):
         node = _node(
             "table",
-            NodeType.GLUE_TABLE,
+            NodeType.CATALOG_TABLE,
             SystemType.AWS,
             env="us-east-1",
             cluster="mydb",
@@ -241,8 +241,19 @@ class TestGraphToEvents:
         graph = LineageGraph()
         conn = _node("s3-sink", NodeType.CONNECTOR)
         topic = _node("orders")
-        uc_table = _node(
-            "catalog.schema.orders", NodeType.UC_TABLE, system=SystemType.DATABRICKS, env="ws"
+        # Build the UC node with the legacy "uc_table" ID segment that
+        # DatabricksUCProvider.build_node actually emits (see databricks_uc.py:79
+        # for the ID-stability rationale). The default _node() helper would
+        # produce "databricks:catalog_table:..." which doesn't match real data.
+        uc_node_id = "databricks:uc_table:ws:catalog.schema.orders"
+        uc_table = LineageNode(
+            node_id=uc_node_id,
+            system=SystemType.DATABRICKS,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="UNITY_CATALOG",
+            qualified_name="catalog.schema.orders",
+            display_name="catalog.schema.orders",
+            environment_id="ws",
         )
         graph.add_node(conn)
         graph.add_node(topic)
@@ -254,13 +265,7 @@ class TestGraphToEvents:
                 EdgeType.CONSUMES,
             )
         )
-        graph.add_edge(
-            _edge(
-                _nid("s3-sink", NodeType.CONNECTOR),
-                "databricks:uc_table:ws:catalog.schema.orders",
-                EdgeType.PRODUCES,
-            )
-        )
+        graph.add_edge(_edge(_nid("s3-sink", NodeType.CONNECTOR), uc_node_id, EdgeType.PRODUCES))
 
         events_all = graph_to_events(graph, confluent_only=False)
         events_co = graph_to_events(graph, confluent_only=True)

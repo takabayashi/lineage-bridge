@@ -81,8 +81,8 @@ check_prerequisites() {
   # Extract environment ID and GCP details from terraform or .env
   if [ -d "$PROJECT_ROOT/infra/demos/bigquery" ]; then
     ENV_ID=$(cd "$PROJECT_ROOT/infra/demos/bigquery" && terraform output -raw confluent_environment_id 2>/dev/null || echo "")
-    GCP_PROJECT=$(cd "$PROJECT_ROOT/infra/demos/bigquery" && terraform output -raw gcp_project_id 2>/dev/null || echo "")
-    BQ_DATASET=$(cd "$PROJECT_ROOT/infra/demos/bigquery" && terraform output -raw bigquery_dataset_id 2>/dev/null || echo "")
+    GCP_PROJECT=$(cd "$PROJECT_ROOT/infra/demos/bigquery" && terraform output -raw bigquery_project 2>/dev/null || echo "")
+    BQ_DATASET=$(cd "$PROJECT_ROOT/infra/demos/bigquery" && terraform output -raw bigquery_dataset 2>/dev/null || echo "")
   fi
 
   if [ -z "$ENV_ID" ]; then
@@ -133,75 +133,84 @@ test_bigquery_connector() {
   OUTPUT_FILE="/tmp/bq-integration-test.json"
 
   if [ ! -f "$OUTPUT_FILE" ]; then
-    test_skipped "BigQuery connector check (extraction not run yet)"
+    test_failed "BigQuery connector check (no extraction output)"
     return
   fi
 
-  # Check for BigQuery connector in output
+  # BigQuery sink connectors are matched by connector_class containing "BigQuery"
+  # (qualified_name uses the user's connector name, not the class).
   BQ_CONNECTORS=$(python3 -c "
 import json
 data = json.load(open('$OUTPUT_FILE'))
-bq_connectors = [n for n in data['nodes'] if n['node_type'] == 'connector' and 'bigquery' in n.get('qualified_name', '').lower()]
+bq_connectors = [
+    n for n in data['nodes']
+    if n['node_type'] == 'connector'
+    and 'bigquery' in n.get('attributes', {}).get('connector_class', '').lower()
+]
 print(len(bq_connectors))
 " 2>/dev/null || echo "0")
 
   if [ "$BQ_CONNECTORS" -ge 1 ]; then
     test_passed "BigQuery connector detected ($BQ_CONNECTORS connectors)"
 
-    # Display connector details
     python3 -c "
 import json
 data = json.load(open('$OUTPUT_FILE'))
-bq_connectors = [n for n in data['nodes'] if n['node_type'] == 'connector' and 'bigquery' in n.get('qualified_name', '').lower()]
+bq_connectors = [
+    n for n in data['nodes']
+    if n['node_type'] == 'connector'
+    and 'bigquery' in n.get('attributes', {}).get('connector_class', '').lower()
+]
 for conn in bq_connectors:
+    a = conn.get('attributes', {})
     print(f\"  Connector: {conn['qualified_name']}\")
-    print(f\"    Type: {conn.get('attributes', {}).get('connector_class', 'unknown')}\")
-    print(f\"    Status: {conn.get('attributes', {}).get('status', 'unknown')}\")
+    print(f\"    Class: {a.get('connector_class', 'unknown')}\")
+    print(f\"    State: {a.get('state', 'unknown')}\")
 "
   else
-    log_warn "BigQuery connector not found (may not be deployed yet)"
-    test_skipped "BigQuery connector check"
+    test_failed "BigQuery connector not found"
   fi
   echo ""
 }
 
-# Test 3: BigQuery External Dataset Nodes
+# Test 3: BigQuery Catalog Table Nodes
 test_bigquery_datasets() {
-  log_info "Test 3: BigQuery External Dataset Nodes"
+  log_info "Test 3: BigQuery Catalog Table Nodes"
 
   OUTPUT_FILE="/tmp/bq-integration-test.json"
 
   if [ ! -f "$OUTPUT_FILE" ]; then
-    test_skipped "BigQuery dataset check (extraction not run yet)"
+    test_failed "BigQuery dataset check (no extraction output)"
     return
   fi
 
-  # Check for BigQuery external dataset nodes
-  BQ_DATASETS=$(python3 -c "
+  # Post ADR-021, BQ tables are CATALOG_TABLE nodes with catalog_type=GOOGLE_DATA_LINEAGE.
+  BQ_TABLES=$(python3 -c "
 import json
 data = json.load(open('$OUTPUT_FILE'))
-bq_datasets = [n for n in data['nodes'] if n['node_type'] == 'external_dataset' and 'bigquery' in n.get('qualified_name', '').lower()]
-print(len(bq_datasets))
+bq = [n for n in data['nodes']
+      if n.get('node_type') == 'catalog_table'
+      and n.get('catalog_type') == 'GOOGLE_DATA_LINEAGE']
+print(len(bq))
 " 2>/dev/null || echo "0")
 
-  if [ "$BQ_DATASETS" -ge 1 ]; then
-    test_passed "BigQuery datasets detected ($BQ_DATASETS datasets)"
+  if [ "$BQ_TABLES" -ge 1 ]; then
+    test_passed "BigQuery catalog tables detected ($BQ_TABLES tables)"
 
-    # Display dataset details
     python3 -c "
 import json
 data = json.load(open('$OUTPUT_FILE'))
-bq_datasets = [n for n in data['nodes'] if n['node_type'] == 'external_dataset' and 'bigquery' in n.get('qualified_name', '').lower()]
-for ds in bq_datasets:
-    print(f\"  Dataset: {ds['qualified_name']}\")
-    project = ds.get('attributes', {}).get('project_id', 'unknown')
-    dataset = ds.get('attributes', {}).get('dataset_id', 'unknown')
-    table = ds.get('attributes', {}).get('table_id', 'unknown')
-    print(f\"    Location: {project}.{dataset}.{table}\")
+bq = [n for n in data['nodes']
+      if n.get('node_type') == 'catalog_table'
+      and n.get('catalog_type') == 'GOOGLE_DATA_LINEAGE']
+for t in bq:
+    a = t.get('attributes', {})
+    print(f\"  Table: {t['qualified_name']}\")
+    print(f\"    Location: {a.get('project_id', '?')}.{a.get('dataset_id', '?')}.{a.get('table_name', '?')}\")
+    print(f\"    Source topic: {a.get('source_topic', '?')}\")
 "
   else
-    log_warn "BigQuery datasets not found - connector may not have created tables yet"
-    test_skipped "BigQuery dataset check"
+    test_failed "BigQuery catalog tables not found"
   fi
   echo ""
 }
@@ -248,23 +257,34 @@ test_bigquery_lineage_api() {
 
   # Check if Google Data Lineage provider is configured
   if [ -z "$LINEAGE_BRIDGE_GCP_PROJECT_ID" ]; then
-    test_skipped "BigQuery lineage API (GCP credentials not configured)"
+    test_failed "BigQuery lineage API (GCP credentials not configured)"
     return
   fi
 
-  OUTPUT_FILE="/tmp/bq-enriched-test.json"
-  rm -f "$OUTPUT_FILE"
+  OUTPUT_FILE="/tmp/bq-integration-test.json"
 
-  if uv run lineage-bridge-extract --env "$ENV_ID" --output "$OUTPUT_FILE" 2>&1 | tee /tmp/bq-test5.log | tail -3 | grep -q "Complete:"; then
-    # Check if lineage metadata was added
-    if grep -q "google.*lineage\|data lineage" /tmp/bq-test5.log; then
-      test_passed "BigQuery Data Lineage API integration detected"
-    else
-      log_warn "BigQuery Data Lineage API not called - may not be enabled"
-      test_skipped "BigQuery lineage API check"
-    fi
+  if [ ! -f "$OUTPUT_FILE" ]; then
+    test_failed "BigQuery lineage API (no extraction output)"
+    return
+  fi
+
+  # GoogleLineageProvider enriches CATALOG_TABLE nodes via the BigQuery REST API
+  # (and pushes via Data Lineage API). Verify that the enrichment actually populated
+  # column metadata — proves the live HTTP call succeeded, not just that nodes exist.
+  ENRICHED=$(python3 -c "
+import json
+data = json.load(open('$OUTPUT_FILE'))
+nodes = [n for n in data['nodes']
+         if n.get('node_type') == 'catalog_table'
+         and n.get('catalog_type') == 'GOOGLE_DATA_LINEAGE'
+         and n.get('attributes', {}).get('columns')]
+print(len(nodes))
+" 2>/dev/null || echo "0")
+
+  if [ "$ENRICHED" -ge 1 ]; then
+    test_passed "BigQuery Data Lineage API enrichment ($ENRICHED tables with column metadata)"
   else
-    test_failed "BigQuery lineage API (extraction failed)"
+    test_failed "BigQuery lineage API (no GOOGLE_DATA_LINEAGE tables were enriched with columns)"
   fi
   echo ""
 }
@@ -276,29 +296,31 @@ test_connector_config() {
   OUTPUT_FILE="/tmp/bq-integration-test.json"
 
   if [ ! -f "$OUTPUT_FILE" ]; then
-    test_skipped "Connector config (extraction not run yet)"
+    test_failed "Connector config (no extraction output)"
     return
   fi
 
-  # Verify connector has required BigQuery configuration
+  # Connector nodes don't carry full config (sensitive); validate connector_class +
+  # direction (sink for BQ) + state. That proves the orchestrator parsed the
+  # connector and emitted the right shape post-refactor.
   HAS_CONFIG=$(python3 -c "
 import json
 data = json.load(open('$OUTPUT_FILE'))
-bq_connectors = [n for n in data['nodes'] if n['node_type'] == 'connector' and 'bigquery' in n.get('qualified_name', '').lower()]
-if bq_connectors:
-    config = bq_connectors[0].get('attributes', {}).get('config', {})
-    required = ['project', 'datasets', 'keyfile']  # BigQuery Sink v2 required fields
-    has_all = all(key in str(config).lower() for key in required)
-    print(1 if has_all or 'project' in str(config).lower() else 0)
-else:
-    print(0)
+bq = [n for n in data['nodes']
+      if n['node_type'] == 'connector'
+      and 'bigquery' in n.get('attributes', {}).get('connector_class', '').lower()]
+ok = bool(bq) and all(
+    c.get('attributes', {}).get('direction', '').upper() in ('SINK', 'OUTBOUND')
+    and c.get('attributes', {}).get('state')
+    for c in bq
+)
+print(1 if ok else 0)
 " 2>/dev/null || echo "0")
 
   if [ "$HAS_CONFIG" = "1" ]; then
-    test_passed "Connector configuration valid (has BigQuery project settings)"
+    test_passed "BigQuery connector configuration valid (sink direction + state present)"
   else
-    log_warn "Connector configuration incomplete or not found"
-    test_skipped "Connector config validation"
+    test_failed "BigQuery connector configuration invalid or missing"
   fi
   echo ""
 }
@@ -395,11 +417,18 @@ test_docker_build() {
     return
   fi
 
-  if make docker-build 2>&1 | tee /tmp/bq-test9.log | tail -3 | grep -q "Successfully"; then
-    test_passed "Docker build"
+  # Modern docker compose doesn't print "Successfully built ..." like old buildx.
+  # Verify success via exit code AND absence of explicit ERROR lines.
+  if make docker-build 2>&1 | tee /tmp/bq-test9.log >/dev/null; then
+    if grep -qiE "^ERROR\b|failed to build|build failed" /tmp/bq-test9.log; then
+      test_failed "Docker build (errors in build log)"
+      grep -iE "^ERROR\b|failed to build|build failed" /tmp/bq-test9.log | head -5
+    else
+      test_passed "Docker build"
+    fi
   else
-    test_failed "Docker build"
-    tail -10 /tmp/bq-test9.log
+    test_failed "Docker build (non-zero exit)"
+    tail -15 /tmp/bq-test9.log
   fi
   echo ""
 }

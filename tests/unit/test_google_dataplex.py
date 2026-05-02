@@ -94,9 +94,7 @@ class TestRegisterKafkaAssets:
         g.add_node(topic)
         g.add_node(schema)
         g.add_edge(
-            LineageEdge(
-                src_id=topic.node_id, dst_id=schema.node_id, edge_type=EdgeType.HAS_SCHEMA
-            )
+            LineageEdge(src_id=topic.node_id, dst_id=schema.node_id, edge_type=EdgeType.HAS_SCHEMA)
         )
         return g
 
@@ -139,7 +137,9 @@ class TestRegisterKafkaAssets:
         respx.get(f"{BASE}/{PARENT}/entryTypes/{ENTRY_TYPE_ID}").mock(httpx.Response(200))
         respx.get(f"{BASE}/{PARENT}/aspectTypes/{ASPECT_TYPE_ID}").mock(httpx.Response(200))
         # Entry POST returns 409 → registrar PATCHes instead.
-        respx.post(f"{BASE}/{PARENT}/entryGroups/{ENTRY_GROUP_ID}/entries").mock(httpx.Response(409))
+        respx.post(f"{BASE}/{PARENT}/entryGroups/{ENTRY_GROUP_ID}/entries").mock(
+            httpx.Response(409)
+        )
         patch_route = respx.patch(
             f"{BASE}/{PARENT}/entryGroups/{ENTRY_GROUP_ID}/entries/lkc-abc-lb.orders"
         ).mock(httpx.Response(200, json={"name": "ok"}))

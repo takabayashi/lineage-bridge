@@ -8,6 +8,9 @@ clusters, extractors to run) is selected interactively in the UI.
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Literal
+
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,6 +20,20 @@ class ClusterCredential(BaseModel):
 
     api_key: str
     api_secret: str
+
+
+class StorageSettings(BaseModel):
+    """Pluggable storage backend selection (see ADR-022).
+
+    Set via `LINEAGE_BRIDGE_STORAGE__BACKEND` (note the double underscore —
+    it's the nested-config delimiter from `pydantic_settings`).
+    """
+
+    backend: Literal["memory", "file", "sqlite"] = "memory"
+    path: Path = Field(
+        default_factory=lambda: Path.home() / ".lineage_bridge" / "storage",
+        description="Filesystem root for the file backend (and future sqlite).",
+    )
 
 
 class Settings(BaseSettings):
@@ -32,6 +49,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        env_nested_delimiter="__",
     )
 
     # ── Confluent Cloud (org-level / cloud API key) ─────────────────────
@@ -128,11 +146,21 @@ class Settings(BaseSettings):
     )
     api_host: str = Field(default="0.0.0.0", description="API server bind host")
     api_port: int = Field(default=8000, description="API server bind port")
+    api_url: str = Field(
+        default="http://127.0.0.1:8000",
+        description=(
+            "Base URL the UI uses to call the API. Defaults to the local "
+            "uvicorn instance; set when API runs in a separate container."
+        ),
+    )
 
     # ── Logging ─────────────────────────────────────────────────────────
     log_level: str = Field(
         default="INFO", description="Logging level (DEBUG, INFO, WARNING, ERROR)"
     )
+
+    # ── Storage backend ─────────────────────────────────────────────────
+    storage: StorageSettings = Field(default_factory=StorageSettings)
 
     def get_cluster_credentials(self, cluster_id: str) -> tuple[str, str]:
         """Return (api_key, api_secret) for a cluster.

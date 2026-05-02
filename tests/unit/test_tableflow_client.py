@@ -94,7 +94,7 @@ class TestTableflowExtract:
 
         nodes, edges = await tf_client.extract()
 
-        uc_nodes = [n for n in nodes if n.node_type == NodeType.UC_TABLE]
+        uc_nodes = [n for n in nodes if n.node_type == NodeType.CATALOG_TABLE]
         # Only orders-tableflow has DELTA format; customers-tableflow is ICEBERG-only
         assert len(uc_nodes) == 1
         assert all(n.system == SystemType.DATABRICKS for n in uc_nodes)
@@ -137,9 +137,9 @@ class TestTableflowExtract:
         glue_nodes = [n for n in nodes if n.system == SystemType.AWS]
         assert len(glue_nodes) == 2
         for n in glue_nodes:
-            assert n.node_type == NodeType.GLUE_TABLE
+            assert n.node_type == NodeType.CATALOG_TABLE
+            assert n.catalog_type == "AWS_GLUE"
             assert "glue://" in n.qualified_name
-            assert n.attributes["catalog_type"] == "AWS_GLUE"
             assert n.attributes["database"] == "my_glue_db"
 
     @respx.mock
@@ -168,8 +168,8 @@ class TestTableflowExtract:
 
         # Only tableflow_table nodes, no UC/Glue nodes
         node_types = {n.node_type for n in nodes}
-        assert NodeType.UC_TABLE not in node_types
-        assert NodeType.GLUE_TABLE not in node_types
+        assert NodeType.CATALOG_TABLE not in node_types
+        assert NodeType.CATALOG_TABLE not in node_types
 
     @respx.mock
     async def test_empty_topics_returns_empty(self, tf_client):

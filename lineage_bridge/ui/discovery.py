@@ -15,11 +15,13 @@ def _try_load_settings():
     """Attempt to load credentials from .env / environment variables.
 
     Falls back to the local encrypted cache for fields the demos write there
-    (``gcp_project_id`` / ``gcp_location`` and the AWS DataZone domain /
-    project IDs). This means the UI's "Push to Google" / "Push to DataZone"
-    buttons stay available across multi-demo workflows even when ``.env``
-    has been overwritten by a different demo.
+    (Databricks workspace + token, GCP project + location, AWS region, and
+    DataZone domain + project). This keeps the UI's "Push to UC" / "Push to
+    Google" / "Push to DataZone" buttons available across multi-demo workflows
+    even when ``.env`` has been overwritten by a different demo.
     """
+    import os
+
     try:
         from lineage_bridge.config.settings import Settings
 
@@ -39,12 +41,30 @@ def _try_load_settings():
         cache = load_cache()
         update: dict[str, str] = {}
 
+        # ── Databricks (UC demo) ─────────────────────────────────────────
+        db = cache.get("databricks_settings") or {}
+        if not settings.databricks_workspace_url and db.get("workspace_url"):
+            update["databricks_workspace_url"] = db["workspace_url"]
+        if not settings.databricks_token and db.get("token"):
+            update["databricks_token"] = db["token"]
+        if not settings.databricks_warehouse_id and db.get("warehouse_id"):
+            update["databricks_warehouse_id"] = db["warehouse_id"]
+
+        # ── AWS region (Glue demo). Settings.aws_region defaults to
+        # us-east-1, so we can't rely on falsy-check; only override when the
+        # user didn't set the env var explicitly. ──────────────────────────
+        aws = cache.get("aws_settings") or {}
+        if "LINEAGE_BRIDGE_AWS_REGION" not in os.environ and aws.get("region"):
+            update["aws_region"] = aws["region"]
+
+        # ── GCP (BigQuery demo) ──────────────────────────────────────────
         gcp = cache.get("gcp_settings") or {}
         if not settings.gcp_project_id and gcp.get("project_id"):
             update["gcp_project_id"] = gcp["project_id"]
-        if gcp.get("location"):
+        if gcp.get("location") and "LINEAGE_BRIDGE_GCP_LOCATION" not in os.environ:
             update.setdefault("gcp_location", gcp["location"])
 
+        # ── AWS DataZone (Glue + DataZone demo) ──────────────────────────
         dz = cache.get("aws_datazone_settings") or {}
         if not settings.aws_datazone_domain_id and dz.get("domain_id"):
             update["aws_datazone_domain_id"] = dz["domain_id"]

@@ -9,7 +9,6 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from lineage_bridge.api.auth import require_api_key
-from lineage_bridge.api.openlineage.translator import graph_to_events
 from lineage_bridge.api.schemas import (
     EdgeCreatedResponse,
     EdgeListResponse,
@@ -32,6 +31,7 @@ from lineage_bridge.models.graph import (
     NodeType,
     SystemType,
 )
+from lineage_bridge.openlineage.translator import graph_to_events
 
 router = APIRouter()
 

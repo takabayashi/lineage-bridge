@@ -67,7 +67,8 @@ def uc_graph():
         LineageNode(
             node_id="databricks:uc_table:env-abc:confluent_tableflow.lkc-abc123.orders_tableflow",
             system=SystemType.DATABRICKS,
-            node_type=NodeType.UC_TABLE,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="UNITY_CATALOG",
             qualified_name="confluent_tableflow.lkc-abc123.orders_tableflow",
             display_name="confluent_tableflow.lkc-abc123.orders_tableflow",
             environment_id="env-abc",
@@ -97,7 +98,7 @@ class TestBuildNode:
     def test_node_attributes(self, provider, sample_ci_config):
         node, _ = provider.build_node(sample_ci_config, "tf-id", "orders", "lkc-abc123", "env-abc")
         assert node.system == SystemType.DATABRICKS
-        assert node.node_type == NodeType.UC_TABLE
+        assert node.node_type == NodeType.CATALOG_TABLE
         assert node.attributes["catalog_name"] == "confluent_tableflow"
         assert node.attributes["schema_name"] == "lkc-abc123"
         assert node.attributes["table_name"] == "orders"
@@ -145,7 +146,8 @@ class TestBuildUrl:
         node = LineageNode(
             node_id="test",
             system=SystemType.DATABRICKS,
-            node_type=NodeType.UC_TABLE,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="UNITY_CATALOG",
             qualified_name="catalog.schema.table",
             display_name="catalog.schema.table",
             attributes={"workspace_url": WORKSPACE_URL},
@@ -153,27 +155,74 @@ class TestBuildUrl:
         url = provider.build_url(node)
         assert url == f"{WORKSPACE_URL}/explore/data/catalog/schema/table"
 
-    def test_no_workspace_url(self, provider):
+    def test_no_workspace_url(self, provider_no_creds):
+        """No URL on the provider AND none on the node → None."""
         node = LineageNode(
             node_id="test",
             system=SystemType.DATABRICKS,
-            node_type=NodeType.UC_TABLE,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="UNITY_CATALOG",
             qualified_name="catalog.schema.table",
             display_name="catalog.schema.table",
             attributes={},
         )
-        assert provider.build_url(node) is None
+        assert provider_no_creds.build_url(node) is None
 
     def test_invalid_qualified_name(self, provider):
         node = LineageNode(
             node_id="test",
             system=SystemType.DATABRICKS,
-            node_type=NodeType.UC_TABLE,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="UNITY_CATALOG",
             qualified_name="no_dots_here",
             display_name="no_dots_here",
             attributes={"workspace_url": WORKSPACE_URL},
         )
         assert provider.build_url(node) is None
+
+    def test_provider_url_overrides_stale_node_attribute(self, provider):
+        """If Confluent stored a stale workspace URL on the node, the
+        provider's settings-configured URL must win."""
+        stale = "https://stale-workspace.cloud.databricks.com"
+        node = LineageNode(
+            node_id="test",
+            system=SystemType.DATABRICKS,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="UNITY_CATALOG",
+            qualified_name="catalog.schema.table",
+            display_name="catalog.schema.table",
+            attributes={"workspace_url": stale},
+        )
+        url = provider.build_url(node)
+        assert url == f"{WORKSPACE_URL}/explore/data/catalog/schema/table"
+        assert stale not in url
+
+    def test_strips_trailing_slash_on_provider_url(self):
+        """Provider URLs with trailing slashes should not produce double slashes."""
+        provider = DatabricksUCProvider(workspace_url=f"{WORKSPACE_URL}/", token=TOKEN)
+        node = LineageNode(
+            node_id="test",
+            system=SystemType.DATABRICKS,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="UNITY_CATALOG",
+            qualified_name="catalog.schema.table",
+            display_name="catalog.schema.table",
+            attributes={},
+        )
+        url = provider.build_url(node)
+        assert url == f"{WORKSPACE_URL}/explore/data/catalog/schema/table"
+
+    def test_build_node_prefers_provider_workspace_url(self, provider):
+        """build_node should bake the provider's URL into the node, not Confluent's."""
+        ci_config_with_stale = {
+            "kind": "Unity",
+            "workspace_endpoint": "https://stale-workspace.cloud.databricks.com",
+            "catalog_name": "confluent_tableflow",
+        }
+        node, _ = provider.build_node(
+            ci_config_with_stale, "tf-id", "orders", "lkc-abc123", "env-abc"
+        )
+        assert node.attributes["workspace_url"] == WORKSPACE_URL
 
 
 class TestEnrich:
@@ -393,7 +442,8 @@ def push_graph():
     uc_node = LineageNode(
         node_id="databricks:uc_table:env-abc:confluent_tableflow.lkc-abc123.orders",
         system=SystemType.DATABRICKS,
-        node_type=NodeType.UC_TABLE,
+        node_type=NodeType.CATALOG_TABLE,
+        catalog_type="UNITY_CATALOG",
         qualified_name="confluent_tableflow.lkc-abc123.orders",
         display_name="confluent_tableflow.lkc-abc123.orders",
         environment_id="env-abc",
@@ -445,7 +495,7 @@ class TestPushLineage:
         )
 
         result = await provider.push_lineage(
-            push_graph, sql_client, set_properties=True, set_comments=False
+            push_graph, sql_client=sql_client, set_properties=True, set_comments=False
         )
 
         assert result.tables_updated == 1
@@ -467,7 +517,7 @@ class TestPushLineage:
         )
 
         result = await provider.push_lineage(
-            push_graph, sql_client, set_properties=False, set_comments=True
+            push_graph, sql_client=sql_client, set_properties=False, set_comments=True
         )
 
         assert result.tables_updated == 1
@@ -489,7 +539,7 @@ class TestPushLineage:
 
         result = await provider.push_lineage(
             push_graph,
-            sql_client,
+            sql_client=sql_client,
             set_properties=False,
             set_comments=False,
             create_bridge_table=True,
@@ -512,7 +562,7 @@ class TestPushLineage:
             )
         )
 
-        result = await provider.push_lineage(graph, sql_client)
+        result = await provider.push_lineage(graph, sql_client=sql_client)
         assert result.tables_updated == 0
 
     @respx.mock
@@ -531,7 +581,7 @@ class TestPushLineage:
             )
         )
 
-        result = await provider.push_lineage(push_graph, sql_client)
+        result = await provider.push_lineage(push_graph, sql_client=sql_client)
         assert result.tables_updated == 1
         assert len(result.errors) > 0
         assert any("PERMISSION_DENIED" in e for e in result.errors)

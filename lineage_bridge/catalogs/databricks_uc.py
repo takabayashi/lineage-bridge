@@ -44,8 +44,6 @@ class DatabricksUCProvider:
     """CatalogProvider implementation for Databricks Unity Catalog."""
 
     catalog_type: str = "UNITY_CATALOG"
-    node_type: NodeType = NodeType.UC_TABLE
-    system_type: SystemType = SystemType.DATABRICKS
 
     def __init__(
         self,
@@ -63,21 +61,29 @@ class DatabricksUCProvider:
         cluster_id: str,
         environment_id: str,
     ) -> tuple[LineageNode, LineageEdge]:
-        """Create a UC_TABLE node and MATERIALIZES edge from the tableflow node."""
+        """Create a CATALOG_TABLE node + MATERIALIZES edge from the tableflow node."""
         # Support both flat config format (API) and nested format (legacy/tests)
         uc_cfg = ci_config.get("unity_catalog", ci_config)
         catalog_name = uc_cfg.get("catalog_name", "confluent_tableflow")
-        workspace_url = uc_cfg.get("workspace_endpoint") or uc_cfg.get("workspace_url")
+        # Prefer the user-configured workspace URL (settings) over Confluent's
+        # stored workspace_endpoint, which may be stale or wrong.
+        workspace_url = (
+            self._workspace_url or uc_cfg.get("workspace_endpoint") or uc_cfg.get("workspace_url")
+        )
         # Tableflow normalizes dots → underscores in table names, but keeps
         # the raw cluster ID (with hyphens) as the schema name.
         uc_table_name = topic_name.replace(".", "_")
         qualified = f"{catalog_name}.{cluster_id}.{uc_table_name}"
+        # Node ID keeps the legacy "uc_table" segment so existing graph IDs and
+        # external references don't all churn at once. The discriminator that
+        # matters at runtime is `catalog_type`.
         uc_id = f"databricks:uc_table:{environment_id}:{qualified}"
 
         node = LineageNode(
             node_id=uc_id,
             system=SystemType.DATABRICKS,
-            node_type=NodeType.UC_TABLE,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="UNITY_CATALOG",
             qualified_name=qualified,
             display_name=qualified,
             environment_id=environment_id,
@@ -102,7 +108,7 @@ class DatabricksUCProvider:
             logger.debug("Databricks UC enrichment skipped — no credentials configured")
             return
 
-        uc_nodes = graph.filter_by_type(NodeType.UC_TABLE)
+        uc_nodes = graph.filter_catalog_nodes("UNITY_CATALOG")
         if not uc_nodes:
             return
 
@@ -221,7 +227,8 @@ class DatabricksUCProvider:
                 new_node = LineageNode(
                     node_id=new_id,
                     system=SystemType.DATABRICKS,
-                    node_type=NodeType.UC_TABLE,
+                    node_type=NodeType.CATALOG_TABLE,
+                    catalog_type="UNITY_CATALOG",
                     qualified_name=qualified,
                     display_name=qualified,
                     environment_id=env_id,
@@ -259,26 +266,60 @@ class DatabricksUCProvider:
     async def push_lineage(
         self,
         graph: LineageGraph,
-        sql_client: Any,
         *,
+        sql_client: Any | None = None,
+        warehouse_id: str | None = None,
         set_properties: bool = True,
         set_comments: bool = True,
         create_bridge_table: bool = False,
         bridge_table_name: str | None = None,
         on_progress: Callable[[str, str], None] | None = None,
     ) -> PushResult:
-        """Push Confluent lineage metadata to UC tables via SQL.
+        """Push Confluent lineage metadata to UC tables via the Statement Execution API.
 
-        Uses the Databricks Statement Execution API to set table properties,
-        comments, and optionally create a lineage bridge table.
+        Provider builds its own `DatabricksSQLClient` if none is supplied,
+        discovering a running warehouse if `warehouse_id` is also unset.
+        Tests can inject a mock `sql_client` directly.
         """
         from lineage_bridge.clients.databricks_sql import DatabricksSQLClient
 
-        assert isinstance(sql_client, DatabricksSQLClient)
         result = PushResult()
 
+        if sql_client is None:
+            if not self._workspace_url or not self._token:
+                return PushResult(
+                    errors=["Databricks workspace URL / token not configured on provider"]
+                )
+            if not warehouse_id:
+                from lineage_bridge.clients.databricks_discovery import (
+                    list_warehouses,
+                    pick_running_warehouse,
+                )
+
+                if on_progress:
+                    on_progress("Push", "No warehouse ID configured — discovering...")
+                try:
+                    warehouses = await list_warehouses(self._workspace_url, self._token)
+                    selected = pick_running_warehouse(warehouses)
+                    if not selected:
+                        return PushResult(errors=["No SQL warehouses found in workspace"])
+                    warehouse_id = selected.id
+                    if on_progress:
+                        on_progress("Push", f"Auto-selected warehouse: {selected.name}")
+                except Exception as exc:
+                    return PushResult(errors=[f"Warehouse discovery failed: {exc}"])
+            sql_client = DatabricksSQLClient(
+                workspace_url=self._workspace_url,
+                token=self._token,
+                warehouse_id=warehouse_id,
+            )
+        else:
+            assert isinstance(sql_client, DatabricksSQLClient)
+
         uc_nodes = [
-            n for n in graph.filter_by_type(NodeType.UC_TABLE) if n.system == SystemType.DATABRICKS
+            n
+            for n in graph.filter_catalog_nodes("UNITY_CATALOG")
+            if n.system == SystemType.DATABRICKS
         ]
         if not uc_nodes:
             return result
@@ -499,11 +540,14 @@ class DatabricksUCProvider:
 
     def build_url(self, node: LineageNode) -> str | None:
         """Build a deep link to the table in the Databricks workspace UI."""
-        workspace_url = node.attributes.get("workspace_url")
+        # Prefer the provider's configured workspace URL (from settings) over
+        # the per-node attribute, which may carry a stale value baked in by
+        # Confluent's Tableflow integration config.
+        workspace_url = self._workspace_url or node.attributes.get("workspace_url")
         if not workspace_url:
             return None
         parts = node.qualified_name.split(".")
         if len(parts) != 3:
             return None
         catalog, schema, table = parts
-        return f"{workspace_url}/explore/data/{catalog}/{schema}/{table}"
+        return f"{workspace_url.rstrip('/')}/explore/data/{catalog}/{schema}/{table}"

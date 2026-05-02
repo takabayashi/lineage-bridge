@@ -78,9 +78,17 @@ All node IDs follow a consistent format:
 - Connector: `confluent:connector:env-abc123:lkc-xyz789:mysql-source`
 - ksqlDB query: `confluent:ksqldb_query:env-abc123:lksqlc-abc:QUERY_123`
 - Flink job: `confluent:flink_job:env-abc123:lfcp-xyz:my-statement`
-- UC table: `databricks:uc_table:env-abc123:main.sales.orders`
+- UC table: `databricks:uc_table:env-abc123:main.sales.orders` *(see "Catalog node IDs" note below)*
 - Glue table: `aws:glue_table:env-abc123:my_database.my_table`
 - Google table: `google:google_table:env-abc123:project.dataset.table`
+
+> **Catalog node IDs (v0.5.0):** ADR-021 collapsed the per-catalog NodeType
+> values into a single `CATALOG_TABLE`, but the **node-ID segments above
+> were left intentionally unchanged** (`uc_table` / `glue_table` /
+> `google_table`) for ID stability — graphs serialised before the rename
+> still resolve to the right keys. The runtime discriminator is the
+> `catalog_type` field on the node (`UNITY_CATALOG` / `AWS_GLUE` / etc.),
+> not the ID-segment string.
 - Schema: `confluent:schema:env-abc123:my-topic-value:v1`
 - External dataset: `external:external_dataset:env-abc123:s3://bucket/path`
 - Consumer group: `confluent:consumer_group:env-abc123:lkc-xyz789:my-group`
@@ -94,13 +102,16 @@ class NodeType(StrEnum):
     KSQLDB_QUERY = "ksqldb_query"
     FLINK_JOB = "flink_job"
     TABLEFLOW_TABLE = "tableflow_table"
-    UC_TABLE = "uc_table"
-    GLUE_TABLE = "glue_table"
-    GOOGLE_TABLE = "google_table"
+    CATALOG_TABLE = "catalog_table"   # v0.5.0: collapses UC/Glue/Google
     SCHEMA = "schema"
     EXTERNAL_DATASET = "external_dataset"
     CONSUMER_GROUP = "consumer_group"
 ```
+
+The companion `LineageNode.catalog_type: str | None` discriminates among
+catalogs (`UNITY_CATALOG`, `AWS_GLUE`, `GOOGLE_DATA_LINEAGE`,
+`AWS_DATAZONE`, future `SNOWFLAKE` / `WATSONX`). It's `None` for non-catalog
+node types.
 
 ### Node Type Descriptions
 
@@ -111,9 +122,7 @@ class NodeType(StrEnum):
 | `KSQLDB_QUERY` | ksqlDB persistent query, stream, or table | `CSAS_ORDERS_0`, `USER_STREAM` |
 | `FLINK_JOB` | Flink SQL statement | `process-clickstream` |
 | `TABLEFLOW_TABLE` | Tableflow integration table | Intermediate mapping node |
-| `UC_TABLE` | Databricks Unity Catalog table | `main.sales.orders` |
-| `GLUE_TABLE` | AWS Glue Data Catalog table | `my_database.my_table` |
-| `GOOGLE_TABLE` | Google BigQuery table | `project.dataset.table` |
+| `CATALOG_TABLE` | Catalog table — UC / Glue / BigQuery / DataZone (discriminated by `catalog_type`) | `main.sales.orders` (UC), `my_database.my_table` (Glue), `project.dataset.table` (BigQuery) |
 | `SCHEMA` | Schema Registry schema version | `orders-value`, `users-key` |
 | `EXTERNAL_DATASET` | External system (S3, database, etc.) | `s3://bucket/path`, `mysql://host/db.table` |
 | `CONSUMER_GROUP` | Kafka consumer group | `payment-processor`, `analytics` |
@@ -157,9 +166,9 @@ class SystemType(StrEnum):
 | System | Description | Node Types |
 |--------|-------------|-----------|
 | `CONFLUENT` | Confluent Cloud | `KAFKA_TOPIC`, `CONNECTOR`, `KSQLDB_QUERY`, `FLINK_JOB`, `SCHEMA`, `CONSUMER_GROUP`, `TABLEFLOW_TABLE` |
-| `DATABRICKS` | Databricks Unity Catalog | `UC_TABLE` |
-| `AWS` | AWS Glue Data Catalog | `GLUE_TABLE` |
-| `GOOGLE` | Google BigQuery | `GOOGLE_TABLE` |
+| `DATABRICKS` | Databricks Unity Catalog | `CATALOG_TABLE` (catalog_type=`UNITY_CATALOG`) |
+| `AWS` | AWS Glue Data Catalog / DataZone | `CATALOG_TABLE` (catalog_type=`AWS_GLUE` or `AWS_DATAZONE`) |
+| `GOOGLE` | Google BigQuery / Data Lineage | `CATALOG_TABLE` (catalog_type=`GOOGLE_DATA_LINEAGE`) |
 | `EXTERNAL` | External systems | `EXTERNAL_DATASET` |
 
 ## Graph Operations
@@ -181,11 +190,14 @@ topic = LineageNode(
 )
 graph.add_node(topic)
 
-# Add a UC table node
+# Add a UC table node — note CATALOG_TABLE + catalog_type discriminator (v0.5.0).
+# The "uc_table" segment in node_id is intentional ID-stability legacy; the
+# runtime type is CATALOG_TABLE.
 table = LineageNode(
     node_id="databricks:uc_table:env-abc123:main.sales.orders",
     system=SystemType.DATABRICKS,
-    node_type=NodeType.UC_TABLE,
+    node_type=NodeType.CATALOG_TABLE,
+    catalog_type="UNITY_CATALOG",
     qualified_name="main.sales.orders",
     display_name="main.sales.orders",
 )
@@ -283,7 +295,7 @@ enriched-orders (KAFKA_TOPIC)
     | MATERIALIZES
     |
     v
-main.sales.orders (UC_TABLE)
+main.sales.orders (CATALOG_TABLE, catalog_type=UNITY_CATALOG)
 ```
 
 ### Node Attributes

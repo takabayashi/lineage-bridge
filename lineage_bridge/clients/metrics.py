@@ -19,7 +19,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from lineage_bridge.clients.base import ConfluentClient
-from lineage_bridge.models.graph import LineageGraph, NodeType
+from lineage_bridge.models.graph import EdgeType, LineageGraph, LineageNode, NodeType
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,43 @@ _FLINK_METRICS = [
     "io.confluent.flink/num_records_in",
     "io.confluent.flink/num_records_out",
 ]
+
+
+def _coerce_int(val: Any) -> int | None:
+    """Best-effort int conversion. Catalog APIs return num_rows/num_bytes as
+    strings ("582"), ints, or sometimes nothing — normalize to int|None."""
+    if val is None or val == "":
+        return None
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_epoch_ms(val: Any) -> datetime | None:
+    """Coerce a catalog-provided timestamp into a UTC datetime, or None.
+
+    Accepts the three shapes the catalog providers actually return:
+    - BigQuery / UC: epoch-millis as int or numeric string ("1777688367152")
+    - AWS Glue:      ISO 8601 / Python `str(datetime)` ("2026-04-14 21:42:11+00:00")
+    """
+    if val is None or val == "":
+        return None
+    ms = _coerce_int(val)
+    if ms is not None and ms > 0:
+        try:
+            return datetime.fromtimestamp(ms / 1000.0, tz=UTC)
+        except (OverflowError, OSError, ValueError):
+            return None
+    # Try ISO-like strings (with or without timezone).
+    if isinstance(val, str):
+        for s in (val, val.replace(" ", "T")):
+            try:
+                dt = datetime.fromisoformat(s)
+                return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+            except ValueError:
+                continue
+    return None
 
 
 @dataclass
@@ -173,59 +210,229 @@ class MetricsClient:
 
         return summaries
 
-    async def enrich(self, graph: LineageGraph, cluster_id: str) -> int:
-        """Enrich graph nodes with metrics data for a given cluster.
+    async def query_flink_metrics(self, cluster_id: str) -> dict[str, MetricsSummary]:
+        """Query Flink statement-level metrics for a Kafka cluster.
 
-        Adds metric attributes to topic and connector nodes:
-        - metrics_received_bytes, metrics_sent_bytes
-        - metrics_received_records, metrics_sent_records
-        - metrics_active (bool)
-        - metrics_window_hours
+        Returns a dict of statement_id -> MetricsSummary (received/sent records).
+        Telemetry doesn't expose Flink statement bytes, so byte fields stay 0.
+        """
+        summaries: dict[str, MetricsSummary] = {}
+        for metric in _FLINK_METRICS:
+            data = await self._query_metric(metric, cluster_id, "resource.flink_statement.id")
+            for point in data:
+                statement = point.get("resource.flink_statement.id", "")
+                if not statement:
+                    continue
+                s = summaries.setdefault(statement, MetricsSummary())
+                val = point.get("value", 0.0)
+                if "num_records_in" in metric:
+                    s.received_records += val
+                elif "num_records_out" in metric:
+                    s.sent_records += val
+                if val > 0:
+                    s.is_active = True
+        return summaries
+
+    @staticmethod
+    def _apply_summary(node: LineageNode, summary: MetricsSummary, window_hours: int) -> None:
+        """Mutate `node.attributes` with the standard `metrics_*` shape."""
+        node.attributes["metrics_received_bytes"] = summary.received_bytes
+        node.attributes["metrics_sent_bytes"] = summary.sent_bytes
+        node.attributes["metrics_received_records"] = summary.received_records
+        node.attributes["metrics_sent_records"] = summary.sent_records
+        node.attributes["metrics_active"] = summary.is_active
+        node.attributes["metrics_window_hours"] = window_hours
+
+    async def enrich(self, graph: LineageGraph, cluster_id: str) -> int:
+        """Enrich graph nodes with metrics for a given cluster.
+
+        Populates the standard `metrics_*` attribute shape across every
+        applicable node type:
+
+        - KAFKA_TOPIC, CONNECTOR, FLINK_JOB → live counters from Telemetry API
+        - CONSUMER_GROUP                    → derived from MEMBER_OF.max_lag edges
+        - TABLEFLOW_TABLE                   → inherited from upstream KAFKA_TOPIC
+        - CATALOG_TABLE                     → promoted from catalog enrichment
+                                             (num_rows / num_bytes / last_modified)
+        - KSQLDB_QUERY                      → metrics_active from query state
+        - SCHEMA, EXTERNAL_DATASET          → skipped (no real metric source)
 
         Returns the number of nodes enriched.
         """
         enriched = 0
 
-        # Enrich topics
+        # ── Telemetry-backed metrics (Topics, Connectors, Flink) ───────
         topic_metrics = await self.query_topic_metrics(cluster_id)
         for node in graph.nodes:
-            if node.node_type != NodeType.KAFKA_TOPIC:
+            if node.node_type != NodeType.KAFKA_TOPIC or node.cluster_id != cluster_id:
                 continue
-            if node.cluster_id != cluster_id:
-                continue
-            # Match by topic name (last segment of qualified_name)
             parts = node.qualified_name.split(":")
             topic_name = parts[-1] if len(parts) > 1 else node.qualified_name
-            # Also try display_name
             summary = topic_metrics.get(topic_name) or topic_metrics.get(node.display_name)
             if summary:
-                node.attributes["metrics_received_bytes"] = summary.received_bytes
-                node.attributes["metrics_sent_bytes"] = summary.sent_bytes
+                self._apply_summary(node, summary, self._lookback_hours)
+                enriched += 1
+
+        connector_metrics = await self.query_connector_metrics(cluster_id)
+        for node in graph.nodes:
+            if node.node_type != NodeType.CONNECTOR or node.cluster_id != cluster_id:
+                continue
+            # `confluent_id` (the lcc-XXXXX resource ID) is what Telemetry
+            # groups by; fall back to display_name for self-managed connectors.
+            keys = (node.attributes.get("confluent_id"), node.display_name)
+            summary = next(
+                (connector_metrics[k] for k in keys if k and k in connector_metrics),
+                None,
+            )
+            if summary:
                 node.attributes["metrics_received_records"] = summary.received_records
                 node.attributes["metrics_sent_records"] = summary.sent_records
                 node.attributes["metrics_active"] = summary.is_active
                 node.attributes["metrics_window_hours"] = self._lookback_hours
                 enriched += 1
 
-        # Enrich connectors
-        connector_metrics = await self.query_connector_metrics(cluster_id)
+        flink_metrics = await self.query_flink_metrics(cluster_id)
         for node in graph.nodes:
-            if node.node_type != NodeType.CONNECTOR:
+            if node.node_type != NodeType.FLINK_JOB:
                 continue
-            if node.cluster_id != cluster_id:
-                continue
-            connector_id = node.attributes.get("connector_id", node.display_name)
-            summary = connector_metrics.get(connector_id)
+            # Flink statement IDs match the node's qualified_name; fall back
+            # to display_name for older extracts that used the friendlier name.
+            keys = (node.qualified_name, node.display_name)
+            summary = next((flink_metrics[k] for k in keys if k and k in flink_metrics), None)
             if summary:
                 node.attributes["metrics_received_records"] = summary.received_records
                 node.attributes["metrics_sent_records"] = summary.sent_records
                 node.attributes["metrics_active"] = summary.is_active
                 node.attributes["metrics_window_hours"] = self._lookback_hours
                 enriched += 1
+
+        # ── Graph-derived metrics (no extra API calls) ─────────────────
+        enriched += self._enrich_consumer_groups(graph)
+        enriched += self._enrich_catalog_tables(graph)
+        enriched += self._enrich_ksqldb_queries(graph)
+        # Inherit-from-topic must run AFTER topic enrichment above so we
+        # have something to copy.
+        enriched += self._enrich_tableflow_tables(graph)
 
         logger.info(
             "Enriched %d nodes with metrics for cluster %s",
             enriched,
             cluster_id,
         )
+        return enriched
+
+    def _enrich_consumer_groups(self, graph: LineageGraph) -> int:
+        """Aggregate per-topic `max_lag` (already on MEMBER_OF edges) into a
+        per-group `metrics_total_lag` + `metrics_active` on the CONSUMER_GROUP node.
+        """
+        lag_by_group: dict[str, int] = {}
+        for edge in graph.edges:
+            if edge.edge_type != EdgeType.MEMBER_OF:
+                continue
+            lag = int(edge.attributes.get("max_lag", 0) or 0)
+            lag_by_group[edge.src_id] = lag_by_group.get(edge.src_id, 0) + lag
+
+        enriched = 0
+        for node in graph.nodes:
+            if node.node_type != NodeType.CONSUMER_GROUP:
+                continue
+            total_lag = lag_by_group.get(node.node_id, 0)
+            node.attributes["metrics_total_lag"] = total_lag
+            node.attributes["metrics_active"] = total_lag > 0 or node.attributes.get("state") in {
+                "STABLE",
+                "Stable",
+            }
+            node.attributes["metrics_window_hours"] = self._lookback_hours
+            enriched += 1
+        return enriched
+
+    def _enrich_tableflow_tables(self, graph: LineageGraph) -> int:
+        """Inherit topic metrics onto TABLEFLOW_TABLE via upstream MATERIALIZES edges."""
+        topics_by_id = {n.node_id: n for n in graph.nodes if n.node_type == NodeType.KAFKA_TOPIC}
+        upstream_topic: dict[str, str] = {}
+        for edge in graph.edges:
+            if edge.edge_type != EdgeType.MATERIALIZES:
+                continue
+            if edge.src_id in topics_by_id:
+                upstream_topic[edge.dst_id] = edge.src_id
+
+        enriched = 0
+        for node in graph.nodes:
+            if node.node_type != NodeType.TABLEFLOW_TABLE:
+                continue
+            tid = upstream_topic.get(node.node_id)
+            if not tid:
+                continue
+            tn = topics_by_id[tid]
+            if tn.attributes.get("metrics_active") is None:
+                continue
+            for k in (
+                "metrics_received_bytes",
+                "metrics_sent_bytes",
+                "metrics_received_records",
+                "metrics_sent_records",
+                "metrics_active",
+                "metrics_window_hours",
+            ):
+                if k in tn.attributes:
+                    node.attributes[k] = tn.attributes[k]
+            enriched += 1
+        return enriched
+
+    def _enrich_catalog_tables(self, graph: LineageGraph) -> int:
+        """Promote catalog-provided row/byte counts (and a recency signal) to
+        the standard metrics_* shape. Each catalog supplies a different subset:
+
+        - BigQuery (Google): num_rows, num_bytes, last_modified_time
+        - AWS Glue:          create_time, update_time (no row/byte counts)
+        - Unity Catalog:     updated_at (epoch ms; no row/byte counts)
+
+        We populate whichever of `metrics_received_records` / `_bytes` we can,
+        and derive `metrics_active` from a recency timestamp when present so
+        every CATALOG_TABLE has at least the active/window pair.
+        """
+        now = datetime.now(UTC)
+        # Per-catalog timestamp aliases — picked from whatever the provider
+        # actually fills in. First non-None wins.
+        timestamp_keys = ("last_modified_time", "updated_at", "update_time", "create_time")
+        enriched = 0
+        for node in graph.nodes:
+            if node.node_type != NodeType.CATALOG_TABLE:
+                continue
+            num_rows = _coerce_int(node.attributes.get("num_rows"))
+            num_bytes = _coerce_int(node.attributes.get("num_bytes"))
+            last_mod = next(
+                (
+                    parsed
+                    for k in timestamp_keys
+                    if (parsed := _coerce_epoch_ms(node.attributes.get(k))) is not None
+                ),
+                None,
+            )
+            if num_rows is None and num_bytes is None and last_mod is None:
+                continue
+            if num_rows is not None:
+                node.attributes["metrics_received_records"] = float(num_rows)
+            if num_bytes is not None:
+                node.attributes["metrics_received_bytes"] = float(num_bytes)
+            if last_mod is not None:
+                age_hours = (now - last_mod).total_seconds() / 3600.0
+                active = age_hours <= self._lookback_hours
+            else:
+                active = (num_rows or 0) > 0
+            node.attributes["metrics_active"] = active
+            node.attributes["metrics_window_hours"] = self._lookback_hours
+            enriched += 1
+        return enriched
+
+    def _enrich_ksqldb_queries(self, graph: LineageGraph) -> int:
+        """KSQLDB_QUERY has no Telemetry counter — surface RUNNING state as a metric."""
+        enriched = 0
+        for node in graph.nodes:
+            if node.node_type != NodeType.KSQLDB_QUERY:
+                continue
+            state = (node.attributes.get("state") or "").upper()
+            node.attributes["metrics_active"] = state in {"RUNNING", "ACTIVE"}
+            node.attributes["metrics_window_hours"] = self._lookback_hours
+            enriched += 1
         return enriched

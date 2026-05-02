@@ -232,12 +232,47 @@ Potential improvement areas, roughly ordered by impact:
 
 | Area | Priority | Description |
 |------|----------|-------------|
-| **Test coverage** | High | Flink/ksqlDB SQL parsers (726 LOC, complex regex, no direct tests), sidebar.py (1,077 LOC) |
+| **Test coverage** | High | Flink/ksqlDB SQL parsers (726 LOC, complex regex, no direct tests) |
 | **Proxy-safe tests** | Medium | Strip proxy env vars in conftest.py — tests fail when ALL_PROXY is set |
-| **Sidebar decomposition** | Medium | sidebar.py (1,077 LOC) is the new monolith after app.py was split |
 | **Watcher circuit breaker** | Medium | No backoff when Confluent API is consistently failing |
 | **Docker API service** | Medium | Add API service to docker-compose for containerized deployment |
-| **Persistence** | Low | Optional SQLite/PostgreSQL backend for EventStore (currently in-memory only) |
+| **Cross-process watcher stop** | Low | API stop endpoint only works for in-process runners (see Phase 2G ADR follow-up) |
+| **Postgres / S3 storage backends** | Low | Pluggable per ADR-022; add when there's a real production driver |
+
+---
+
+## Refactor (2026-05-01 — 2026-05-02)
+
+A multi-phase modularity refactor — see `docs/plan-refactor.md` for the original design and ADRs 020-023 in `docs/decisions.md` for the rationale. Phases 0/1A/1B/1C/1D/2E/2F/2G/3I/3G shipped on `refactor/phase-1`.
+
+| Phase | Scope | Outcome |
+|-------|-------|---------|
+| **0** | ADRs 020-023 (services layer, catalog protocol v2, pluggable storage, watcher service) | Documented |
+| **1A** | Services package + UI/API parity | One `ExtractionRequest` / `EnrichmentRequest` / `PushRequest` shape, both UI and API call into `services/` |
+| **1B** | Catalog protocol v2 — collapse `UC_TABLE` / `GLUE_TABLE` / `GOOGLE_TABLE` → `CATALOG_TABLE` + `catalog_type` discriminator | Adding a new catalog = one file in `catalogs/`. Old graph JSON breaks (clean break, no migration) |
+| **1C** | Pluggable storage with memory + file backends | API survives `create_app` recreation (tests prove it) |
+| **1D** | Orchestrator phase abstraction | Each `Phase.execute(ctx)` is independently testable |
+| **2E** | UI decomposition — `sidebar.py` (1,077 LOC) split into `sidebar/{connection,scope,credentials,actions,filters}.py` + CSS extracted to `ui/static/styles.css` + sample graph bundled as JSON | Stops being the new monolith |
+| **2F** | SQLite storage backend (stdlib `sqlite3`, WAL mode, versioned-SQL migrations) | Conformance suite runs against memory + file + sqlite |
+| **2G** | Watcher as independent service — `WatcherService` (pure logic) + `WatcherRunner` (asyncio loop) + `api/routers/watcher.py` (6 endpoints) + `WatcherRepository` (memory + sqlite) | UI restart no longer kills the watcher; multiple UIs see the same state |
+| **3I** | Targeted WHY comments on non-obvious post-refactor choices | Not bulk verbosity — 8 specific spots flagged by Sentinel review |
+| **3G** | Documentation sweep (this section + `CLAUDE.md` + `docs/STATUS.md` + reference docs) | Post-refactor reality is discoverable |
+
+**Net product changes that landed alongside the refactor (separate themed commits):**
+- Per-demo credential cache accumulates across switches (Glue + UC + BQ + DataZone configs all coexist)
+- DLQ topics auto-wire to their producing sink connectors via the `lcc-XXXXX` resource ID
+- Per-catalog brand icons (UC / Glue / BigQuery / DataZone) reach the actual graph nodes
+- Per-catalog console deep-link labels (was hardcoded "Open in BigQuery" for everything)
+- AWS Glue console URL respects `aws_region` and AWS partition (commercial / GovCloud / China)
+- `MetricsClient` extended to enrich every node type (Flink + consumer-group + tableflow + catalog + ksqlDB)
+- Sidebar legend shows per-catalog brand variants + DLQ + topic-with-schema badges
+- ksqlDB + Tableflow phases fall back to the cached `lineage-bridge-{ksqldb,tableflow}-<env_id>` SA when `.env` lacks the key
+- DataZone live tests gate on an `iam:SimulatePrincipalPolicy` preflight (skip with actionable IAM diff when denied)
+
+**Net refactor totals:** 891 → 892 baseline tests (+ ~80 across the phases), 0 regressions, lint clean throughout.
+
+**Remaining refactor work:**
+- Phase 3H — Snowflake + Watsonx providers (deferred to post-merge)
 
 ---
 

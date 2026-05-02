@@ -9,9 +9,9 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from lineage_bridge.api.auth import require_api_key
-from lineage_bridge.api.openlineage.models import RunEvent
-from lineage_bridge.api.openlineage.store import EventStore
 from lineage_bridge.api.schemas import EventsIngestedResponse
+from lineage_bridge.openlineage.models import RunEvent
+from lineage_bridge.openlineage.store import EventStore
 
 router = APIRouter()
 
@@ -70,7 +70,7 @@ async def ingest_events(
     count = store.store_events(events)
 
     # Merge ingested events into a dedicated "ingested" graph
-    from lineage_bridge.api.openlineage.translator import events_to_graph
+    from lineage_bridge.openlineage.translator import events_to_graph
 
     graph_store = request.app.state.graph_store
     ingested_graph = events_to_graph(events)

@@ -83,6 +83,12 @@ check_prerequisites() {
     ENV_ID=$(cd "$PROJECT_ROOT/infra/demos/glue" && terraform output -raw confluent_environment_id 2>/dev/null || echo "")
     S3_BUCKET=$(cd "$PROJECT_ROOT/infra/demos/glue" && terraform output -raw s3_bucket_name 2>/dev/null || echo "")
     GLUE_DATABASE=$(cd "$PROJECT_ROOT/infra/demos/glue" && terraform output -raw glue_database_name 2>/dev/null || echo "")
+    # Tableflow auto-creates a Glue database named after the Confluent cluster ID
+    # (e.g. lkc-n29p2v). Terraform doesn't expose it as an output because it's
+    # created by Tableflow at runtime. Fall back to cluster_id.
+    if [ -z "$GLUE_DATABASE" ]; then
+      GLUE_DATABASE=$(cd "$PROJECT_ROOT/infra/demos/glue" && terraform output -raw confluent_cluster_id 2>/dev/null || echo "")
+    fi
   fi
 
   if [ -z "$ENV_ID" ]; then
@@ -171,12 +177,13 @@ test_glue_enrichment() {
   fi
 
   if uv run lineage-bridge-extract --env "$ENV_ID" --output "$OUTPUT_FILE" 2>&1 | tee /tmp/glue-test3.log | tail -3 | grep -q "Complete:"; then
-    # Check for Glue tables in output
-    GLUE_TABLES=$(python3 -c "import json; data=json.load(open('$OUTPUT_FILE')); print(sum(1 for n in data['nodes'] if n['node_type']=='glue_table'))" 2>/dev/null || echo "0")
+    # Phase 1B (ADR-021): Glue tables now use NodeType.CATALOG_TABLE with
+    # catalog_type="AWS_GLUE" instead of the retired NodeType.GLUE_TABLE.
+    GLUE_TABLES=$(python3 -c "import json; data=json.load(open('$OUTPUT_FILE')); print(sum(1 for n in data['nodes'] if n['node_type']=='catalog_table' and n.get('catalog_type')=='AWS_GLUE'))" 2>/dev/null || echo "0")
 
     if [ "$GLUE_TABLES" -ge 1 ]; then
       # Verify Glue tables have enriched metadata
-      HAS_COLUMNS=$(python3 -c "import json; data=json.load(open('$OUTPUT_FILE')); glue=[n for n in data['nodes'] if n['node_type']=='glue_table']; print(1 if glue and 'columns' in glue[0].get('attributes', {}) else 0)" 2>/dev/null || echo "0")
+      HAS_COLUMNS=$(python3 -c "import json; data=json.load(open('$OUTPUT_FILE')); glue=[n for n in data['nodes'] if n['node_type']=='catalog_table' and n.get('catalog_type')=='AWS_GLUE']; print(1 if glue and 'columns' in glue[0].get('attributes', {}) else 0)" 2>/dev/null || echo "0")
 
       if [ "$HAS_COLUMNS" = "1" ]; then
         test_passed "Glue enrichment ($GLUE_TABLES Glue tables with metadata)"
@@ -208,7 +215,10 @@ test_athena_queries() {
   fi
 
   # Check if AWS credentials are valid
-  if ! aws sts get-caller-identity &> /dev/null; then
+  # Pass --output text explicitly: an `output = exit` (or other invalid)
+  # value in ~/.aws/config makes every CLI call exit non-zero even when auth
+  # is fine, and would otherwise mask a working SSO session as "no creds".
+  if ! aws sts get-caller-identity --output text &> /dev/null; then
     test_skipped "Athena queries (AWS credentials not configured)"
     return
   fi
@@ -243,8 +253,10 @@ test_iceberg_features() {
     return
   fi
 
-  # Check if S3 bucket exists and has metadata
-  if aws s3 ls "s3://$S3_BUCKET/metadata/" 2>/dev/null | grep -q "metadata.json"; then
+  # Iceberg metadata.json files live deep in per-table prefixes, not at the
+  # bucket root (Tableflow uses paths like {prefix}/{env}/{cluster}/{table}/metadata/).
+  # Recursive listing is the reliable check.
+  if aws s3 ls "s3://$S3_BUCKET/" --recursive 2>/dev/null | grep -q "metadata.json"; then
     test_passed "Iceberg metadata exists in S3"
 
     log_info "  Iceberg time travel query example:"
@@ -349,8 +361,15 @@ test_docker_build() {
     return
   fi
 
-  if make docker-build 2>&1 | tee /tmp/glue-test8.log | tail -3 | grep -q "Successfully"; then
-    test_passed "Docker build"
+  # `docker compose build` (modern syntax) does not print "Successfully"
+  # on success. Check the exit status and the absence of "ERROR" lines instead.
+  if make docker-build >/tmp/glue-test8.log 2>&1; then
+    if grep -qE "^ERROR\b|^failed to" /tmp/glue-test8.log; then
+      test_failed "Docker build (errors in output)"
+      tail -8 /tmp/glue-test8.log
+    else
+      test_passed "Docker build"
+    fi
   else
     test_failed "Docker build"
     tail -10 /tmp/glue-test8.log

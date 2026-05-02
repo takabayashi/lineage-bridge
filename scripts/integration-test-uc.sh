@@ -137,17 +137,20 @@ test_catalog_enrichment() {
   fi
 
   if uv run lineage-bridge-extract --env "$ENV_ID" --output "$OUTPUT_FILE" 2>&1 | tee /tmp/test2.log | tail -3 | grep -q "Complete:"; then
-    # Check for UC tables in output
-    UC_TABLES=$(python3 -c "import json; data=json.load(open('$OUTPUT_FILE')); print(sum(1 for n in data['nodes'] if n['node_type']=='uc_table'))" 2>/dev/null || echo "0")
+    # Phase 1B (ADR-021): UC tables now use NodeType.CATALOG_TABLE with
+    # catalog_type="UNITY_CATALOG" instead of the retired NodeType.UC_TABLE.
+    UC_TABLES=$(python3 -c "import json; data=json.load(open('$OUTPUT_FILE')); print(sum(1 for n in data['nodes'] if n['node_type']=='catalog_table' and n.get('catalog_type')=='UNITY_CATALOG'))" 2>/dev/null || echo "0")
 
     if [ "$UC_TABLES" -ge 1 ]; then
-      # Verify UC tables have enriched metadata (schema, owner)
-      HAS_SCHEMA=$(python3 -c "import json; data=json.load(open('$OUTPUT_FILE')); uc=[n for n in data['nodes'] if n['node_type']=='uc_table']; print(1 if uc and 'schema' in uc[0].get('attributes', {}) else 0)" 2>/dev/null || echo "0")
+      # Verify UC tables have enriched metadata. The DatabricksUCProvider
+      # `enrich()` populates `columns` (the actual key — not "schema"),
+      # along with owner, table_type, storage_location, etc.
+      HAS_COLUMNS=$(python3 -c "import json; data=json.load(open('$OUTPUT_FILE')); uc=[n for n in data['nodes'] if n['node_type']=='catalog_table' and n.get('catalog_type')=='UNITY_CATALOG']; print(1 if uc and uc[0].get('attributes', {}).get('columns') else 0)" 2>/dev/null || echo "0")
 
-      if [ "$HAS_SCHEMA" = "1" ]; then
-        test_passed "Catalog enrichment ($UC_TABLES UC tables with metadata)"
+      if [ "$HAS_COLUMNS" = "1" ]; then
+        test_passed "Catalog enrichment ($UC_TABLES UC tables with column metadata)"
       else
-        test_failed "Catalog enrichment (UC tables missing schema metadata)"
+        test_failed "Catalog enrichment (UC tables missing column metadata)"
       fi
     else
       log_warn "Catalog enrichment (no UC tables found - may not have Tableflow integration)"
@@ -169,21 +172,42 @@ test_lineage_push() {
     return
   fi
 
-  # Run extraction with lineage push
-  if uv run lineage-bridge-extract --env "$ENV_ID" --push-lineage 2>&1 | tee /tmp/test3.log | grep -q "Pushed lineage"; then
-    test_passed "Lineage push (metadata written to UC)"
+  # Run extraction with lineage push. The CLI emits one line per push:
+  #   "Push: <N> tables, <P> properties, <C> comments"
+  # Test passes when at least one property OR comment is set on at least
+  # one table (i.e. the push actually wrote something to UC). PERMISSION_DENIED
+  # errors propagate via the non-zero counts being printed alongside Error: lines.
+  uv run lineage-bridge-extract --env "$ENV_ID" --push-lineage 2>&1 | tee /tmp/test3.log >/dev/null
 
-    # Note: Verifying via Databricks SQL requires SQL connection, which we'll document instead
-    log_info "  To verify: Run this SQL in Databricks:"
-    echo "    SELECT table_name, comment FROM system.information_schema.tables"
-    echo "    WHERE comment LIKE '%LineageBridge%';"
-  else
-    # Check if it failed or was skipped
-    if grep -q "No UC tables to push" /tmp/test3.log; then
+  push_summary=$(grep -E "^Push: " /tmp/test3.log | tail -1)
+  if [ -z "$push_summary" ]; then
+    if grep -q "No UC tables to push\|catalog_table.*UNITY_CATALOG.*0" /tmp/test3.log; then
       test_skipped "Lineage push (no UC tables found)"
     else
-      test_failed "Lineage push (command failed)"
+      test_failed "Lineage push (CLI did not emit a Push: summary line)"
       tail -10 /tmp/test3.log
+    fi
+  else
+    # Parse "Push: N tables, P properties, C comments" → check P+C > 0.
+    counts=$(echo "$push_summary" | python3 -c "
+import re, sys
+m = re.search(r'Push: (\d+) tables, (\d+) properties, (\d+) comments', sys.stdin.read())
+print(f'{m.group(1)} {m.group(2)} {m.group(3)}' if m else '0 0 0')
+")
+    set -- $counts
+    n_tables=$1 n_props=$2 n_comments=$3
+    if [ "$n_props" -gt 0 ] || [ "$n_comments" -gt 0 ]; then
+      test_passed "Lineage push ($n_tables tables, $n_props properties, $n_comments comments)"
+      log_info "  To verify: Run this SQL in Databricks:"
+      echo "    SELECT table_name, comment FROM system.information_schema.tables"
+      echo "    WHERE comment LIKE '%LineageBridge%';"
+    else
+      # Push reached UC but every property/comment write failed. Most common cause
+      # is the user PAT lacking MODIFY on Tableflow-created tables (UC ownership
+      # quirk — Tableflow's service principal owns the tables). Real LB regressions
+      # would show 0 tables instead.
+      test_failed "Lineage push ($n_tables tables touched but 0 properties + 0 comments — check Databricks permissions)"
+      tail -8 /tmp/test3.log
     fi
   fi
   echo ""
@@ -295,8 +319,16 @@ test_docker_build() {
     return
   fi
 
-  if make docker-build 2>&1 | tee /tmp/test6.log | tail -3 | grep -q "Successfully"; then
-    test_passed "Docker build"
+  # `docker compose build` (modern syntax used by the Makefile) does NOT
+  # print "Successfully" on success — that was the legacy `docker build`
+  # output. Check the exit status and the absence of "ERROR" lines instead.
+  if make docker-build >/tmp/test6.log 2>&1; then
+    if grep -qE "^ERROR\b|^failed to" /tmp/test6.log; then
+      test_failed "Docker build (errors in output)"
+      tail -8 /tmp/test6.log
+    else
+      test_passed "Docker build"
+    fi
   else
     test_failed "Docker build"
     tail -10 /tmp/test6.log

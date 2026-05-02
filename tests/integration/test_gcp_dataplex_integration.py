@@ -32,6 +32,7 @@ from lineage_bridge.catalogs.google_dataplex import (
     ENTRY_GROUP_ID,
     ENTRY_TYPE_ID,
     DataplexAssetRegistrar,
+    _entry_id,
 )
 from lineage_bridge.models.graph import (
     EdgeType,
@@ -50,7 +51,7 @@ def _gcp_enabled() -> tuple[bool, str]:
         return False, "LINEAGE_BRIDGE_GCP_PROJECT_ID required"
     try:
         import google.auth
-        import google.auth.transport.requests  # noqa: F401
+        import google.auth.transport.requests
     except ImportError:
         return False, "google-auth not installed"
     try:
@@ -130,7 +131,7 @@ def integration_graph() -> tuple[LineageGraph, str]:
 async def test_register_creates_entry_with_schema(
     integration_graph, project_id, location, auth_headers
 ):
-    graph, suffix = integration_graph
+    graph, _suffix = integration_graph
     topic_node = next(iter(graph.filter_by_type(NodeType.KAFKA_TOPIC)))
     expected_fqn = f"kafka:{topic_node.cluster_id}.`{topic_node.qualified_name}`"
 
@@ -139,18 +140,15 @@ async def test_register_creates_entry_with_schema(
     assert errors == []
     assert count == 1
 
-    # Fetch the entry directly via the Dataplex API and confirm FQN + aspect.
+    # GET-by-name (deterministic) instead of LIST-then-find — Dataplex Catalog
+    # listings are eventually consistent and a freshly-created entry can take
+    # several seconds to surface, but GET-by-name reflects writes immediately.
     eg = f"projects/{project_id}/locations/{location}/entryGroups/{ENTRY_GROUP_ID}"
-    url = f"https://dataplex.googleapis.com/v1/{eg}/entries"
+    entry_id = _entry_id(topic_node.cluster_id, topic_node.qualified_name)
+    entry_name = f"{eg}/entries/{entry_id}"
     async with httpx.AsyncClient(headers=auth_headers, timeout=30.0) as client:
-        list_resp = await client.get(url)
-        assert list_resp.status_code == 200
-        entries = list_resp.json().get("entries", [])
-        match = next((e for e in entries if e.get("fullyQualifiedName") == expected_fqn), None)
-        assert match is not None, f"entry with FQN {expected_fqn} not found"
-
-        # Read with view=ALL to inspect the schema aspect data.
-        full_resp = await client.get(f"https://dataplex.googleapis.com/v1/{match['name']}?view=ALL")
+        # Read with view=ALL to inspect the FQN + schema aspect data.
+        full_resp = await client.get(f"https://dataplex.googleapis.com/v1/{entry_name}?view=ALL")
         assert full_resp.status_code == 200
         body = full_resp.json()
         assert body.get("fullyQualifiedName") == expected_fqn

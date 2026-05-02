@@ -8,9 +8,9 @@ import streamlit as st
 
 from lineage_bridge.models.graph import EdgeType, LineageGraph, NodeType
 from lineage_bridge.ui.styles import (
-    NODE_COLORS,
-    NODE_TYPE_LABELS,
     build_node_url,
+    color_for_node,
+    label_for_node,
 )
 
 
@@ -33,8 +33,8 @@ def render_node_details(graph: LineageGraph) -> None:
     if not sel_node:
         return
 
-    ntype_label = NODE_TYPE_LABELS.get(sel_node.node_type, sel_node.node_type.value)
-    ncolor = NODE_COLORS.get(sel_node.node_type, "#757575")
+    ntype_label = label_for_node(sel_node)
+    ncolor = color_for_node(sel_node)
 
     # Panel header
     st.markdown(
@@ -241,62 +241,63 @@ def render_node_details(graph: LineageGraph) -> None:
         if a.get("table_path"):
             st.markdown(f"**Table Path:** `{a['table_path']}`")
 
-    elif ntype == NodeType.UC_TABLE:
-        st.markdown("**Unity Catalog Table**")
-        ucol1, ucol2 = st.columns(2)
-        with ucol1:
-            if a.get("catalog_name"):
-                st.markdown(f"**Catalog:** {a['catalog_name']}")
-            if a.get("schema_name"):
-                st.markdown(f"**Schema:** {a['schema_name']}")
-        with ucol2:
-            if a.get("table_name"):
-                st.markdown(f"**Table:** {a['table_name']}")
-            if a.get("catalog_type"):
-                st.markdown(f"**Type:** {a['catalog_type']}")
-        if a.get("workspace_url"):
-            st.markdown(
-                f"**Workspace:** <a href='{a['workspace_url']}' "
-                f"target='_blank' style='color:{ncolor};'>"
-                f"{a['workspace_url']} &#x2197;</a>",
-                unsafe_allow_html=True,
-            )
-        if a.get("database"):
-            st.markdown(f"**Database:** {a['database']}")
-
-    elif ntype == NodeType.GLUE_TABLE:
-        st.markdown("**AWS Glue Table**")
-        gcol1, gcol2 = st.columns(2)
-        with gcol1:
+    elif ntype == NodeType.CATALOG_TABLE:
+        ct = sel_node.catalog_type
+        # Friendly console label per catalog_type — used for the "Open in <X>"
+        # deep-link button at the bottom of this section. Adding a new catalog?
+        # Add an entry here so its console button renders with the right label.
+        catalog_console_label = {
+            "UNITY_CATALOG": "Unity Catalog",
+            "AWS_GLUE": "AWS Glue",
+            "GOOGLE_DATA_LINEAGE": "BigQuery",
+            "AWS_DATAZONE": "DataZone",
+        }
+        if ct == "UNITY_CATALOG":
+            st.markdown("**Unity Catalog Table**")
+            ucol1, ucol2 = st.columns(2)
+            with ucol1:
+                if a.get("catalog_name"):
+                    st.markdown(f"**Catalog:** {a['catalog_name']}")
+                if a.get("schema_name"):
+                    st.markdown(f"**Schema:** {a['schema_name']}")
+            with ucol2:
+                if a.get("table_name"):
+                    st.markdown(f"**Table:** {a['table_name']}")
+            if a.get("workspace_url"):
+                st.markdown(
+                    f"**Workspace:** <a href='{a['workspace_url']}' "
+                    f"target='_blank' style='color:{ncolor};'>"
+                    f"{a['workspace_url']} &#x2197;</a>",
+                    unsafe_allow_html=True,
+                )
             if a.get("database"):
                 st.markdown(f"**Database:** {a['database']}")
-        with gcol2:
-            if a.get("table_name"):
-                st.markdown(f"**Table:** {a['table_name']}")
-        if a.get("aws_region"):
-            st.markdown(f"**Region:** {a['aws_region']}")
-        glue_url = build_node_url(sel_node)
-        if glue_url:
-            st.markdown(
-                f"**Console:** <a href='{glue_url}' "
-                f"target='_blank' style='color:{ncolor};'>"
-                f"Open in AWS Glue &#x2197;</a>",
-                unsafe_allow_html=True,
-            )
 
-    elif ntype == NodeType.GOOGLE_TABLE:
-        st.markdown("**Google BigQuery Table**")
-        gcol1, gcol2 = st.columns(2)
-        with gcol1:
-            if a.get("project_id"):
-                st.markdown(f"**Project:** {a['project_id']}")
-            if a.get("dataset_id"):
-                st.markdown(f"**Dataset:** {a['dataset_id']}")
-        with gcol2:
-            if a.get("table_name"):
-                st.markdown(f"**Table:** {a['table_name']}")
-            if a.get("location"):
-                st.markdown(f"**Location:** {a['location']}")
+        elif ct == "AWS_GLUE":
+            st.markdown("**AWS Glue Table**")
+            gcol1, gcol2 = st.columns(2)
+            with gcol1:
+                if a.get("database"):
+                    st.markdown(f"**Database:** {a['database']}")
+            with gcol2:
+                if a.get("table_name"):
+                    st.markdown(f"**Table:** {a['table_name']}")
+            if a.get("aws_region"):
+                st.markdown(f"**Region:** {a['aws_region']}")
+
+        elif ct == "GOOGLE_DATA_LINEAGE":
+            st.markdown("**Google BigQuery Table**")
+            gcol1, gcol2 = st.columns(2)
+            with gcol1:
+                if a.get("project_id"):
+                    st.markdown(f"**Project:** {a['project_id']}")
+                if a.get("dataset_id"):
+                    st.markdown(f"**Dataset:** {a['dataset_id']}")
+            with gcol2:
+                if a.get("table_name"):
+                    st.markdown(f"**Table:** {a['table_name']}")
+                if a.get("location"):
+                    st.markdown(f"**Location:** {a['location']}")
         if a.get("num_rows"):
             rcol1, rcol2 = st.columns(2)
             with rcol1:
@@ -306,12 +307,17 @@ def render_node_details(graph: LineageGraph) -> None:
                     st.metric("Size", _fmt_bytes_ui(float(a["num_bytes"])))
         if a.get("description"):
             st.markdown(f"**Description:** {a['description']}")
-        google_url = build_node_url(sel_node)
-        if google_url:
+
+        # Per-catalog deep-link button — single source of truth, dispatches to
+        # the right provider's `build_url` via `build_node_url` and labels with
+        # the catalog's own console name (no more "Open in BigQuery" on UC).
+        console_url = build_node_url(sel_node)
+        if console_url:
+            console_name = catalog_console_label.get(ct or "", "console")
             st.markdown(
-                f"**Console:** <a href='{google_url}' "
+                f"**Console:** <a href='{console_url}' "
                 f"target='_blank' style='color:{ncolor};'>"
-                f"Open in BigQuery &#x2197;</a>",
+                f"Open in {console_name} &#x2197;</a>",
                 unsafe_allow_html=True,
             )
 

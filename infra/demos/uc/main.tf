@@ -66,9 +66,9 @@ provider "aws" {
 module "core" {
   source = "../modules/confluent-core"
 
-  demo_label                 = "uc"
-  cloud_provider             = "AWS"
-  cloud_region               = var.aws_region
+  demo_label     = "uc"
+  cloud_provider = "AWS"
+  cloud_region   = var.aws_region
 }
 
 # ── Wait for datagen connectors to register schemas ─────────────────────────
@@ -570,6 +570,17 @@ resource "databricks_storage_credential" "tableflow" {
   }
 }
 
+# Wait for the freshly-created IAM role to propagate before referencing it
+# as a principal in its own trust policy. Without this, phase 1 intermittently
+# fails with `MalformedPolicyDocument: Invalid principal in policy` even though
+# the role exists, because IAM's policy validator lags role creation.
+resource "time_sleep" "role_propagation" {
+  create_duration = "20s"
+  triggers = {
+    role_arn = aws_iam_role.tableflow.arn
+  }
+}
+
 # Phase 1: Add Databricks trust (storage credential external ID)
 resource "terraform_data" "update_trust_phase1" {
   triggers_replace = [databricks_storage_credential.tableflow.id]
@@ -602,7 +613,7 @@ resource "terraform_data" "update_trust_phase1" {
     EOT
   }
 
-  depends_on = [databricks_storage_credential.tableflow]
+  depends_on = [databricks_storage_credential.tableflow, time_sleep.role_propagation]
 }
 
 resource "time_sleep" "phase1" {

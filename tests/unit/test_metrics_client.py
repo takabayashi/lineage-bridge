@@ -198,3 +198,208 @@ async def test_query_failure_returns_empty(metrics_client):
 
     summaries = await metrics_client.query_topic_metrics(CLUSTER_ID)
     assert summaries == {}
+
+
+# ── extended enrichment (Flink, consumer groups, tableflow, catalog, ksqldb) ───
+
+
+@respx.mock
+async def test_enrich_connector_uses_confluent_id(metrics_client):
+    """Connector enrichment matches by `confluent_id` (lcc-XXX) — the
+    user-facing display_name doesn't match what Telemetry groups by."""
+    graph = LineageGraph()
+    conn = _make_node(
+        "lb-uc-postgres-sink",
+        NodeType.CONNECTOR,
+        attributes={"confluent_id": "lcc-7w7m2w"},
+    )
+    graph.add_node(conn)
+
+    route = respx.post(f"{TELEMETRY_BASE}/v2/metrics/cloud/query")
+    # Topic queries (4) — empty. Connector queries (2) — populated by lcc-id.
+    # Flink queries (2) — empty.
+    route.side_effect = [
+        *(httpx.Response(200, json={"data": []}) for _ in range(4)),
+        httpx.Response(
+            200, json={"data": [{"resource.connector.id": "lcc-7w7m2w", "value": 99.0}]}
+        ),
+        httpx.Response(
+            200, json={"data": [{"resource.connector.id": "lcc-7w7m2w", "value": 11.0}]}
+        ),
+        *(httpx.Response(200, json={"data": []}) for _ in range(2)),
+    ]
+
+    await metrics_client.enrich(graph, CLUSTER_ID)
+    a = graph.get_node(conn.node_id).attributes
+    assert a["metrics_received_records"] == 99.0
+    assert a["metrics_sent_records"] == 11.0
+    assert a["metrics_active"] is True
+
+
+@respx.mock
+async def test_enrich_flink_jobs(metrics_client):
+    """Flink statement IDs (matching qualified_name) get records-in/out."""
+    graph = LineageGraph()
+    job = _make_node("statement-abc-123", NodeType.FLINK_JOB)
+    # qualified_name from _make_node is "env-1:<name>" — Telemetry returns
+    # the bare statement ID, so override.
+    job = job.model_copy(update={"qualified_name": "statement-abc-123"})
+    graph.add_node(job)
+
+    route = respx.post(f"{TELEMETRY_BASE}/v2/metrics/cloud/query")
+    route.side_effect = [
+        *(httpx.Response(200, json={"data": []}) for _ in range(6)),  # topics + connectors
+        httpx.Response(
+            200,
+            json={"data": [{"resource.flink_statement.id": "statement-abc-123", "value": 500.0}]},
+        ),
+        httpx.Response(
+            200,
+            json={"data": [{"resource.flink_statement.id": "statement-abc-123", "value": 480.0}]},
+        ),
+    ]
+
+    await metrics_client.enrich(graph, CLUSTER_ID)
+    a = graph.get_node(job.node_id).attributes
+    assert a["metrics_received_records"] == 500.0
+    assert a["metrics_sent_records"] == 480.0
+    assert a["metrics_active"] is True
+
+
+@respx.mock
+async def test_enrich_consumer_group_aggregates_lag_from_edges(metrics_client):
+    """CONSUMER_GROUP node gets metrics_total_lag summed from MEMBER_OF edges."""
+    from lineage_bridge.models.graph import EdgeType, LineageEdge
+
+    graph = LineageGraph()
+    group = _make_node("orders-consumer", NodeType.CONSUMER_GROUP, attributes={"state": "STABLE"})
+    topic_a = _make_node("orders", NodeType.KAFKA_TOPIC)
+    topic_b = _make_node("events", NodeType.KAFKA_TOPIC)
+    for n in (group, topic_a, topic_b):
+        graph.add_node(n)
+    graph.add_edge(
+        LineageEdge(
+            src_id=group.node_id,
+            dst_id=topic_a.node_id,
+            edge_type=EdgeType.MEMBER_OF,
+            attributes={"max_lag": 42},
+        )
+    )
+    graph.add_edge(
+        LineageEdge(
+            src_id=group.node_id,
+            dst_id=topic_b.node_id,
+            edge_type=EdgeType.MEMBER_OF,
+            attributes={"max_lag": 8},
+        )
+    )
+
+    respx.post(f"{TELEMETRY_BASE}/v2/metrics/cloud/query").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+    await metrics_client.enrich(graph, CLUSTER_ID)
+    a = graph.get_node(group.node_id).attributes
+    assert a["metrics_total_lag"] == 50
+    assert a["metrics_active"] is True
+    assert a["metrics_window_hours"] == 1
+
+
+@respx.mock
+async def test_enrich_tableflow_inherits_from_topic(metrics_client):
+    """TABLEFLOW_TABLE inherits topic metrics via the MATERIALIZES edge."""
+    from lineage_bridge.models.graph import EdgeType, LineageEdge
+
+    graph = LineageGraph()
+    topic = _make_node("orders", NodeType.KAFKA_TOPIC)
+    tf = _make_node("orders-tf", NodeType.TABLEFLOW_TABLE)
+    graph.add_node(topic)
+    graph.add_node(tf)
+    graph.add_edge(
+        LineageEdge(src_id=topic.node_id, dst_id=tf.node_id, edge_type=EdgeType.MATERIALIZES)
+    )
+
+    route = respx.post(f"{TELEMETRY_BASE}/v2/metrics/cloud/query")
+    route.side_effect = [
+        httpx.Response(200, json={"data": [{"metric.topic": "orders", "value": 1024.0}]}),
+        httpx.Response(200, json={"data": [{"metric.topic": "orders", "value": 0.0}]}),
+        httpx.Response(200, json={"data": [{"metric.topic": "orders", "value": 100.0}]}),
+        httpx.Response(200, json={"data": [{"metric.topic": "orders", "value": 0.0}]}),
+        *(httpx.Response(200, json={"data": []}) for _ in range(4)),
+    ]
+
+    await metrics_client.enrich(graph, CLUSTER_ID)
+    tf_attrs = graph.get_node(tf.node_id).attributes
+    assert tf_attrs["metrics_received_bytes"] == 1024.0
+    assert tf_attrs["metrics_received_records"] == 100.0
+    assert tf_attrs["metrics_active"] is True
+
+
+@respx.mock
+async def test_enrich_catalog_table_promotes_num_rows_bytes(metrics_client):
+    """CATALOG_TABLE num_rows / num_bytes promoted to standard metrics_* keys."""
+    graph = LineageGraph()
+    cat = LineageNode(
+        node_id="aws:catalog_table:env-1:db.orders",
+        system=SystemType.AWS,
+        node_type=NodeType.CATALOG_TABLE,
+        catalog_type="AWS_GLUE",
+        qualified_name="db.orders",
+        display_name="orders",
+        environment_id="env-1",
+        attributes={"num_rows": "582", "num_bytes": "43181"},
+    )
+    graph.add_node(cat)
+
+    respx.post(f"{TELEMETRY_BASE}/v2/metrics/cloud/query").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+    await metrics_client.enrich(graph, CLUSTER_ID)
+    a = graph.get_node(cat.node_id).attributes
+    assert a["metrics_received_records"] == 582.0
+    assert a["metrics_received_bytes"] == 43181.0
+    assert a["metrics_active"] is True  # num_rows > 0
+
+
+@respx.mock
+async def test_enrich_ksqldb_query_active_when_running(metrics_client):
+    """KSQLDB_QUERY metrics_active reflects state."""
+    graph = LineageGraph()
+    running = _make_node("q-1", NodeType.KSQLDB_QUERY, attributes={"state": "RUNNING"})
+    paused = _make_node("q-2", NodeType.KSQLDB_QUERY, attributes={"state": "PAUSED"})
+    graph.add_node(running)
+    graph.add_node(paused)
+
+    respx.post(f"{TELEMETRY_BASE}/v2/metrics/cloud/query").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+    await metrics_client.enrich(graph, CLUSTER_ID)
+    assert graph.get_node(running.node_id).attributes["metrics_active"] is True
+    assert graph.get_node(paused.node_id).attributes["metrics_active"] is False
+
+
+@respx.mock
+async def test_enrich_skips_schema_and_external_dataset(metrics_client):
+    """SCHEMA + EXTERNAL_DATASET are intentionally NOT enriched (no real metric source)."""
+    graph = LineageGraph()
+    schema = _make_node("orders-value", NodeType.SCHEMA)
+    ext = LineageNode(
+        node_id="external:external_dataset:env-1:s3://bucket/",
+        system=SystemType.EXTERNAL,
+        node_type=NodeType.EXTERNAL_DATASET,
+        qualified_name="s3://bucket/",
+        display_name="bucket",
+        environment_id="env-1",
+        attributes={},
+    )
+    graph.add_node(schema)
+    graph.add_node(ext)
+
+    respx.post(f"{TELEMETRY_BASE}/v2/metrics/cloud/query").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+    await metrics_client.enrich(graph, CLUSTER_ID)
+    for n in (schema, ext):
+        attrs = graph.get_node(n.node_id).attributes
+        assert not any(k.startswith("metrics_") for k in attrs), (
+            f"{n.node_type.value} should have no metrics_* attrs"
+        )

@@ -1,15 +1,24 @@
 # Copyright 2026 Daniel Takabayashi
 # Licensed under the Apache License, Version 2.0
-"""In-memory store for async task tracking."""
+"""TaskStore — thin adapter over a `TaskRepository`.
+
+Public API unchanged from the pre-Phase-1C in-memory implementation so the
+API routers (`api/routers/tasks.py`) need no changes. The repository
+persists; the store does the lifecycle calls (`start` / `complete` / `fail`)
+and filtering (`list_tasks`) as before.
+"""
 
 from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from lineage_bridge.storage.protocol import TaskRepository
 
 
 class TaskStatus(StrEnum):
@@ -44,56 +53,61 @@ class TaskInfo(BaseModel):
 
 
 class TaskStore:
-    """In-memory store for async task tracking.
+    """Async task tracking, persisted via a `TaskRepository`.
 
-    Tasks are created as PENDING, transition to RUNNING when work begins,
-    and end as COMPLETED or FAILED.
+    Tasks are created PENDING, transition to RUNNING, and end COMPLETED or
+    FAILED. Each lifecycle method re-saves the task so the repository sees
+    every state transition (important for the file backend, where state
+    survives process restart).
     """
 
-    def __init__(self) -> None:
-        self._tasks: dict[str, TaskInfo] = {}
+    def __init__(self, repo: TaskRepository | None = None) -> None:
+        # Late import so `TaskInfo` etc. can be imported without dragging in
+        # the storage backends transitively.
+        from lineage_bridge.storage.backends.memory import MemoryTaskRepository
+
+        self._repo: TaskRepository = repo or MemoryTaskRepository()
 
     def create(self, task_type: TaskType, params: dict[str, Any] | None = None) -> TaskInfo:
-        """Create a new pending task."""
         task = TaskInfo(
             task_id=str(uuid.uuid4()),
             task_type=task_type,
             params=params or {},
         )
-        self._tasks[task.task_id] = task
+        self._repo.save(task)
         return task
 
     def get(self, task_id: str) -> TaskInfo | None:
-        return self._tasks.get(task_id)
+        return self._repo.get(task_id)
 
     def start(self, task_id: str) -> None:
-        """Mark a task as running."""
-        task = self._tasks.get(task_id)
+        task = self._repo.get(task_id)
         if task:
             task.status = TaskStatus.RUNNING
             task.started_at = datetime.now(UTC)
+            self._repo.save(task)
 
     def add_progress(self, task_id: str, message: str) -> None:
-        """Append a progress message to a running task."""
-        task = self._tasks.get(task_id)
+        task = self._repo.get(task_id)
         if task:
             task.progress.append(message)
+            self._repo.save(task)
 
     def complete(self, task_id: str, result: dict[str, Any] | None = None) -> None:
-        """Mark a task as completed."""
-        task = self._tasks.get(task_id)
+        task = self._repo.get(task_id)
         if task:
             task.status = TaskStatus.COMPLETED
             task.completed_at = datetime.now(UTC)
             task.result = result
+            self._repo.save(task)
 
     def fail(self, task_id: str, error: str) -> None:
-        """Mark a task as failed."""
-        task = self._tasks.get(task_id)
+        task = self._repo.get(task_id)
         if task:
             task.status = TaskStatus.FAILED
             task.completed_at = datetime.now(UTC)
             task.error = error
+            self._repo.save(task)
 
     def list_tasks(
         self,
@@ -103,7 +117,7 @@ class TaskStore:
         limit: int = 20,
     ) -> list[TaskInfo]:
         """List tasks with optional filters, most recent first."""
-        tasks = list(self._tasks.values())
+        tasks = self._repo.list()
         if task_type:
             tasks = [t for t in tasks if t.task_type == task_type]
         if status:
@@ -113,4 +127,4 @@ class TaskStore:
 
     @property
     def task_count(self) -> int:
-        return len(self._tasks)
+        return self._repo.count()

@@ -28,8 +28,8 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from lineage_bridge.api.openlineage.normalize import kafka_fqn, normalize_event
-from lineage_bridge.models.graph import LineageGraph, LineageNode, NodeType, PushResult, SystemType
+from lineage_bridge.models.graph import LineageGraph, LineageNode, NodeType, PushResult
+from lineage_bridge.openlineage.normalize import kafka_fqn, normalize_event
 
 logger = logging.getLogger(__name__)
 
@@ -147,9 +147,7 @@ class DataZoneAssetRegistrar:
         """
         # Fast path: asset type already exists, nothing to bootstrap.
         try:
-            self.client.get_asset_type(
-                domainIdentifier=self._domain_id, identifier=ASSET_TYPE_NAME
-            )
+            self.client.get_asset_type(domainIdentifier=self._domain_id, identifier=ASSET_TYPE_NAME)
             return ASSET_TYPE_NAME
         except Exception as exc:
             err_name = type(exc).__name__
@@ -321,13 +319,13 @@ class DataZoneAssetRegistrar:
 class AWSDataZoneProvider:
     """CatalogProvider-style facade combining asset registration + lineage push.
 
-    Doesn't implement the full ``CatalogProvider`` protocol (no ``build_node`` /
-    ``enrich`` because DataZone doesn't model Confluent stream nodes itself);
-    only ``push_lineage`` is wired into the orchestrator.
+    DataZone is push-only — it doesn't model Confluent stream nodes itself, so
+    ``build_node`` / ``enrich`` / ``build_url`` are no-op stubs that conform
+    to the Protocol structurally without claiming behaviour they don't have.
+    Only ``push_lineage`` is wired into the orchestrator.
     """
 
     catalog_type: str = "AWS_DATAZONE"
-    system_type: SystemType = SystemType.AWS
 
     def __init__(
         self,
@@ -338,6 +336,20 @@ class AWSDataZoneProvider:
         self._domain_id = domain_id
         self._project_id = project_id
         self._region = region
+
+    def build_node(self, *args: Any, **kwargs: Any) -> tuple[LineageNode, Any]:
+        """Not supported — DataZone has no materialization origin we can model."""
+        raise NotImplementedError(
+            "AWSDataZoneProvider is push-only; it does not produce catalog nodes."
+        )
+
+    async def enrich(self, graph: LineageGraph) -> None:
+        """No-op — DataZone has no nodes in the graph to enrich."""
+        return None
+
+    def build_url(self, node: LineageNode) -> str | None:
+        """No-op — DataZone has no nodes in the graph to deeplink."""
+        return None
 
     async def push_lineage(
         self,
@@ -380,7 +392,7 @@ class AWSDataZoneProvider:
         *,
         on_progress: Callable[[str, str], None] | None = None,
     ) -> int:
-        from lineage_bridge.api.openlineage.translator import graph_to_events
+        from lineage_bridge.openlineage.translator import graph_to_events
 
         events = graph_to_events(graph)
         # DataZone accepts the same allowlist as Google for Kafka inputs; for

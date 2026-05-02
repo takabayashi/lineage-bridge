@@ -1,0 +1,1460 @@
+{
+  "nodes": [
+    {
+      "node_id": "external:external_dataset:env-abc123:postgres.public.orders",
+      "system": "external",
+      "node_type": "external_dataset",
+      "qualified_name": "postgres.public.orders",
+      "display_name": "PostgreSQL orders",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": null,
+      "cluster_name": null,
+      "catalog_type": null,
+      "attributes": {
+        "database": "postgres",
+        "schema": "public",
+        "table": "orders",
+        "inferred_from": "pg-cdc-source"
+      },
+      "tags": [
+        "source",
+        "cdc"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.560783Z",
+      "last_seen": "2026-05-01T22:43:07.561153Z"
+    },
+    {
+      "node_id": "external:external_dataset:env-abc123:s3://data-lake/orders",
+      "system": "external",
+      "node_type": "external_dataset",
+      "qualified_name": "s3://data-lake/orders",
+      "display_name": "S3 data-lake/orders",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": null,
+      "cluster_name": null,
+      "catalog_type": null,
+      "attributes": {
+        "bucket": "data-lake",
+        "prefix": "orders/",
+        "inferred_from": "s3-sink"
+      },
+      "tags": [
+        "sink",
+        "data-lake"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561161Z",
+      "last_seen": "2026-05-01T22:43:07.561161Z"
+    },
+    {
+      "node_id": "external:external_dataset:env-abc123:elasticsearch.enriched-orders",
+      "system": "external",
+      "node_type": "external_dataset",
+      "qualified_name": "elasticsearch.enriched-orders",
+      "display_name": "Elasticsearch enriched-orders",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": null,
+      "cluster_name": null,
+      "catalog_type": null,
+      "attributes": {
+        "index": "enriched-orders",
+        "inferred_from": "elasticsearch-sink"
+      },
+      "tags": [
+        "sink",
+        "search"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561164Z",
+      "last_seen": "2026-05-01T22:43:07.561164Z"
+    },
+    {
+      "node_id": "confluent:connector:env-abc123:pg-cdc-source",
+      "system": "confluent",
+      "node_type": "connector",
+      "qualified_name": "pg-cdc-source",
+      "display_name": "PostgreSQL CDC Source",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lkc-xyz789",
+      "cluster_name": "orders-cluster",
+      "catalog_type": null,
+      "attributes": {
+        "connector_class": "io.confluent.connect.jdbc.PostgresCdcSourceConnector",
+        "direction": "source",
+        "tasks_max": 3,
+        "output_data_format": "AVRO",
+        "state": "RUNNING"
+      },
+      "tags": [
+        "source",
+        "cdc"
+      ],
+      "url": "https://confluent.cloud/environments/env-abc123/clusters/lkc-xyz789/connectors/pg-cdc-source/overview",
+      "first_seen": "2026-05-01T22:43:07.561177Z",
+      "last_seen": "2026-05-01T22:43:07.561178Z"
+    },
+    {
+      "node_id": "confluent:connector:env-abc123:mysql-cdc-source",
+      "system": "confluent",
+      "node_type": "connector",
+      "qualified_name": "mysql-cdc-source",
+      "display_name": "MySQL CDC Source",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lkc-xyz789",
+      "cluster_name": "orders-cluster",
+      "catalog_type": null,
+      "attributes": {
+        "connector_class": "io.debezium.connector.mysql.MySqlConnector",
+        "direction": "source",
+        "tasks_max": 2,
+        "output_data_format": "JSON_SR",
+        "state": "RUNNING"
+      },
+      "tags": [
+        "source",
+        "cdc"
+      ],
+      "url": "https://confluent.cloud/environments/env-abc123/clusters/lkc-xyz789/connectors/mysql-cdc-source/overview",
+      "first_seen": "2026-05-01T22:43:07.561181Z",
+      "last_seen": "2026-05-01T22:43:07.561181Z"
+    },
+    {
+      "node_id": "confluent:kafka_topic:env-abc123:orders",
+      "system": "confluent",
+      "node_type": "kafka_topic",
+      "qualified_name": "orders",
+      "display_name": "orders",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lkc-xyz789",
+      "cluster_name": "orders-cluster",
+      "catalog_type": null,
+      "attributes": {
+        "partitions_count": 12,
+        "replication_factor": 3,
+        "description": "Raw order events from PostgreSQL CDC",
+        "owner": "data-platform-team",
+        "metrics_active": true,
+        "metrics_received_records": 184520,
+        "metrics_sent_records": 184520,
+        "metrics_received_bytes": 42800000,
+        "metrics_sent_bytes": 42800000,
+        "metrics_window_hours": 1
+      },
+      "tags": [
+        "kafka"
+      ],
+      "url": "https://confluent.cloud/environments/env-abc123/clusters/lkc-xyz789/topics/orders/overview",
+      "first_seen": "2026-05-01T22:43:07.561189Z",
+      "last_seen": "2026-05-01T22:43:07.561189Z"
+    },
+    {
+      "node_id": "confluent:kafka_topic:env-abc123:customers",
+      "system": "confluent",
+      "node_type": "kafka_topic",
+      "qualified_name": "customers",
+      "display_name": "customers",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lkc-xyz789",
+      "cluster_name": "orders-cluster",
+      "catalog_type": null,
+      "attributes": {
+        "partitions_count": 6,
+        "replication_factor": 3,
+        "description": "Customer master data from MySQL CDC",
+        "owner": "data-platform-team",
+        "metrics_active": true,
+        "metrics_received_records": 12340,
+        "metrics_sent_records": 12340,
+        "metrics_received_bytes": 3200000,
+        "metrics_sent_bytes": 3200000,
+        "metrics_window_hours": 1
+      },
+      "tags": [
+        "kafka"
+      ],
+      "url": "https://confluent.cloud/environments/env-abc123/clusters/lkc-xyz789/topics/customers/overview",
+      "first_seen": "2026-05-01T22:43:07.561193Z",
+      "last_seen": "2026-05-01T22:43:07.561193Z"
+    },
+    {
+      "node_id": "confluent:kafka_topic:env-abc123:enriched_orders",
+      "system": "confluent",
+      "node_type": "kafka_topic",
+      "qualified_name": "enriched_orders",
+      "display_name": "enriched_orders",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lkc-xyz789",
+      "cluster_name": "orders-cluster",
+      "catalog_type": null,
+      "attributes": {
+        "partitions_count": 12,
+        "replication_factor": 3,
+        "description": "Orders enriched with customer info via ksqlDB join",
+        "owner": "streaming-analytics",
+        "metrics_active": true,
+        "metrics_received_records": 184520,
+        "metrics_sent_records": 184520,
+        "metrics_received_bytes": 58900000,
+        "metrics_sent_bytes": 58900000,
+        "metrics_window_hours": 1
+      },
+      "tags": [
+        "kafka"
+      ],
+      "url": "https://confluent.cloud/environments/env-abc123/clusters/lkc-xyz789/topics/enriched_orders/overview",
+      "first_seen": "2026-05-01T22:43:07.561198Z",
+      "last_seen": "2026-05-01T22:43:07.561198Z"
+    },
+    {
+      "node_id": "confluent:kafka_topic:env-abc123:orders_avro",
+      "system": "confluent",
+      "node_type": "kafka_topic",
+      "qualified_name": "orders_avro",
+      "display_name": "orders_avro",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lkc-xyz789",
+      "cluster_name": "orders-cluster",
+      "catalog_type": null,
+      "attributes": {
+        "partitions_count": 12,
+        "replication_factor": 3,
+        "description": "Orders converted to Avro format via Flink",
+        "owner": "data-platform-team",
+        "metrics_active": true,
+        "metrics_received_records": 184520,
+        "metrics_sent_records": 184520,
+        "metrics_received_bytes": 38100000,
+        "metrics_sent_bytes": 38100000,
+        "metrics_window_hours": 1
+      },
+      "tags": [
+        "kafka"
+      ],
+      "url": "https://confluent.cloud/environments/env-abc123/clusters/lkc-xyz789/topics/orders_avro/overview",
+      "first_seen": "2026-05-01T22:43:07.561204Z",
+      "last_seen": "2026-05-01T22:43:07.561205Z"
+    },
+    {
+      "node_id": "confluent:kafka_topic:env-abc123:shipments",
+      "system": "confluent",
+      "node_type": "kafka_topic",
+      "qualified_name": "shipments",
+      "display_name": "shipments",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lkc-xyz789",
+      "cluster_name": "orders-cluster",
+      "catalog_type": null,
+      "attributes": {
+        "partitions_count": 6,
+        "replication_factor": 3,
+        "description": "Shipment tracking events from PostgreSQL",
+        "owner": "logistics-team",
+        "metrics_active": true,
+        "metrics_received_records": 45210,
+        "metrics_sent_records": 45210,
+        "metrics_received_bytes": 11400000,
+        "metrics_sent_bytes": 11400000,
+        "metrics_window_hours": 1
+      },
+      "tags": [
+        "kafka"
+      ],
+      "url": "https://confluent.cloud/environments/env-abc123/clusters/lkc-xyz789/topics/shipments/overview",
+      "first_seen": "2026-05-01T22:43:07.561208Z",
+      "last_seen": "2026-05-01T22:43:07.561209Z"
+    },
+    {
+      "node_id": "confluent:kafka_topic:env-abc123:payments",
+      "system": "confluent",
+      "node_type": "kafka_topic",
+      "qualified_name": "payments",
+      "display_name": "payments",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lkc-xyz789",
+      "cluster_name": "orders-cluster",
+      "catalog_type": null,
+      "attributes": {
+        "partitions_count": 8,
+        "replication_factor": 3,
+        "description": "Payment transaction events",
+        "owner": "billing-team",
+        "metrics_active": true,
+        "metrics_received_records": 67890,
+        "metrics_sent_records": 67890,
+        "metrics_received_bytes": 18200000,
+        "metrics_sent_bytes": 18200000,
+        "metrics_window_hours": 1
+      },
+      "tags": [
+        "kafka"
+      ],
+      "url": "https://confluent.cloud/environments/env-abc123/clusters/lkc-xyz789/topics/payments/overview",
+      "first_seen": "2026-05-01T22:43:07.561212Z",
+      "last_seen": "2026-05-01T22:43:07.561212Z"
+    },
+    {
+      "node_id": "confluent:kafka_topic:env-abc123:order_status_updates",
+      "system": "confluent",
+      "node_type": "kafka_topic",
+      "qualified_name": "order_status_updates",
+      "display_name": "order_status_updates",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lkc-xyz789",
+      "cluster_name": "orders-cluster",
+      "catalog_type": null,
+      "attributes": {
+        "partitions_count": 6,
+        "replication_factor": 3,
+        "is_internal": false,
+        "description": "Real-time order status changes aggregated by Flink",
+        "owner": "streaming-analytics",
+        "metrics_active": true,
+        "metrics_received_records": 92150,
+        "metrics_sent_records": 92150,
+        "metrics_received_bytes": 14800000,
+        "metrics_sent_bytes": 14800000,
+        "metrics_window_hours": 1
+      },
+      "tags": [
+        "kafka"
+      ],
+      "url": "https://confluent.cloud/environments/env-abc123/clusters/lkc-xyz789/topics/order_status_updates/overview",
+      "first_seen": "2026-05-01T22:43:07.561216Z",
+      "last_seen": "2026-05-01T22:43:07.561216Z"
+    },
+    {
+      "node_id": "confluent:schema:env-abc123:orders-key",
+      "system": "confluent",
+      "node_type": "schema",
+      "qualified_name": "orders-key",
+      "display_name": "orders-key",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lsrc-sr001",
+      "cluster_name": null,
+      "catalog_type": null,
+      "attributes": {
+        "schema_type": "AVRO",
+        "version": 1,
+        "field_count": 1,
+        "schema_id": 100001,
+        "schema_string": "{\"type\":\"record\",\"name\":\"OrderKey\",\"namespace\":\"com.example\",\"fields\":[{\"name\":\"order_id\",\"type\":\"string\"}]}"
+      },
+      "tags": [
+        "schema",
+        "avro"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561228Z",
+      "last_seen": "2026-05-01T22:43:07.561229Z"
+    },
+    {
+      "node_id": "confluent:schema:env-abc123:orders-value",
+      "system": "confluent",
+      "node_type": "schema",
+      "qualified_name": "orders-value",
+      "display_name": "orders-value",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lsrc-sr001",
+      "cluster_name": null,
+      "catalog_type": null,
+      "attributes": {
+        "schema_type": "AVRO",
+        "version": 3,
+        "field_count": 8,
+        "schema_id": 100042,
+        "schema_string": "{\"type\":\"record\",\"name\":\"Order\",\"namespace\":\"com.example\",\"fields\":[{\"name\":\"order_id\",\"type\":\"string\"},{\"name\":\"customer_id\",\"type\":\"string\"},{\"name\":\"product\",\"type\":\"string\"},{\"name\":\"quantity\",\"type\":\"int\"},{\"name\":\"price\",\"type\":\"double\"},{\"name\":\"currency\",\"type\":\"string\"},{\"name\":\"status\",\"type\":\"string\"},{\"name\":\"created_at\",\"type\":\"long\"}]}"
+      },
+      "tags": [
+        "schema",
+        "avro"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561231Z",
+      "last_seen": "2026-05-01T22:43:07.561231Z"
+    },
+    {
+      "node_id": "confluent:schema:env-abc123:customers-value",
+      "system": "confluent",
+      "node_type": "schema",
+      "qualified_name": "customers-value",
+      "display_name": "customers-value",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lsrc-sr001",
+      "cluster_name": null,
+      "catalog_type": null,
+      "attributes": {
+        "schema_type": "AVRO",
+        "version": 1,
+        "field_count": 5,
+        "schema_id": 100018,
+        "schema_string": "{\"type\":\"record\",\"name\":\"Customer\",\"namespace\":\"com.example\",\"fields\":[{\"name\":\"id\",\"type\":\"string\"},{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"email\",\"type\":\"string\"},{\"name\":\"tier\",\"type\":\"string\"},{\"name\":\"created_at\",\"type\":\"long\"}]}"
+      },
+      "tags": [
+        "schema",
+        "avro"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561234Z",
+      "last_seen": "2026-05-01T22:43:07.561234Z"
+    },
+    {
+      "node_id": "confluent:schema:env-abc123:enriched_orders-value",
+      "system": "confluent",
+      "node_type": "schema",
+      "qualified_name": "enriched_orders-value",
+      "display_name": "enriched_orders-value",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lsrc-sr001",
+      "cluster_name": null,
+      "catalog_type": null,
+      "attributes": {
+        "schema_type": "AVRO",
+        "version": 2,
+        "field_count": 7,
+        "schema_id": 100055,
+        "schema_string": "{\"type\":\"record\",\"name\":\"EnrichedOrder\",\"namespace\":\"com.example\",\"fields\":[{\"name\":\"order_id\",\"type\":\"string\"},{\"name\":\"product\",\"type\":\"string\"},{\"name\":\"quantity\",\"type\":\"int\"},{\"name\":\"price\",\"type\":\"double\"},{\"name\":\"customer_name\",\"type\":\"string\"},{\"name\":\"customer_email\",\"type\":\"string\"},{\"name\":\"customer_tier\",\"type\":\"string\"}]}"
+      },
+      "tags": [
+        "schema",
+        "avro"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561236Z",
+      "last_seen": "2026-05-01T22:43:07.561236Z"
+    },
+    {
+      "node_id": "confluent:schema:env-abc123:payments-value",
+      "system": "confluent",
+      "node_type": "schema",
+      "qualified_name": "payments-value",
+      "display_name": "payments-value",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lsrc-sr001",
+      "cluster_name": null,
+      "catalog_type": null,
+      "attributes": {
+        "schema_type": "JSON",
+        "version": 1,
+        "field_count": 6,
+        "schema_id": 100070,
+        "schema_string": "{\"type\":\"object\",\"properties\":{\"payment_id\":{\"type\":\"string\"},\"order_id\":{\"type\":\"string\"},\"amount\":{\"type\":\"number\"},\"currency\":{\"type\":\"string\"},\"method\":{\"type\":\"string\"},\"paid_at\":{\"type\":\"string\",\"format\":\"date-time\"}}}"
+      },
+      "tags": [
+        "schema",
+        "json"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561238Z",
+      "last_seen": "2026-05-01T22:43:07.561238Z"
+    },
+    {
+      "node_id": "confluent:ksqldb_query:env-abc123:CSAS_ENRICHED_ORDERS_0",
+      "system": "confluent",
+      "node_type": "ksqldb_query",
+      "qualified_name": "CSAS_ENRICHED_ORDERS_0",
+      "display_name": "Enrich Orders (ksqlDB)",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lkc-xyz789",
+      "cluster_name": "orders-cluster",
+      "catalog_type": null,
+      "attributes": {
+        "sql": "CREATE STREAM enriched_orders AS\nSELECT o.order_id, o.product, o.quantity, o.price,\n       c.name AS customer_name, c.email, c.tier\nFROM orders o\n  JOIN customers c\n    ON o.customer_id = c.id\nEMIT CHANGES;",
+        "state": "RUNNING",
+        "ksqldb_cluster_id": "lksqlc-demo01"
+      },
+      "tags": [
+        "ksqldb",
+        "streaming"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561245Z",
+      "last_seen": "2026-05-01T22:43:07.561245Z"
+    },
+    {
+      "node_id": "confluent:ksqldb_query:env-abc123:CTAS_ORDER_STATUS_0",
+      "system": "confluent",
+      "node_type": "ksqldb_query",
+      "qualified_name": "CTAS_ORDER_STATUS_0",
+      "display_name": "Order Status Table (ksqlDB)",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lkc-xyz789",
+      "cluster_name": "orders-cluster",
+      "catalog_type": null,
+      "attributes": {
+        "sql": "CREATE TABLE order_status AS\nSELECT order_id,\n       LATEST_BY_OFFSET(status) AS current_status,\n       COUNT(*) AS update_count\nFROM orders\nGROUP BY order_id\nEMIT CHANGES;",
+        "state": "RUNNING",
+        "ksqldb_cluster_id": "lksqlc-demo01"
+      },
+      "tags": [
+        "ksqldb",
+        "streaming"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561248Z",
+      "last_seen": "2026-05-01T22:43:07.561248Z"
+    },
+    {
+      "node_id": "confluent:flink_job:env-abc123:orders-avro-transform",
+      "system": "confluent",
+      "node_type": "flink_job",
+      "qualified_name": "orders-avro-transform",
+      "display_name": "Orders Avro Transform (Flink)",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": null,
+      "cluster_name": null,
+      "catalog_type": null,
+      "attributes": {
+        "phase": "RUNNING",
+        "compute_pool_id": "lfcp-pool01",
+        "principal": "sa-demo-flink",
+        "sql": "INSERT INTO orders_avro\nSELECT order_id, customer_id, product,\n       quantity, price, currency,\n       status, created_at\nFROM orders;"
+      },
+      "tags": [
+        "flink",
+        "streaming"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561252Z",
+      "last_seen": "2026-05-01T22:43:07.561252Z"
+    },
+    {
+      "node_id": "confluent:flink_job:env-abc123:order-status-aggregator",
+      "system": "confluent",
+      "node_type": "flink_job",
+      "qualified_name": "order-status-aggregator",
+      "display_name": "Order Status Aggregator (Flink)",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": null,
+      "cluster_name": null,
+      "catalog_type": null,
+      "attributes": {
+        "phase": "RUNNING",
+        "compute_pool_id": "lfcp-pool01",
+        "principal": "sa-demo-flink",
+        "sql": "INSERT INTO order_status_updates\nSELECT order_id, status, updated_at,\n       COUNT(*) OVER (PARTITION BY order_id) AS status_count\nFROM orders\nWHERE status IS NOT NULL;"
+      },
+      "tags": [
+        "flink",
+        "streaming"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561254Z",
+      "last_seen": "2026-05-01T22:43:07.561254Z"
+    },
+    {
+      "node_id": "confluent:connector:env-abc123:s3-sink",
+      "system": "confluent",
+      "node_type": "connector",
+      "qualified_name": "s3-sink",
+      "display_name": "S3 Sink Connector",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lkc-xyz789",
+      "cluster_name": "orders-cluster",
+      "catalog_type": null,
+      "attributes": {
+        "connector_class": "io.confluent.connect.s3.S3SinkConnector",
+        "direction": "sink",
+        "tasks_max": 4,
+        "output_data_format": "PARQUET",
+        "state": "RUNNING"
+      },
+      "tags": [
+        "sink",
+        "s3"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561258Z",
+      "last_seen": "2026-05-01T22:43:07.561258Z"
+    },
+    {
+      "node_id": "confluent:connector:env-abc123:elasticsearch-sink",
+      "system": "confluent",
+      "node_type": "connector",
+      "qualified_name": "elasticsearch-sink",
+      "display_name": "Elasticsearch Sink",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lkc-xyz789",
+      "cluster_name": "orders-cluster",
+      "catalog_type": null,
+      "attributes": {
+        "connector_class": "io.confluent.connect.elasticsearch.ElasticsearchSinkConnector",
+        "direction": "sink",
+        "tasks_max": 2,
+        "output_data_format": "JSON",
+        "state": "RUNNING"
+      },
+      "tags": [
+        "sink",
+        "search"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561261Z",
+      "last_seen": "2026-05-01T22:43:07.561261Z"
+    },
+    {
+      "node_id": "confluent:tableflow_table:env-abc123:lkc-xyz789.orders_avro",
+      "system": "confluent",
+      "node_type": "tableflow_table",
+      "qualified_name": "lkc-xyz789.orders_avro",
+      "display_name": "orders_avro (Tableflow)",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lkc-xyz789",
+      "cluster_name": "orders-cluster",
+      "catalog_type": null,
+      "attributes": {
+        "phase": "ACTIVE",
+        "table_formats": [
+          "ICEBERG"
+        ],
+        "storage_kind": "ConfluentManaged",
+        "table_path": "s3://confluent-tableflow/orders_avro"
+      },
+      "tags": [
+        "tableflow",
+        "iceberg"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561265Z",
+      "last_seen": "2026-05-01T22:43:07.561266Z"
+    },
+    {
+      "node_id": "confluent:tableflow_table:env-abc123:lkc-xyz789.payments",
+      "system": "confluent",
+      "node_type": "tableflow_table",
+      "qualified_name": "lkc-xyz789.payments",
+      "display_name": "payments (Tableflow)",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lkc-xyz789",
+      "cluster_name": "orders-cluster",
+      "catalog_type": null,
+      "attributes": {
+        "phase": "ACTIVE",
+        "table_formats": [
+          "ICEBERG"
+        ],
+        "storage_kind": "ConfluentManaged",
+        "table_path": "s3://confluent-tableflow/payments"
+      },
+      "tags": [
+        "tableflow",
+        "iceberg"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561268Z",
+      "last_seen": "2026-05-01T22:43:07.561268Z"
+    },
+    {
+      "node_id": "confluent:tableflow_table:env-abc123:lkc-xyz789.enriched_orders",
+      "system": "confluent",
+      "node_type": "tableflow_table",
+      "qualified_name": "lkc-xyz789.enriched_orders",
+      "display_name": "enriched_orders (Tableflow)",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lkc-xyz789",
+      "cluster_name": "orders-cluster",
+      "catalog_type": null,
+      "attributes": {
+        "phase": "SUSPENDED",
+        "suspended": true,
+        "table_formats": [
+          "ICEBERG",
+          "DELTA"
+        ],
+        "storage_kind": "ByobS3",
+        "table_path": "s3://customer-lake/enriched_orders"
+      },
+      "tags": [
+        "tableflow",
+        "iceberg",
+        "delta"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561271Z",
+      "last_seen": "2026-05-01T22:43:07.561271Z"
+    },
+    {
+      "node_id": "databricks:uc_table:env-abc123:main.streaming.orders_avro",
+      "system": "databricks",
+      "node_type": "catalog_table",
+      "qualified_name": "main.streaming.orders_avro",
+      "display_name": "UC: main.streaming.orders_avro",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": null,
+      "cluster_name": null,
+      "catalog_type": "UNITY_CATALOG",
+      "attributes": {
+        "catalog_name": "main",
+        "schema_name": "streaming",
+        "table_name": "orders_avro",
+        "catalog_type": "MANAGED",
+        "table_type": "EXTERNAL",
+        "data_source_format": "ICEBERG",
+        "workspace_url": "https://dbc-demo.cloud.databricks.com",
+        "storage_location": "s3://confluent-tableflow/orders_avro",
+        "columns": [
+          {
+            "name": "order_id",
+            "type": "STRING",
+            "position": 0
+          },
+          {
+            "name": "customer_id",
+            "type": "STRING",
+            "position": 1
+          },
+          {
+            "name": "product",
+            "type": "STRING",
+            "position": 2
+          },
+          {
+            "name": "quantity",
+            "type": "INT",
+            "position": 3
+          },
+          {
+            "name": "price",
+            "type": "DOUBLE",
+            "position": 4
+          },
+          {
+            "name": "currency",
+            "type": "STRING",
+            "position": 5
+          },
+          {
+            "name": "status",
+            "type": "STRING",
+            "position": 6
+          },
+          {
+            "name": "created_at",
+            "type": "BIGINT",
+            "position": 7
+          }
+        ]
+      },
+      "tags": [
+        "unity-catalog",
+        "databricks"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561277Z",
+      "last_seen": "2026-05-01T22:43:07.561277Z"
+    },
+    {
+      "node_id": "databricks:uc_table:env-abc123:main.streaming.enriched_orders",
+      "system": "databricks",
+      "node_type": "catalog_table",
+      "qualified_name": "main.streaming.enriched_orders",
+      "display_name": "UC: main.streaming.enriched_orders",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": null,
+      "cluster_name": null,
+      "catalog_type": "UNITY_CATALOG",
+      "attributes": {
+        "catalog_name": "main",
+        "schema_name": "streaming",
+        "table_name": "enriched_orders",
+        "catalog_type": "MANAGED",
+        "table_type": "EXTERNAL",
+        "data_source_format": "DELTA",
+        "workspace_url": "https://dbc-demo.cloud.databricks.com",
+        "storage_location": "s3://customer-lake/enriched_orders",
+        "columns": [
+          {
+            "name": "order_id",
+            "type": "STRING",
+            "position": 0
+          },
+          {
+            "name": "product",
+            "type": "STRING",
+            "position": 1
+          },
+          {
+            "name": "quantity",
+            "type": "INT",
+            "position": 2
+          },
+          {
+            "name": "price",
+            "type": "DOUBLE",
+            "position": 3
+          },
+          {
+            "name": "customer_name",
+            "type": "STRING",
+            "position": 4
+          },
+          {
+            "name": "customer_email",
+            "type": "STRING",
+            "position": 5
+          },
+          {
+            "name": "customer_tier",
+            "type": "STRING",
+            "position": 6
+          }
+        ]
+      },
+      "tags": [
+        "unity-catalog",
+        "databricks"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561280Z",
+      "last_seen": "2026-05-01T22:43:07.561280Z"
+    },
+    {
+      "node_id": "databricks:uc_table:env-abc123:main.analytics.daily_order_summary",
+      "system": "databricks",
+      "node_type": "catalog_table",
+      "qualified_name": "main.analytics.daily_order_summary",
+      "display_name": "UC: daily_order_summary",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": null,
+      "cluster_name": null,
+      "catalog_type": "UNITY_CATALOG",
+      "attributes": {
+        "catalog_name": "main",
+        "schema_name": "analytics",
+        "table_name": "daily_order_summary",
+        "catalog_type": "MANAGED",
+        "table_type": "MANAGED",
+        "data_source_format": "DELTA",
+        "workspace_url": "https://dbc-demo.cloud.databricks.com",
+        "columns": [
+          {
+            "name": "order_date",
+            "type": "DATE",
+            "position": 0
+          },
+          {
+            "name": "total_orders",
+            "type": "BIGINT",
+            "position": 1
+          },
+          {
+            "name": "total_revenue",
+            "type": "DOUBLE",
+            "position": 2
+          },
+          {
+            "name": "avg_order_value",
+            "type": "DOUBLE",
+            "position": 3
+          }
+        ]
+      },
+      "tags": [
+        "unity-catalog",
+        "databricks",
+        "analytics"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561283Z",
+      "last_seen": "2026-05-01T22:43:07.561283Z"
+    },
+    {
+      "node_id": "aws:glue_table:env-abc123:streaming_db.payments",
+      "system": "aws",
+      "node_type": "catalog_table",
+      "qualified_name": "streaming_db.payments",
+      "display_name": "Glue: streaming_db.payments",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": null,
+      "cluster_name": null,
+      "catalog_type": "AWS_GLUE",
+      "attributes": {
+        "database": "streaming_db",
+        "table_name": "payments",
+        "aws_region": "us-east-1",
+        "table_type": "EXTERNAL_TABLE",
+        "location": "s3://confluent-tableflow/payments",
+        "serde_info": "org.apache.iceberg.mr.hive.HiveIcebergSerDe",
+        "columns": [
+          {
+            "name": "payment_id",
+            "type": "string"
+          },
+          {
+            "name": "order_id",
+            "type": "string"
+          },
+          {
+            "name": "amount",
+            "type": "double"
+          },
+          {
+            "name": "currency",
+            "type": "string"
+          },
+          {
+            "name": "method",
+            "type": "string"
+          },
+          {
+            "name": "paid_at",
+            "type": "timestamp"
+          }
+        ]
+      },
+      "tags": [
+        "aws-glue"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561288Z",
+      "last_seen": "2026-05-01T22:43:07.561288Z"
+    },
+    {
+      "node_id": "aws:glue_table:env-abc123:streaming_db.shipments",
+      "system": "aws",
+      "node_type": "catalog_table",
+      "qualified_name": "streaming_db.shipments",
+      "display_name": "Glue: streaming_db.shipments",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": null,
+      "cluster_name": null,
+      "catalog_type": "AWS_GLUE",
+      "attributes": {
+        "database": "streaming_db",
+        "table_name": "shipments",
+        "aws_region": "us-east-1",
+        "table_type": "EXTERNAL_TABLE",
+        "location": "s3://confluent-tableflow/shipments",
+        "columns": [
+          {
+            "name": "shipment_id",
+            "type": "string"
+          },
+          {
+            "name": "order_id",
+            "type": "string"
+          },
+          {
+            "name": "carrier",
+            "type": "string"
+          },
+          {
+            "name": "status",
+            "type": "string"
+          },
+          {
+            "name": "shipped_at",
+            "type": "timestamp"
+          }
+        ]
+      },
+      "tags": [
+        "aws-glue"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561291Z",
+      "last_seen": "2026-05-01T22:43:07.561291Z"
+    },
+    {
+      "node_id": "google:google_table:env-abc123:my-project.streaming.enriched_orders",
+      "system": "google",
+      "node_type": "catalog_table",
+      "qualified_name": "my-project.streaming.enriched_orders",
+      "display_name": "BQ: my-project.streaming.enriched_orders",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": null,
+      "cluster_name": null,
+      "catalog_type": "GOOGLE_DATA_LINEAGE",
+      "attributes": {
+        "project_id": "my-project",
+        "dataset_id": "streaming",
+        "table_name": "enriched_orders",
+        "location": "us",
+        "table_type": "TABLE",
+        "columns": [
+          {
+            "name": "order_id",
+            "type": "STRING"
+          },
+          {
+            "name": "product",
+            "type": "STRING"
+          },
+          {
+            "name": "quantity",
+            "type": "INTEGER"
+          },
+          {
+            "name": "price",
+            "type": "FLOAT"
+          },
+          {
+            "name": "customer_name",
+            "type": "STRING"
+          },
+          {
+            "name": "customer_email",
+            "type": "STRING"
+          },
+          {
+            "name": "customer_tier",
+            "type": "STRING"
+          }
+        ]
+      },
+      "tags": [
+        "google-bigquery"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561295Z",
+      "last_seen": "2026-05-01T22:43:07.561295Z"
+    },
+    {
+      "node_id": "confluent:consumer_group:env-abc123:orders-processing-cg",
+      "system": "confluent",
+      "node_type": "consumer_group",
+      "qualified_name": "orders-processing-cg",
+      "display_name": "orders-processing-cg",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lkc-xyz789",
+      "cluster_name": "orders-cluster",
+      "catalog_type": null,
+      "attributes": {
+        "state": "Stable",
+        "is_simple": false
+      },
+      "tags": [
+        "consumer-group"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561299Z",
+      "last_seen": "2026-05-01T22:43:07.561299Z"
+    },
+    {
+      "node_id": "confluent:consumer_group:env-abc123:analytics-cg",
+      "system": "confluent",
+      "node_type": "consumer_group",
+      "qualified_name": "analytics-cg",
+      "display_name": "analytics-cg",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lkc-xyz789",
+      "cluster_name": "orders-cluster",
+      "catalog_type": null,
+      "attributes": {
+        "state": "Stable",
+        "is_simple": false
+      },
+      "tags": [
+        "consumer-group"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561304Z",
+      "last_seen": "2026-05-01T22:43:07.561304Z"
+    },
+    {
+      "node_id": "confluent:consumer_group:env-abc123:shipment-tracker-cg",
+      "system": "confluent",
+      "node_type": "consumer_group",
+      "qualified_name": "shipment-tracker-cg",
+      "display_name": "shipment-tracker-cg",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lkc-xyz789",
+      "cluster_name": "orders-cluster",
+      "catalog_type": null,
+      "attributes": {
+        "state": "Stable",
+        "is_simple": true
+      },
+      "tags": [
+        "consumer-group"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561307Z",
+      "last_seen": "2026-05-01T22:43:07.561307Z"
+    },
+    {
+      "node_id": "confluent:consumer_group:env-abc123:flink-orders-consumer",
+      "system": "confluent",
+      "node_type": "consumer_group",
+      "qualified_name": "flink-orders-consumer",
+      "display_name": "flink-orders-consumer",
+      "environment_id": "env-abc123",
+      "environment_name": "Production",
+      "cluster_id": "lkc-xyz789",
+      "cluster_name": "orders-cluster",
+      "catalog_type": null,
+      "attributes": {
+        "state": "REBALANCING",
+        "is_simple": false
+      },
+      "tags": [
+        "consumer-group"
+      ],
+      "url": null,
+      "first_seen": "2026-05-01T22:43:07.561310Z",
+      "last_seen": "2026-05-01T22:43:07.561310Z"
+    }
+  ],
+  "edges": [
+    {
+      "src_id": "external:external_dataset:env-abc123:postgres.public.orders",
+      "dst_id": "confluent:connector:env-abc123:pg-cdc-source",
+      "edge_type": "produces",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561373Z",
+      "last_seen": "2026-05-01T22:43:07.561374Z"
+    },
+    {
+      "src_id": "confluent:connector:env-abc123:pg-cdc-source",
+      "dst_id": "confluent:kafka_topic:env-abc123:orders",
+      "edge_type": "produces",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561380Z",
+      "last_seen": "2026-05-01T22:43:07.561380Z"
+    },
+    {
+      "src_id": "confluent:connector:env-abc123:pg-cdc-source",
+      "dst_id": "confluent:kafka_topic:env-abc123:shipments",
+      "edge_type": "produces",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561384Z",
+      "last_seen": "2026-05-01T22:43:07.561384Z"
+    },
+    {
+      "src_id": "confluent:connector:env-abc123:mysql-cdc-source",
+      "dst_id": "confluent:kafka_topic:env-abc123:customers",
+      "edge_type": "produces",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561387Z",
+      "last_seen": "2026-05-01T22:43:07.561387Z"
+    },
+    {
+      "src_id": "confluent:kafka_topic:env-abc123:orders",
+      "dst_id": "confluent:schema:env-abc123:orders-key",
+      "edge_type": "has_schema",
+      "confidence": 1.0,
+      "attributes": {
+        "role": "key"
+      },
+      "first_seen": "2026-05-01T22:43:07.561390Z",
+      "last_seen": "2026-05-01T22:43:07.561390Z"
+    },
+    {
+      "src_id": "confluent:kafka_topic:env-abc123:orders",
+      "dst_id": "confluent:schema:env-abc123:orders-value",
+      "edge_type": "has_schema",
+      "confidence": 1.0,
+      "attributes": {
+        "role": "value"
+      },
+      "first_seen": "2026-05-01T22:43:07.561393Z",
+      "last_seen": "2026-05-01T22:43:07.561393Z"
+    },
+    {
+      "src_id": "confluent:kafka_topic:env-abc123:customers",
+      "dst_id": "confluent:schema:env-abc123:customers-value",
+      "edge_type": "has_schema",
+      "confidence": 1.0,
+      "attributes": {
+        "role": "value"
+      },
+      "first_seen": "2026-05-01T22:43:07.561396Z",
+      "last_seen": "2026-05-01T22:43:07.561396Z"
+    },
+    {
+      "src_id": "confluent:kafka_topic:env-abc123:enriched_orders",
+      "dst_id": "confluent:schema:env-abc123:enriched_orders-value",
+      "edge_type": "has_schema",
+      "confidence": 1.0,
+      "attributes": {
+        "role": "value"
+      },
+      "first_seen": "2026-05-01T22:43:07.561399Z",
+      "last_seen": "2026-05-01T22:43:07.561399Z"
+    },
+    {
+      "src_id": "confluent:kafka_topic:env-abc123:payments",
+      "dst_id": "confluent:schema:env-abc123:payments-value",
+      "edge_type": "has_schema",
+      "confidence": 1.0,
+      "attributes": {
+        "role": "value"
+      },
+      "first_seen": "2026-05-01T22:43:07.561404Z",
+      "last_seen": "2026-05-01T22:43:07.561405Z"
+    },
+    {
+      "src_id": "confluent:kafka_topic:env-abc123:orders",
+      "dst_id": "confluent:ksqldb_query:env-abc123:CSAS_ENRICHED_ORDERS_0",
+      "edge_type": "consumes",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561408Z",
+      "last_seen": "2026-05-01T22:43:07.561408Z"
+    },
+    {
+      "src_id": "confluent:kafka_topic:env-abc123:customers",
+      "dst_id": "confluent:ksqldb_query:env-abc123:CSAS_ENRICHED_ORDERS_0",
+      "edge_type": "consumes",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561411Z",
+      "last_seen": "2026-05-01T22:43:07.561411Z"
+    },
+    {
+      "src_id": "confluent:ksqldb_query:env-abc123:CSAS_ENRICHED_ORDERS_0",
+      "dst_id": "confluent:kafka_topic:env-abc123:enriched_orders",
+      "edge_type": "produces",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561414Z",
+      "last_seen": "2026-05-01T22:43:07.561414Z"
+    },
+    {
+      "src_id": "confluent:kafka_topic:env-abc123:orders",
+      "dst_id": "confluent:ksqldb_query:env-abc123:CTAS_ORDER_STATUS_0",
+      "edge_type": "consumes",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561416Z",
+      "last_seen": "2026-05-01T22:43:07.561417Z"
+    },
+    {
+      "src_id": "confluent:ksqldb_query:env-abc123:CTAS_ORDER_STATUS_0",
+      "dst_id": "confluent:kafka_topic:env-abc123:order_status_updates",
+      "edge_type": "produces",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561419Z",
+      "last_seen": "2026-05-01T22:43:07.561419Z"
+    },
+    {
+      "src_id": "confluent:kafka_topic:env-abc123:orders",
+      "dst_id": "confluent:flink_job:env-abc123:orders-avro-transform",
+      "edge_type": "consumes",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561422Z",
+      "last_seen": "2026-05-01T22:43:07.561422Z"
+    },
+    {
+      "src_id": "confluent:flink_job:env-abc123:orders-avro-transform",
+      "dst_id": "confluent:kafka_topic:env-abc123:orders_avro",
+      "edge_type": "produces",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561424Z",
+      "last_seen": "2026-05-01T22:43:07.561425Z"
+    },
+    {
+      "src_id": "confluent:kafka_topic:env-abc123:orders",
+      "dst_id": "confluent:flink_job:env-abc123:order-status-aggregator",
+      "edge_type": "consumes",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561428Z",
+      "last_seen": "2026-05-01T22:43:07.561428Z"
+    },
+    {
+      "src_id": "confluent:flink_job:env-abc123:order-status-aggregator",
+      "dst_id": "confluent:kafka_topic:env-abc123:order_status_updates",
+      "edge_type": "produces",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561431Z",
+      "last_seen": "2026-05-01T22:43:07.561431Z"
+    },
+    {
+      "src_id": "confluent:kafka_topic:env-abc123:enriched_orders",
+      "dst_id": "confluent:connector:env-abc123:elasticsearch-sink",
+      "edge_type": "consumes",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561434Z",
+      "last_seen": "2026-05-01T22:43:07.561434Z"
+    },
+    {
+      "src_id": "confluent:connector:env-abc123:elasticsearch-sink",
+      "dst_id": "external:external_dataset:env-abc123:elasticsearch.enriched-orders",
+      "edge_type": "produces",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561436Z",
+      "last_seen": "2026-05-01T22:43:07.561437Z"
+    },
+    {
+      "src_id": "confluent:kafka_topic:env-abc123:orders_avro",
+      "dst_id": "confluent:connector:env-abc123:s3-sink",
+      "edge_type": "consumes",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561439Z",
+      "last_seen": "2026-05-01T22:43:07.561439Z"
+    },
+    {
+      "src_id": "confluent:connector:env-abc123:s3-sink",
+      "dst_id": "external:external_dataset:env-abc123:s3://data-lake/orders",
+      "edge_type": "produces",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561442Z",
+      "last_seen": "2026-05-01T22:43:07.561442Z"
+    },
+    {
+      "src_id": "confluent:kafka_topic:env-abc123:orders_avro",
+      "dst_id": "confluent:tableflow_table:env-abc123:lkc-xyz789.orders_avro",
+      "edge_type": "materializes",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561445Z",
+      "last_seen": "2026-05-01T22:43:07.561445Z"
+    },
+    {
+      "src_id": "confluent:tableflow_table:env-abc123:lkc-xyz789.orders_avro",
+      "dst_id": "databricks:uc_table:env-abc123:main.streaming.orders_avro",
+      "edge_type": "materializes",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561447Z",
+      "last_seen": "2026-05-01T22:43:07.561448Z"
+    },
+    {
+      "src_id": "confluent:kafka_topic:env-abc123:payments",
+      "dst_id": "confluent:tableflow_table:env-abc123:lkc-xyz789.payments",
+      "edge_type": "materializes",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561450Z",
+      "last_seen": "2026-05-01T22:43:07.561450Z"
+    },
+    {
+      "src_id": "confluent:tableflow_table:env-abc123:lkc-xyz789.payments",
+      "dst_id": "aws:glue_table:env-abc123:streaming_db.payments",
+      "edge_type": "materializes",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561452Z",
+      "last_seen": "2026-05-01T22:43:07.561453Z"
+    },
+    {
+      "src_id": "confluent:kafka_topic:env-abc123:enriched_orders",
+      "dst_id": "confluent:tableflow_table:env-abc123:lkc-xyz789.enriched_orders",
+      "edge_type": "materializes",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561455Z",
+      "last_seen": "2026-05-01T22:43:07.561455Z"
+    },
+    {
+      "src_id": "confluent:tableflow_table:env-abc123:lkc-xyz789.enriched_orders",
+      "dst_id": "databricks:uc_table:env-abc123:main.streaming.enriched_orders",
+      "edge_type": "materializes",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561458Z",
+      "last_seen": "2026-05-01T22:43:07.561458Z"
+    },
+    {
+      "src_id": "confluent:kafka_topic:env-abc123:shipments",
+      "dst_id": "aws:glue_table:env-abc123:streaming_db.shipments",
+      "edge_type": "materializes",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561460Z",
+      "last_seen": "2026-05-01T22:43:07.561461Z"
+    },
+    {
+      "src_id": "confluent:tableflow_table:env-abc123:lkc-xyz789.enriched_orders",
+      "dst_id": "google:google_table:env-abc123:my-project.streaming.enriched_orders",
+      "edge_type": "materializes",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561463Z",
+      "last_seen": "2026-05-01T22:43:07.561463Z"
+    },
+    {
+      "src_id": "databricks:uc_table:env-abc123:main.streaming.orders_avro",
+      "dst_id": "databricks:uc_table:env-abc123:main.analytics.daily_order_summary",
+      "edge_type": "transforms",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561466Z",
+      "last_seen": "2026-05-01T22:43:07.561466Z"
+    },
+    {
+      "src_id": "confluent:kafka_topic:env-abc123:orders",
+      "dst_id": "confluent:consumer_group:env-abc123:orders-processing-cg",
+      "edge_type": "member_of",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561468Z",
+      "last_seen": "2026-05-01T22:43:07.561469Z"
+    },
+    {
+      "src_id": "confluent:kafka_topic:env-abc123:enriched_orders",
+      "dst_id": "confluent:consumer_group:env-abc123:analytics-cg",
+      "edge_type": "member_of",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561473Z",
+      "last_seen": "2026-05-01T22:43:07.561473Z"
+    },
+    {
+      "src_id": "confluent:kafka_topic:env-abc123:shipments",
+      "dst_id": "confluent:consumer_group:env-abc123:shipment-tracker-cg",
+      "edge_type": "member_of",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561475Z",
+      "last_seen": "2026-05-01T22:43:07.561475Z"
+    },
+    {
+      "src_id": "confluent:kafka_topic:env-abc123:orders",
+      "dst_id": "confluent:consumer_group:env-abc123:flink-orders-consumer",
+      "edge_type": "member_of",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-01T22:43:07.561478Z",
+      "last_seen": "2026-05-01T22:43:07.561478Z"
+    }
+  ]
+}
