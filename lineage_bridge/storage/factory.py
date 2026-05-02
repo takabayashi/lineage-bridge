@@ -18,6 +18,11 @@ from lineage_bridge.storage.backends.memory import (
     MemoryGraphRepository,
     MemoryTaskRepository,
 )
+from lineage_bridge.storage.backends.sqlite import (
+    SqliteEventRepository,
+    SqliteGraphRepository,
+    SqliteTaskRepository,
+)
 from lineage_bridge.storage.protocol import (
     EventRepository,
     GraphRepository,
@@ -64,12 +69,17 @@ def make_repositories(settings: Settings) -> Repositories:
         )
 
     if backend == "sqlite":
-        # Phase 2F.
-        raise NotImplementedError(
-            "sqlite backend lands in Phase 2F. Use 'memory' or 'file' for now."
+        # All three repos point at the same `storage.db` file under the
+        # configured root. Each owns its own connection (WAL handles
+        # concurrent reads); migrations run on first open.
+        db_path = Path(storage.path).expanduser() / "storage.db"
+        return Repositories(
+            graphs=SqliteGraphRepository(db_path),
+            tasks=SqliteTaskRepository(db_path),
+            events=SqliteEventRepository(db_path),
         )
 
     raise ValueError(
         f"Unknown storage backend: {storage.backend!r}. "
-        "Set LINEAGE_BRIDGE_STORAGE__BACKEND to one of: memory, file."
+        "Set LINEAGE_BRIDGE_STORAGE__BACKEND to one of: memory, file, sqlite."
     )

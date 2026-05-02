@@ -20,6 +20,11 @@ from lineage_bridge.storage.backends.memory import (
     MemoryGraphRepository,
     MemoryTaskRepository,
 )
+from lineage_bridge.storage.backends.sqlite import (
+    SqliteEventRepository,
+    SqliteGraphRepository,
+    SqliteTaskRepository,
+)
 
 
 def _settings(backend: str, path: Path | None = None):
@@ -49,10 +54,15 @@ def test_backend_is_case_insensitive():
     assert isinstance(repos.graphs, MemoryGraphRepository)
 
 
-def test_sqlite_backend_raises_not_implemented():
-    """SQLite backend lands in Phase 2F; until then it's a clear NotImplementedError."""
-    with pytest.raises(NotImplementedError, match="Phase 2F"):
-        make_repositories(_settings("sqlite"))
+def test_sqlite_backend_returns_sqlite_repos(tmp_path: Path):
+    """Phase 2F landed: factory wires the sqlite backend to a `storage.db`
+    file under the configured storage root."""
+    repos = make_repositories(_settings("sqlite", tmp_path))
+    assert isinstance(repos.graphs, SqliteGraphRepository)
+    assert isinstance(repos.tasks, SqliteTaskRepository)
+    assert isinstance(repos.events, SqliteEventRepository)
+    # The DB file is created on first use, not at instantiation, so don't
+    # assert path existence here — the conformance suite covers that.
 
 
 def test_unknown_backend_raises_value_error():

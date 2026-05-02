@@ -39,35 +39,46 @@ from lineage_bridge.storage.backends.memory import (
     MemoryGraphRepository,
     MemoryTaskRepository,
 )
+from lineage_bridge.storage.backends.sqlite import (
+    SqliteEventRepository,
+    SqliteGraphRepository,
+    SqliteTaskRepository,
+)
 
 # ── factories: one per (backend, repo type) ─────────────────────────────
 
 
-@pytest.fixture(params=["memory", "file"])
+@pytest.fixture(params=["memory", "file", "sqlite"])
 def graph_repo(request, tmp_path: Path):
     """Conformance-test fixture — yields a fresh GraphRepository per backend."""
     if request.param == "memory":
         return MemoryGraphRepository()
     if request.param == "file":
         return FileGraphRepository(tmp_path / "graphs")
+    if request.param == "sqlite":
+        return SqliteGraphRepository(tmp_path / "storage.db")
     raise NotImplementedError(request.param)
 
 
-@pytest.fixture(params=["memory", "file"])
+@pytest.fixture(params=["memory", "file", "sqlite"])
 def task_repo(request, tmp_path: Path):
     if request.param == "memory":
         return MemoryTaskRepository()
     if request.param == "file":
         return FileTaskRepository(tmp_path / "tasks")
+    if request.param == "sqlite":
+        return SqliteTaskRepository(tmp_path / "storage.db")
     raise NotImplementedError(request.param)
 
 
-@pytest.fixture(params=["memory", "file"])
+@pytest.fixture(params=["memory", "file", "sqlite"])
 def event_repo(request, tmp_path: Path):
     if request.param == "memory":
         return MemoryEventRepository()
     if request.param == "file":
         return FileEventRepository(tmp_path / "events.jsonl")
+    if request.param == "sqlite":
+        return SqliteEventRepository(tmp_path / "storage.db")
     raise NotImplementedError(request.param)
 
 
