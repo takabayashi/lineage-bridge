@@ -8,13 +8,17 @@ from collections import Counter
 
 import streamlit as st
 
-from lineage_bridge.models.graph import LineageGraph, NodeType
+from lineage_bridge.models.graph import EdgeType, LineageGraph, NodeType
 from lineage_bridge.ui.styles import (
+    CATALOG_ICONS,
+    CATALOG_STYLES,
+    DLQ_TOPIC_ICON,
     EDGE_COLORS,
     EDGE_DASHES,
     EDGE_TYPE_LABELS,
     NODE_ICONS,
     NODE_TYPE_LABELS,
+    TOPIC_WITH_SCHEMA_ICON,
 )
 
 
@@ -117,24 +121,68 @@ def _render_sidebar_graph_filters(graph: LineageGraph) -> None:
         )
 
 
+def _collect_legend_rows(graph: LineageGraph) -> list[tuple[str, str]]:
+    """Build the list of `(icon_data_uri, label)` rows the legend should render.
+
+    Per-catalog brand variants (UC / Glue / BigQuery / DataZone) replace the
+    generic `Catalog Table` row when a catalog of that type is present.
+    `Topic with schema` and `DLQ topic` rows are added for the badge variants
+    that the renderer uses (see `graph_renderer.render_graph_raw`).
+    """
+    type_counts = _get_type_counts(graph)
+    rows: list[tuple[str, str]] = []
+
+    # Pre-compute per-variant flags off a single graph pass.
+    catalog_types_present: set[str] = set()
+    topic_with_schema = False
+    dlq_topic = False
+    topics_with_schema_ids: set[str] = set()
+    for edge in graph.edges:
+        if edge.edge_type == EdgeType.HAS_SCHEMA:
+            topics_with_schema_ids.add(edge.src_id)
+    for n in graph.nodes:
+        if n.node_type == NodeType.CATALOG_TABLE and n.catalog_type:
+            catalog_types_present.add(n.catalog_type)
+        if n.node_type == NodeType.KAFKA_TOPIC:
+            if n.node_id in topics_with_schema_ids:
+                topic_with_schema = True
+            if n.attributes.get("role") == "dlq":
+                dlq_topic = True
+
+    for ntype in NodeType:
+        if type_counts.get(ntype, 0) == 0:
+            continue
+        if ntype == NodeType.CATALOG_TABLE and catalog_types_present:
+            for ct in sorted(catalog_types_present):
+                style = CATALOG_STYLES.get(ct)
+                if style is None:
+                    continue
+                rows.append((CATALOG_ICONS.get(ct, NODE_ICONS[ntype]), style.label))
+            continue
+        if ntype == NodeType.KAFKA_TOPIC:
+            rows.append((NODE_ICONS[ntype], NODE_TYPE_LABELS.get(ntype, ntype.value)))
+            if topic_with_schema:
+                rows.append((TOPIC_WITH_SCHEMA_ICON, "Topic with schema"))
+            if dlq_topic:
+                rows.append((DLQ_TOPIC_ICON, "DLQ topic"))
+            continue
+        rows.append((NODE_ICONS[ntype], NODE_TYPE_LABELS.get(ntype, ntype.value)))
+    return rows
+
+
 def _render_sidebar_legend(graph: LineageGraph) -> None:
     """Compact legend with node types and edge types."""
     # ── Node types (two-column grid) ─────────────────────────────
     st.caption("Nodes")
-    type_counts = _get_type_counts(graph)
-    node_html_parts = []
-    for ntype in NodeType:
-        if type_counts.get(ntype, 0) == 0:
-            continue
-        icon_uri = NODE_ICONS.get(ntype, "")
-        label = NODE_TYPE_LABELS.get(ntype, ntype.value)
-        node_html_parts.append(
-            f"<div class='legend-entry'>"
-            f"<img src='{icon_uri}' width='16' height='16' "
-            f"style='vertical-align:middle;'/>"
-            f"{label}"
-            f"</div>"
-        )
+    rows = _collect_legend_rows(graph)
+    node_html_parts = [
+        f"<div class='legend-entry'>"
+        f"<img src='{icon_uri}' width='16' height='16' "
+        f"style='vertical-align:middle;'/>"
+        f"{label}"
+        f"</div>"
+        for icon_uri, label in rows
+    ]
     if node_html_parts:
         st.markdown(
             f"<div class='legend-grid'>{''.join(node_html_parts)}</div>",
