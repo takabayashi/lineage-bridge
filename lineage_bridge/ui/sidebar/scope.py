@@ -92,10 +92,22 @@ def _render_sidebar_scope() -> None:
             all_cluster_options[label] = c
 
     if all_cluster_options:
+        # Pre-seed session_state instead of passing `default=` to the widget.
+        # Streamlit warns when a widget has BOTH a `key` AND a `default` if
+        # the key already exists in session_state — and on reruns the key
+        # always exists. Pre-seeding avoids that conflict and lets us also
+        # drop stale labels left over from a previous env's cluster set.
+        valid = list(all_cluster_options.keys())
+        prior = st.session_state.get("cluster_select")
+        if prior is None:
+            st.session_state["cluster_select"] = valid
+        else:
+            kept = [lbl for lbl in prior if lbl in all_cluster_options]
+            if kept != list(prior):
+                st.session_state["cluster_select"] = kept or valid
         st.multiselect(
             "Clusters",
-            options=list(all_cluster_options.keys()),
-            default=list(all_cluster_options.keys()),
+            options=valid,
             key="cluster_select",
         )
 

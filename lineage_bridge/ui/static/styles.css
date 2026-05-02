@@ -1,8 +1,7 @@
 /* LineageBridge UI styles.
- *
- * Loaded once at app startup by ui/app.py via st.markdown(<style>...</style>).
- * Extracted from app.py inline CSS in Phase 2E (docs/plan-refactor.md).
- */
+   Loaded once at app startup by ui/app.py.
+   (Do NOT add literal style-tag references to this comment — the browser
+   would parse them as closing the wrapping tag and dump the rest as text.) */
 
 /* Make Streamlit header transparent so it doesn't cover content,
    but keep it in the DOM so the sidebar open button remains visible */
