@@ -24,11 +24,43 @@ from typing import Any
 
 import streamlit as st
 
+from lineage_bridge.config.cache import load_cache
+
+
+def _live_disk_creds() -> tuple[dict, dict, dict]:
+    """Return ``(sr, flink, cluster)`` cred dicts read straight off disk.
+
+    The session-state mirrors (`_cached_*_creds`) are seeded once in
+    `state.load_cached_selections` and don't refresh — so if the user
+    runs `make demo-up` while the app is open, the new keys never
+    reach the dialog. Re-reading from disk on every seed call keeps
+    the Manage Credentials dialog in sync with whatever's actually
+    persisted, at the cost of one cheap JSON+Fernet decrypt per render.
+    """
+    disk = load_cache()
+    return (
+        disk.get("sr_credentials") or {},
+        disk.get("flink_credentials") or {},
+        disk.get("cluster_credentials") or {},
+    )
+
 
 def _seed_env_state(eid: str) -> None:
-    """Pre-fill SR/Flink session keys for *eid* from the encrypted cache (idempotent)."""
-    cached_sr = st.session_state.get("_cached_sr_creds", {}).get(eid, {})
-    cached_flink = st.session_state.get("_cached_flink_creds", {}).get(eid, {})
+    """Pre-fill SR/Flink session keys for *eid* from the encrypted cache.
+
+    Reads from BOTH the session-state mirror AND the live on-disk cache —
+    whichever has values wins. Skips keys that already have a non-empty
+    value in session state so user typing isn't clobbered.
+    """
+    disk_sr, disk_flink, _ = _live_disk_creds()
+    cached_sr = {
+        **disk_sr.get(eid, {}),
+        **(st.session_state.get("_cached_sr_creds", {}).get(eid, {}) or {}),
+    }
+    cached_flink = {
+        **disk_flink.get(eid, {}),
+        **(st.session_state.get("_cached_flink_creds", {}).get(eid, {}) or {}),
+    }
     for key, val in (
         (f"sr_endpoint_{eid}", cached_sr.get("endpoint")),
         (f"sr_key_{eid}", cached_sr.get("api_key")),
@@ -36,18 +68,22 @@ def _seed_env_state(eid: str) -> None:
         (f"flink_key_{eid}", cached_flink.get("api_key")),
         (f"flink_secret_{eid}", cached_flink.get("api_secret")),
     ):
-        if val and key not in st.session_state:
+        if val and not st.session_state.get(key):
             st.session_state[key] = val
 
 
 def _seed_cluster_state(cid: str) -> None:
-    """Pre-fill cluster session keys for *cid* from the encrypted cache (idempotent)."""
-    cached = st.session_state.get("_cached_cluster_creds", {}).get(cid, {})
+    """Pre-fill cluster session keys for *cid* from the encrypted cache."""
+    _, _, disk_cluster = _live_disk_creds()
+    cached = {
+        **disk_cluster.get(cid, {}),
+        **(st.session_state.get("_cached_cluster_creds", {}).get(cid, {}) or {}),
+    }
     for key, val in (
         (f"cluster_key_{cid}", cached.get("api_key")),
         (f"cluster_secret_{cid}", cached.get("api_secret")),
     ):
-        if val and key not in st.session_state:
+        if val and not st.session_state.get(key):
             st.session_state[key] = val
 
 

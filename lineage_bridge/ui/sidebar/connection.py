@@ -112,7 +112,10 @@ def _render_sidebar_connection() -> None:
             type="secondary",
             width="stretch",
         ):
-            # Clear all connection and extraction state
+            # Clear connection + extraction state. Do NOT wipe the
+            # `_cached_*_creds` dicts — those mirror the on-disk encrypted
+            # cache and are meant to survive disconnect/reconnect cycles
+            # so the Manage Credentials dialog can still pre-fill from them.
             st.session_state.connected = False
             st.session_state.environments = []
             st.session_state.env_cache = {}
@@ -122,10 +125,6 @@ def _render_sidebar_connection() -> None:
             st.session_state.last_extraction_params = None
             st.session_state.extraction_log = []
             st.session_state.push_log = []
-            # Clear cached credentials
-            st.session_state._cached_cluster_creds = {}
-            st.session_state._cached_sr_creds = {}
-            st.session_state._cached_flink_creds = {}
             st.rerun()
         # Even when connected, surface the loaded-credentials summary so the
         # user can verify Databricks / AWS / GCP creds were picked up.
