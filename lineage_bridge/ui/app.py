@@ -13,9 +13,9 @@ from pathlib import Path
 import streamlit as st
 
 from lineage_bridge.catalogs import configure_providers
-from lineage_bridge.config.settings import Settings
 from lineage_bridge.models.graph import LineageGraph, NodeType
 from lineage_bridge.ui.components.visjs_graph import visjs_graph
+from lineage_bridge.ui.discovery import _try_load_settings
 from lineage_bridge.ui.empty_state import render_empty_state
 from lineage_bridge.ui.graph_renderer import (
     _compute_dag_layout,
@@ -48,15 +48,19 @@ load_cached_selections()
 # Seed catalog providers with the user's actual workspace URL so deeplinks
 # don't fall back to whatever (possibly stale) URL Confluent has stored in
 # its Tableflow catalog-integration config.
-try:
-    _settings = Settings()  # type: ignore[call-arg]
+#
+# Use `_try_load_settings()` (NOT `Settings()` directly) so the same
+# encrypted-cache fallback that backs the sidebar push button also runs
+# at app startup. Without this, Databricks creds populated by a demo-up
+# script (which writes to the cache, not .env) never reach the UC
+# provider — push works, but `build_url` for UC tables silently returns
+# None and deeplinks vanish.
+_seed_settings = _try_load_settings()
+if _seed_settings is not None:
     configure_providers(
-        databricks_workspace_url=_settings.databricks_workspace_url,
-        databricks_token=_settings.databricks_token,
+        databricks_workspace_url=_seed_settings.databricks_workspace_url,
+        databricks_token=_seed_settings.databricks_token,
     )
-except Exception:
-    # Settings missing is fine for sample-data mode.
-    pass
 
 # ── Custom CSS (loaded from ui/static/styles.css) ─────────────────────
 
