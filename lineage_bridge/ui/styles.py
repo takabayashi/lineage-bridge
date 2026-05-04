@@ -606,9 +606,21 @@ def build_confluent_cloud_url(node: Any) -> str | None:
         return f"{base}/{env}/flink/compute-pools"
 
     if ntype == NodeType.KSQLDB_QUERY:
-        if not cluster:
+        # ksqlDB has its own cluster id (`lksqlc-XXXXX`) distinct from the
+        # Kafka cluster (`lkc-XXXXX`). Confluent Cloud's UI keys ksqlDB
+        # URLs by the lksqlc id under `/ksqldb/`, not under the Kafka
+        # cluster. Falling back to the Kafka cluster URL produced a 404.
+        attrs = getattr(node, "attributes", {}) or {}
+        ksqldb_cluster = attrs.get("ksqldb_cluster_id")
+        if not ksqldb_cluster:
             return None
-        return f"{base}/{env}/clusters/{cluster}/ksqldb"
+        # Deep link to the persistent-queries page for that ksqlDB cluster.
+        # (Per-query deeplinks vary by Cloud release — the listing always
+        # works and the user lands one click from their query.)
+        return (
+            f"{base}/{env}/ksqldb/{quote(ksqldb_cluster, safe='')}"
+            f"/persistent-queries?query={quote(name, safe='')}"
+        )
 
     if ntype == NodeType.SCHEMA:
         return f"{base}/{env}/schema-registry/schemas"
