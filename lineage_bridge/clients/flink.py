@@ -249,8 +249,24 @@ class FlinkClient:
                     s_nodes, s_edges = self._process_statement(stmt, table_topic_map)
                     nodes.extend(s_nodes)
                     edges.extend(s_edges)
-        except Exception:
-            logger.warning("Failed to list Flink statements", exc_info=True)
+        except Exception as exc:
+            # A 404 from `/sql/v1/.../statements` is the expected response
+            # when an environment has no Flink statements OR when the SQL
+            # API isn't reachable for that org/region combination — both
+            # are normal, not bugs. Log a one-liner at INFO so the UI
+            # doesn't surface a scary traceback. Other failures keep the
+            # full traceback at WARNING for actual debugging.
+            import httpx
+
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 404:
+                logger.info(
+                    "Flink: no statements in environment %s (region %s/%s)",
+                    self.environment_id,
+                    region,
+                    cloud,
+                )
+            else:
+                logger.warning("Failed to list Flink statements", exc_info=True)
 
         logger.info(
             "Flink extracted %d nodes, %d edges from environment %s",
