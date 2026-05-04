@@ -68,6 +68,31 @@ def _render_credentials_summary(settings: Any | None) -> None:
         )
     )
 
+    # Schema Registry (global) — fallback used by every env that doesn't
+    # define a per-env override in the Manage dialog. Surface here so the
+    # user can verify .env values are loaded; otherwise the only signal
+    # is the blue "(global)" pill on each env row.
+    sr_endpoint = getattr(settings, "schema_registry_endpoint", None)
+    sr_key = getattr(settings, "schema_registry_api_key", None)
+    if sr_endpoint and sr_key:
+        sr_host = sr_endpoint.replace("https://", "").replace("http://", "").rstrip("/")
+        rows.append(_credential_row("Schema Registry", True, f"{sr_host} · key `{_mask(sr_key)}`"))
+    else:
+        rows.append(
+            _credential_row(
+                "Schema Registry",
+                False,
+                "Set SCHEMA_REGISTRY_ENDPOINT + API_KEY (or override per env)",
+            )
+        )
+
+    # Flink (global) — same fallback pattern as SR.
+    flink_key = getattr(settings, "flink_api_key", None)
+    if flink_key:
+        rows.append(_credential_row("Flink", True, f"key `{_mask(flink_key)}`"))
+    else:
+        rows.append(_credential_row("Flink", False, "Set FLINK_API_KEY (or override per env)"))
+
     # Databricks — workspace URL is the lead signal; token is required for push
     db_url = getattr(settings, "databricks_workspace_url", None)
     db_token = getattr(settings, "databricks_token", None)

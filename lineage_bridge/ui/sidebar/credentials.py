@@ -153,6 +153,83 @@ def cluster_creds_status(cluster_id: str, settings: Any | None = None) -> tuple[
     return "missing", "No key configured"
 
 
+# ── Dialog status helpers ──────────────────────────────────────────────
+
+
+def _render_env_dialog_status(env_id: str, has_flink: bool, settings: Any | None) -> None:
+    """Banner inside the env dialog: which keys are about to be used.
+
+    Distinguishes between:
+    - **explicit** override already typed for this env  (green info)
+    - **global** .env fallback will be used             (blue info)
+    - **missing**: nothing configured                   (orange warning)
+
+    Per-section so the SR and Flink stories don't collide.
+    """
+    sr_explicit = bool(
+        st.session_state.get(f"sr_key_{env_id}") and st.session_state.get(f"sr_secret_{env_id}")
+    )
+    sr_global = bool(
+        settings
+        and getattr(settings, "schema_registry_endpoint", None)
+        and getattr(settings, "schema_registry_api_key", None)
+        and getattr(settings, "schema_registry_api_secret", None)
+    )
+
+    flink_explicit = bool(
+        st.session_state.get(f"flink_key_{env_id}")
+        and st.session_state.get(f"flink_secret_{env_id}")
+    )
+    flink_global = bool(
+        settings
+        and getattr(settings, "flink_api_key", None)
+        and getattr(settings, "flink_api_secret", None)
+    )
+
+    parts: list[str] = []
+    if sr_explicit:
+        parts.append("✓ Schema Registry: per-env override set")
+    elif sr_global:
+        parts.append("→ Schema Registry: using global `.env` keys at extraction")
+    else:
+        parts.append("⚠ Schema Registry: no keys configured")
+
+    if has_flink:
+        if flink_explicit:
+            parts.append("✓ Flink: per-env override set")
+        elif flink_global:
+            parts.append("→ Flink: using global `.env` keys at extraction")
+        else:
+            parts.append("⚠ Flink: no keys configured")
+
+    has_warning = any(p.startswith("⚠") for p in parts)
+    body = "  \n".join(parts)
+    if has_warning:
+        st.warning(body)
+    else:
+        st.info(body)
+
+
+def _render_cluster_dialog_status(cluster_id: str, settings: Any | None) -> None:
+    """Banner inside the cluster dialog: which key will be used."""
+    explicit = bool(
+        st.session_state.get(f"cluster_key_{cluster_id}")
+        and st.session_state.get(f"cluster_secret_{cluster_id}")
+    )
+    cloud_global = bool(settings and getattr(settings, "confluent_cloud_api_key", None))
+    cluster_creds_map = getattr(settings, "cluster_credentials", {}) if settings else {}
+    in_settings_map = cluster_id in (cluster_creds_map or {})
+
+    if explicit:
+        st.info("✓ Per-cluster override set")
+    elif in_settings_map:
+        st.info("→ Using cluster key from `.env` (`LINEAGE_BRIDGE_CLUSTER_CREDENTIALS`)")
+    elif cloud_global:
+        st.info("→ Using global Confluent Cloud key at extraction")
+    else:
+        st.warning("⚠ No keys configured")
+
+
 # ── Dialogs ─────────────────────────────────────────────────────────────
 
 
@@ -164,12 +241,20 @@ def env_credentials_dialog(env_id: str, env_name: str, has_flink: bool) -> None:
     (`sr_endpoint_{eid}`, `sr_key_{eid}`, etc.) so the rest of the
     extraction pipeline reads them unchanged.
     """
+    from lineage_bridge.ui.discovery import _try_load_settings
+
     _seed_env_state(env_id)
+    settings = _try_load_settings()
 
     st.caption(
         f"Credentials for **{env_name}** (`{env_id}`). "
         "Leave any field blank to fall back to global keys from `.env`."
     )
+
+    # Status banner: explain what will happen when fields are blank, so an
+    # empty dialog isn't read as "nothing is configured" when in fact the
+    # global .env keys would be used at extraction time.
+    _render_env_dialog_status(env_id, has_flink, settings)
 
     st.markdown("**Schema Registry**")
     st.text_input(
@@ -227,12 +312,17 @@ def env_credentials_dialog(env_id: str, env_name: str, has_flink: bool) -> None:
 @st.dialog("Cluster credentials")
 def cluster_credentials_dialog(cluster_id: str, cluster_name: str) -> None:
     """Modal for one cluster's API key + secret."""
+    from lineage_bridge.ui.discovery import _try_load_settings
+
     _seed_cluster_state(cluster_id)
+    settings = _try_load_settings()
 
     st.caption(
         f"Optional cluster-scoped key for **{cluster_name}** (`{cluster_id}`). "
         "Leave blank to use the global key."
     )
+
+    _render_cluster_dialog_status(cluster_id, settings)
 
     c1, c2 = st.columns(2)
     with c1:
