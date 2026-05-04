@@ -9,7 +9,7 @@
 # - GCP credentials configured (gcloud auth login or service account key)
 #
 # Usage:
-#   ./scripts/integration-test-bigquery.sh [--skip-docker]
+#   ./scripts/integration-test-bigquery.sh [--skip-docker] [--env-file PATH]
 
 set -e
 
@@ -18,9 +18,31 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 SKIP_DOCKER=false
-if [ "$1" = "--skip-docker" ]; then
-  SKIP_DOCKER=true
-fi
+ENV_FILE=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --skip-docker)
+      SKIP_DOCKER=true
+      shift
+      ;;
+    --env-file)
+      ENV_FILE="$2"
+      shift 2
+      ;;
+    -h|--help)
+      echo "Usage: $0 [--skip-docker] [--env-file PATH]"
+      echo "  --env-file PATH  Path to .env (default: \$PROJECT_ROOT/infra/demos/bigquery/.env)"
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      echo "Usage: $0 [--skip-docker] [--env-file PATH]" >&2
+      exit 1
+      ;;
+  esac
+done
+
+ENV_FILE="${ENV_FILE:-$PROJECT_ROOT/infra/demos/bigquery/.env}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -66,13 +88,17 @@ check_prerequisites() {
   log_info "Checking prerequisites..."
 
   # Check .env file
-  if [ ! -f "$PROJECT_ROOT/.env" ]; then
-    log_error ".env file not found. Generate it with: cd infra/demos/bigquery && terraform output -raw demo_env_file > $PROJECT_ROOT/.env"
+  if [ ! -f "$ENV_FILE" ]; then
+    log_error ".env file not found at $ENV_FILE. Generate it with: cd infra/demos/bigquery && terraform output -raw demo_env_file > .env"
     exit 1
   fi
 
+  log_info "Using env file: $ENV_FILE"
+
   # Check for required environment variables
-  source "$PROJECT_ROOT/.env"
+  set -a
+  source "$ENV_FILE"
+  set +a
   if [ -z "$LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_KEY" ]; then
     log_error "LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_KEY not set in .env"
     exit 1
@@ -86,7 +112,7 @@ check_prerequisites() {
   fi
 
   if [ -z "$ENV_ID" ]; then
-    ENV_ID=$(grep -o 'env-[a-z0-9]*' "$PROJECT_ROOT/.env" | head -1)
+    ENV_ID=$(grep -o 'env-[a-z0-9]*' "$ENV_FILE" | head -1)
   fi
 
   log_info "Environment ID: $ENV_ID"

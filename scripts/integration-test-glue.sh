@@ -9,7 +9,7 @@
 # - AWS credentials configured (for Athena queries)
 #
 # Usage:
-#   ./scripts/integration-test-glue.sh [--skip-docker]
+#   ./scripts/integration-test-glue.sh [--skip-docker] [--env-file PATH]
 
 set -e
 
@@ -18,9 +18,31 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
 SKIP_DOCKER=false
-if [ "$1" = "--skip-docker" ]; then
-  SKIP_DOCKER=true
-fi
+ENV_FILE=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --skip-docker)
+      SKIP_DOCKER=true
+      shift
+      ;;
+    --env-file)
+      ENV_FILE="$2"
+      shift 2
+      ;;
+    -h|--help)
+      echo "Usage: $0 [--skip-docker] [--env-file PATH]"
+      echo "  --env-file PATH  Path to .env (default: \$PROJECT_ROOT/infra/demos/glue/.env)"
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      echo "Usage: $0 [--skip-docker] [--env-file PATH]" >&2
+      exit 1
+      ;;
+  esac
+done
+
+ENV_FILE="${ENV_FILE:-$PROJECT_ROOT/infra/demos/glue/.env}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -66,13 +88,23 @@ check_prerequisites() {
   log_info "Checking prerequisites..."
 
   # Check .env file
-  if [ ! -f "$PROJECT_ROOT/.env" ]; then
-    log_error ".env file not found. Generate it with: cd infra/demos/glue && terraform output -raw demo_env_file > $PROJECT_ROOT/.env"
+  if [ ! -f "$ENV_FILE" ]; then
+    log_error ".env file not found at $ENV_FILE. Generate it with: cd infra/demos/glue && terraform output -raw demo_env_file > .env"
     exit 1
   fi
 
-  # Check for required environment variables
-  source "$PROJECT_ROOT/.env"
+  log_info "Using env file: $ENV_FILE"
+
+  # Load env vars via python-dotenv. Bash `source` mangles JSON values like
+  # LINEAGE_BRIDGE_CLUSTER_CREDENTIALS={"lkc-...":{...}} because the unquoted
+  # double quotes get stripped, producing invalid JSON downstream.
+  eval "$(uv run python3 -c '
+import shlex, sys
+from dotenv import dotenv_values
+for k, v in dotenv_values(sys.argv[1]).items():
+    if v is not None:
+        print(f"export {k}={shlex.quote(v)}")
+' "$ENV_FILE")"
   if [ -z "$LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_KEY" ]; then
     log_error "LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_KEY not set in .env"
     exit 1
@@ -93,12 +125,24 @@ check_prerequisites() {
 
   if [ -z "$ENV_ID" ]; then
     # Fallback: extract from .env
-    ENV_ID=$(grep -o 'env-[a-z0-9]*' "$PROJECT_ROOT/.env" | head -1)
+    ENV_ID=$(grep -o 'env-[a-z0-9]*' "$ENV_FILE" | head -1)
   fi
 
   log_info "Environment ID: $ENV_ID"
   log_info "S3 Bucket: ${S3_BUCKET:-not found}"
   log_info "Glue Database: ${GLUE_DATABASE:-not found}"
+
+  # boto3 uses a different SSO token cache than `aws` CLI v2. A default
+  # profile written in legacy SSO style (no `sso_session = ...` field)
+  # works for `aws sts get-caller-identity` but raises
+  # UnauthorizedSSOTokenError from boto3. Warn early so test 3's enrichment
+  # check doesn't silently come back empty.
+  if ! uv run python3 -c "import boto3, sys; boto3.client('glue', region_name='${LINEAGE_BRIDGE_AWS_REGION:-us-east-1}').get_databases(MaxResults=1)" >/dev/null 2>&1; then
+    log_warn "boto3 cannot authenticate to AWS Glue (Glue enrichment will be empty)."
+    log_warn "  If you use SSO with a legacy default profile, set AWS_PROFILE to a profile"
+    log_warn "  that has 'sso_session = ...' in ~/.aws/config, then re-run \`aws sso login\`."
+  fi
+
   log_info "Prerequisites OK"
   echo ""
 }

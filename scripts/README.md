@@ -31,6 +31,12 @@ All integration test scripts share:
 - **Smart prerequisite checking** (credentials, CLI tools, cloud access)
 - **Graceful skipping** when optional dependencies unavailable
 - **Summary report** with pass/fail/skip counts
+- **`--env-file PATH`** override (defaults to the demo's own `infra/demos/<demo>/.env`)
+
+### `.env` file layout
+
+- **`infra/demos/<demo>/.env`** — per-demo credentials, written by that demo's `provision-demo.sh`. Used by integration tests for that demo.
+- **`<repo-root>/.env`** — operator-level bootstrap, holding the Confluent Cloud API key created by `ensure-cloud-key.sh`. The demo `setup-tfvars.sh` scripts fall back to this when bootstrapping a new demo.
 
 ---
 
@@ -39,8 +45,9 @@ All integration test scripts share:
 End-to-end integration tests using a live Unity Catalog demo environment.
 
 **Prerequisites:**
-- UC demo infrastructure provisioned: `make demo-uc-up`
-- .env file generated from terraform: `cd infra/demos/uc && terraform output -raw demo_env_file > $PROJECT_ROOT/.env`
+- UC demo infrastructure provisioned: `make demo-uc-up` (writes `infra/demos/uc/.env`)
+- Or regenerate manually: `cd infra/demos/uc && terraform output -raw demo_env_file > .env`
+- Override the env path with `--env-file PATH` if needed
 
 **Usage:**
 
@@ -74,8 +81,9 @@ make test-integration-uc-skip-docker
 End-to-end integration tests using a live AWS Glue demo environment.
 
 **Prerequisites:**
-- AWS Glue demo infrastructure provisioned: `make demo-glue-up`
-- .env file generated from terraform: `cd infra/demos/glue && terraform output -raw demo_env_file > $PROJECT_ROOT/.env`
+- AWS Glue demo infrastructure provisioned: `make demo-glue-up` (writes `infra/demos/glue/.env`)
+- Or regenerate manually: `cd infra/demos/glue && terraform output -raw demo_env_file > .env`
+- Override the env path with `--env-file PATH` if needed
 - AWS CLI installed and authenticated: `aws configure`
 
 **Usage:**
@@ -117,8 +125,9 @@ make test-integration-glue-skip-docker
 End-to-end integration tests using a live BigQuery demo environment.
 
 **Prerequisites:**
-- BigQuery demo infrastructure provisioned: `make demo-bq-up`
-- .env file generated from terraform: `cd infra/demos/bigquery && terraform output -raw demo_env_file > $PROJECT_ROOT/.env`
+- BigQuery demo infrastructure provisioned: `make demo-bq-up` (writes `infra/demos/bigquery/.env`)
+- Or regenerate manually: `cd infra/demos/bigquery && terraform output -raw demo_env_file > .env`
+- Override the env path with `--env-file PATH` if needed
 - gcloud CLI installed and authenticated: `gcloud auth login`
 - bq CLI installed: `gcloud components install bq`
 
