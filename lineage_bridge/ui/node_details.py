@@ -19,6 +19,7 @@ Phase D redesign:
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 
 import streamlit as st
@@ -575,12 +576,26 @@ def _render_topic_schemas(graph: LineageGraph, sel_id: str, ncolor: str) -> None
 _NEIGHBOUR_GROUP_THRESHOLD = 6
 
 
+def _css_slug(value: str) -> str:
+    """Make an arbitrary string safe to use as a CSS class suffix.
+
+    Streamlit's `st.container(key=)` emits the key verbatim as a class
+    name, so we sanitise to ``[A-Za-z0-9_-]`` to keep selectors valid.
+    """
+    return re.sub(r"[^A-Za-z0-9_-]", "-", value)
+
+
 def _render_neighbours(graph: LineageGraph, sel_id: str) -> None:
     """Upstream / downstream neighbour buttons with type icons.
 
     When a side has more than _NEIGHBOUR_GROUP_THRESHOLD neighbours, group
     them by node type into collapsible expanders so a topic with 80
     consumers doesn't flood the panel with 80 buttons.
+
+    The icon is injected as a ``::before`` background on each button
+    element so it lives INSIDE the button (as a true prefix) rather than
+    in a separate column. Per-button rules are emitted once at the top
+    of the section, scoped via `st.container(key=…)` → `.st-key-…`.
     """
     _exclude = {NodeType.SCHEMA, NodeType.CONSUMER_GROUP}
     upstream = [
@@ -593,11 +608,46 @@ def _render_neighbours(graph: LineageGraph, sel_id: str) -> None:
     ]
 
     st.markdown("---")
+    _inject_neighbour_icon_css(upstream + downstream)
+
     nb_col1, nb_col2 = st.columns(2)
     with nb_col1:
         _render_neighbour_side("up", "Upstream", upstream)
     with nb_col2:
         _render_neighbour_side("dn", "Downstream", downstream)
+
+
+def _inject_neighbour_icon_css(neighbours: list[LineageNode]) -> None:
+    """Emit one ``<style>`` block with ``::before`` background rules for each
+    neighbour's wrapping container — puts the SVG icon inside the button.
+    """
+    rules: list[str] = []
+    seen: set[str] = set()
+    for nb in neighbours:
+        if nb.node_id in seen:
+            continue
+        seen.add(nb.node_id)
+        icon_uri = icon_for_node(nb)
+        if not icon_uri:
+            continue
+        slug = _css_slug(nb.node_id)
+        rules.append(
+            f".st-key-nbrow-{slug} [data-testid='stBaseButton-secondary']::before,"
+            f".st-key-nbrow-{slug} [data-testid='stBaseButton-primary']::before {{"
+            f"content: '';"
+            f"display: inline-block;"
+            f"width: 16px; height: 16px;"
+            f"background-image: url('{icon_uri}');"
+            f"background-size: contain;"
+            f"background-repeat: no-repeat;"
+            f"background-position: center;"
+            f"margin-right: 8px;"
+            f"vertical-align: middle;"
+            f"flex-shrink: 0;"
+            f"}}"
+        )
+    if rules:
+        st.markdown(f"<style>{''.join(rules)}</style>", unsafe_allow_html=True)
 
 
 def _render_neighbour_side(prefix: str, title: str, neighbours: list[LineageNode]) -> None:
@@ -630,18 +680,15 @@ def _render_neighbour_side(prefix: str, title: str, neighbours: list[LineageNode
 
 
 def _render_neighbour_button(prefix: str, nb: LineageNode) -> None:
-    """One row: SVG icon (matches legend/canvas) + clickable name button."""
-    icon_uri = icon_for_node(nb)
+    """Single button with the SVG icon injected as a ``::before`` prefix.
+
+    The container's `key=` becomes a CSS class on the wrapping div
+    (`.st-key-nbrow-<slug>`), which the per-button rule emitted by
+    `_inject_neighbour_icon_css` targets.
+    """
     cleaned = clean_display_name(nb.display_name)
-    ic, btn = st.columns([1, 8], vertical_alignment="center")
-    with ic:
-        if icon_uri:
-            st.markdown(
-                f"<img src='{icon_uri}' width='18' height='18' "
-                f"style='display:block;margin:0 auto'/>",
-                unsafe_allow_html=True,
-            )
-    with btn:
+    slug = _css_slug(nb.node_id)
+    with st.container(key=f"nbrow-{slug}"):
         if st.button(
             cleaned,
             key=f"nb_{prefix}_{nb.node_id}",
