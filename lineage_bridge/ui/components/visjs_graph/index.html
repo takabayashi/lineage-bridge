@@ -281,13 +281,26 @@ function initGraph(args) {
   });
 
   // ── Edge labels: keep state across renders (cached in sessionStorage) ──
+  // Capture the original labels BEFORE vis.DataSet ingests them — vis strips
+  // unknown fields like `_origLabel`, so we can't stash the original on the
+  // edge object itself. We keep a side Map keyed by the auto-assigned id.
   edgeLabelsHidden = sessionStorage.getItem("lb_edge_labels_hidden") === "1";
-  if (edgeLabelsHidden) {
-    graphData.edges.forEach(function(e) { e._origLabel = e.label; e.label = ""; });
-  }
-
   var nodes = new vis.DataSet(graphData.nodes);
   var edges = new vis.DataSet(graphData.edges);
+
+  var originalEdgeLabels = new Map();
+  edges.get().forEach(function(e) {
+    originalEdgeLabels.set(e.id, e.label || "");
+  });
+
+  // Apply persisted hidden state by overwriting labels with "".
+  if (edgeLabelsHidden) {
+    var hideUpdates = [];
+    originalEdgeLabels.forEach(function(_label, id) {
+      hideUpdates.push({ id: id, label: "" });
+    });
+    edges.update(hideUpdates);
+  }
 
   var edgeConfig = configJson.edges || {};
   var edgeFontDefaults = isDark
@@ -368,21 +381,17 @@ function initGraph(args) {
 
   var btnEdgeLabels = document.getElementById("btn-edge-labels");
   function refreshEdgeLabelsBtn() {
+    // Active state means "labels currently visible" (button as a toggle).
     btnEdgeLabels.classList.toggle("active", !edgeLabelsHidden);
-    btnEdgeLabels.textContent = edgeLabelsHidden ? "Show edge labels" : "Edge labels";
+    btnEdgeLabels.textContent = edgeLabelsHidden ? "Show edge labels" : "Hide edge labels";
   }
   refreshEdgeLabelsBtn();
   btnEdgeLabels.onclick = function() {
     edgeLabelsHidden = !edgeLabelsHidden;
     sessionStorage.setItem("lb_edge_labels_hidden", edgeLabelsHidden ? "1" : "0");
     var updates = [];
-    edges.forEach(function(e) {
-      var origLabel = e._origLabel != null ? e._origLabel : (edgeLabelsHidden ? e.label : e.label);
-      if (edgeLabelsHidden) {
-        updates.push({ id: e.id, _origLabel: origLabel, label: "" });
-      } else {
-        updates.push({ id: e.id, label: origLabel });
-      }
+    originalEdgeLabels.forEach(function(label, id) {
+      updates.push({ id: id, label: edgeLabelsHidden ? "" : label });
     });
     edges.update(updates);
     refreshEdgeLabelsBtn();

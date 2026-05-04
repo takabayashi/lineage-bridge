@@ -99,36 +99,28 @@ def render_node_details(graph: LineageGraph) -> None:
             st.session_state.selected_node = None
             st.rerun()
 
-    # ── Action toolbar ───────────────────────────────────────────
+    # ── Action toolbar (Focus + Open ↗; copy lives inline next to ID) ──
     _render_action_toolbar(sel_node, sel_id, cloud_url)
 
     # ── 1. Identity ──────────────────────────────────────────────
-    # Qualified name + Node ID rendered as small <code> blocks with
-    # word-break so long names don't blow out the panel width.
+    # st.code blocks come with Streamlit's built-in copy-on-hover button —
+    # one inline icon on each value, no separate Copy buttons in the toolbar.
     st.markdown(
-        f"<div class='detail-id-block'>"
-        f"<div class='detail-id-label'>Qualified name</div>"
-        f"<code class='detail-id-code'>{sel_node.qualified_name}</code>"
-        f"</div>",
+        "<div class='detail-id-label'>Qualified name</div>",
         unsafe_allow_html=True,
     )
+    st.code(sel_node.qualified_name, language="text")
+
+    st.markdown(
+        "<div class='detail-id-label'>Node ID</div>",
+        unsafe_allow_html=True,
+    )
+    st.code(sel_node.node_id, language="text")
     if cloud_url:
         st.markdown(
-            f"<div class='detail-id-block'>"
-            f"<div class='detail-id-label'>Node ID</div>"
-            f"<a href='{cloud_url}' target='_blank' class='detail-id-link' "
-            f"style='color:{ncolor}'>"
-            f"<code class='detail-id-code'>{sel_node.node_id}</code>"
-            f" &#x2197;</a>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown(
-            f"<div class='detail-id-block'>"
-            f"<div class='detail-id-label'>Node ID</div>"
-            f"<code class='detail-id-code'>{sel_node.node_id}</code>"
-            f"</div>",
+            f"<a href='{cloud_url}' target='_blank' "
+            f"style='color:{ncolor};text-decoration:none;font-size:0.78rem;'>"
+            f"Open in source console &#x2197;</a>",
             unsafe_allow_html=True,
         )
 
@@ -198,37 +190,7 @@ def render_node_details(graph: LineageGraph) -> None:
     _render_type_specific(graph, sel_node, sel_id, ntype, a, ncolor)
 
     # ── 5. Metrics ───────────────────────────────────────────────
-    has_metrics = any(
-        a.get(k) is not None
-        for k in (
-            "metrics_active",
-            "metrics_received_records",
-            "metrics_sent_records",
-            "metrics_received_bytes",
-            "metrics_sent_bytes",
-        )
-    )
-    if has_metrics:
-        st.markdown("---")
-        st.markdown("**Metrics**")
-        mcol1, mcol2 = st.columns(2)
-        with mcol1:
-            if a.get("metrics_active") is not None:
-                status_html = render_status_badge_html(
-                    "ACTIVE" if a["metrics_active"] else "STOPPED"
-                )
-                st.markdown(status_html, unsafe_allow_html=True)
-            if a.get("metrics_received_records") is not None:
-                st.metric("Records In", f"{a['metrics_received_records']:,.0f}")
-            if a.get("metrics_received_bytes") is not None:
-                st.metric("Bytes In", _fmt_bytes_ui(a["metrics_received_bytes"]))
-        with mcol2:
-            if a.get("metrics_window_hours"):
-                st.caption(f"Window: {a['metrics_window_hours']}h")
-            if a.get("metrics_sent_records") is not None:
-                st.metric("Records Out", f"{a['metrics_sent_records']:,.0f}")
-            if a.get("metrics_sent_bytes") is not None:
-                st.metric("Bytes Out", _fmt_bytes_ui(a["metrics_sent_bytes"]))
+    _render_metrics_section(a)
 
     # ── 6. Schemas ───────────────────────────────────────────────
     if ntype == NodeType.KAFKA_TOPIC:
@@ -244,13 +206,81 @@ def render_node_details(graph: LineageGraph) -> None:
     # needed here. Keeping this section anchor for future-only additions.
 
 
+_METRIC_KEYS: tuple[str, ...] = (
+    "metrics_active",
+    "metrics_received_records",
+    "metrics_sent_records",
+    "metrics_received_bytes",
+    "metrics_sent_bytes",
+    "metrics_total_lag",
+    "metrics_window_hours",
+)
+
+
+def _render_metrics_section(a: dict) -> None:
+    """Render whatever `metrics_*` attributes are present on the node.
+
+    Surfaces the standard counter set (records / bytes in/out + active),
+    the consumer-group-specific `metrics_total_lag`, and falls back to a
+    generic key/value list for any other `metrics_*` value the node carries
+    (e.g. catalog-table-derived counts) so nothing the enrichment phase
+    populates is silently dropped.
+    """
+    if not any(a.get(k) is not None for k in _METRIC_KEYS):
+        return
+
+    st.markdown("---")
+    st.markdown("**Metrics**")
+
+    mcol1, mcol2 = st.columns(2)
+    with mcol1:
+        if a.get("metrics_active") is not None:
+            st.markdown(
+                render_status_badge_html("ACTIVE" if a["metrics_active"] else "STOPPED"),
+                unsafe_allow_html=True,
+            )
+        if a.get("metrics_received_records") is not None:
+            st.metric("Records In", f"{a['metrics_received_records']:,.0f}")
+        if a.get("metrics_received_bytes") is not None:
+            st.metric("Bytes In", _fmt_bytes_ui(a["metrics_received_bytes"]))
+        if a.get("metrics_total_lag") is not None:
+            st.metric("Total lag", f"{int(a['metrics_total_lag']):,}")
+    with mcol2:
+        if a.get("metrics_window_hours"):
+            st.caption(f"Window: {a['metrics_window_hours']}h")
+        if a.get("metrics_sent_records") is not None:
+            st.metric("Records Out", f"{a['metrics_sent_records']:,.0f}")
+        if a.get("metrics_sent_bytes") is not None:
+            st.metric("Bytes Out", _fmt_bytes_ui(a["metrics_sent_bytes"]))
+
+    # Catch-all for any other `metrics_*` attribute we don't have an explicit
+    # tile for — e.g. catalog-derived freshness, custom enrichers.
+    explicit = set(_METRIC_KEYS)
+    extras = {
+        k: v
+        for k, v in a.items()
+        if k.startswith("metrics_") and k not in explicit and v is not None
+    }
+    if extras:
+        st.caption("Other metrics")
+        st.table(
+            [
+                {"Key": k.removeprefix("metrics_").replace("_", " ").title(), "Value": str(v)}
+                for k, v in extras.items()
+            ]
+        )
+
+
 def _render_action_toolbar(sel_node: LineageNode, sel_id: str, cloud_url: str | None) -> None:
-    """Toolbar of compact actions: Focus / Copy ID / Copy URL / Open."""
+    """Toolbar of primary actions. Copy is handled inline via st.code in
+    the identity section so we only need Focus and (optionally) Open here.
+    """
+    del sel_node  # unused now (copy was the only consumer)
     is_focused = st.session_state.get("focus_node") == sel_id
-    cols = st.columns(4 if cloud_url else 3)
+    cols = st.columns(2 if cloud_url else 1)
 
     with cols[0]:
-        focus_label = "Unfocus" if is_focused else "Focus"
+        focus_label = "Unfocus" if is_focused else "Focus on this node"
         if st.button(
             focus_label,
             key="action_focus",
@@ -261,16 +291,8 @@ def _render_action_toolbar(sel_node: LineageNode, sel_id: str, cloud_url: str | 
             st.session_state.focus_node = None if is_focused else sel_id
             st.rerun()
 
-    with cols[1], st.popover("Copy ID", use_container_width=True):
-        st.caption("Copy from the box below.")
-        st.code(sel_id, language="text")
-
-    with cols[2], st.popover("Copy name", use_container_width=True):
-        st.caption("Copy from the box below.")
-        st.code(sel_node.qualified_name, language="text")
-
     if cloud_url:
-        with cols[3]:
+        with cols[1]:
             st.link_button(
                 "Open ↗",
                 url=cloud_url,
@@ -661,6 +683,7 @@ _KNOWN_KEYS: frozenset[str] = frozenset(
         "metrics_received_bytes",
         "metrics_sent_bytes",
         "metrics_window_hours",
+        "metrics_total_lag",
         "role",
     }
 )
@@ -669,11 +692,12 @@ _KNOWN_KEYS: frozenset[str] = frozenset(
 def _render_other_attributes(a: dict) -> None:
     """Catch-all expander for attributes not explicitly handled above.
 
-    Scalars render as a key/value table; nested dicts/lists render as a
-    pretty-printed JSON code block so structure is readable instead of
-    collapsed into a single ``str()`` line.
+    Excludes `metrics_*` keys — those go through the Metrics section so
+    they don't show up twice. Scalars render as a key/value table; nested
+    dicts/lists render as a pretty-printed JSON code block so structure
+    is readable instead of collapsed into a single ``str()`` line.
     """
-    extra = {k: v for k, v in a.items() if k not in _KNOWN_KEYS}
+    extra = {k: v for k, v in a.items() if k not in _KNOWN_KEYS and not k.startswith("metrics_")}
     if not extra:
         return
 

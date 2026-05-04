@@ -494,7 +494,19 @@ def _datazone_target(settings, graph: LineageGraph) -> _PublishTarget:
             status="not_configured",
             detail="Set AWS_DATAZONE_DOMAIN_ID + PROJECT_ID",
         )
+    # DataZone integration is a Glue companion — registers Kafka assets that
+    # produce/feed Glue tables. Showing it as "ready" in a Confluent-only or
+    # GCP-targeting graph creates a misleading action, so gate on Glue.
+    glue_tables = graph.filter_catalog_nodes("AWS_GLUE")
     kafka_topics = graph.filter_by_type(NodeType.KAFKA_TOPIC)
+    if not glue_tables:
+        return _PublishTarget(
+            key="datazone",
+            name="AWS DataZone",
+            short_name="DataZone",
+            status="no_nodes",
+            detail="No AWS Glue tables in graph",
+        )
     if not kafka_topics:
         return _PublishTarget(
             key="datazone",
@@ -512,7 +524,7 @@ def _datazone_target(settings, graph: LineageGraph) -> _PublishTarget:
         name="AWS DataZone",
         short_name="DataZone",
         status="ready",
-        detail=f"{len(kafka_topics)} topic(s) eligible",
+        detail=f"{len(kafka_topics)} topic(s) · {len(glue_tables)} Glue table(s)",
         push_fn=_push,
         eligible_count=len(kafka_topics),
     )

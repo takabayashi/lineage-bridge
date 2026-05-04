@@ -139,10 +139,12 @@ def _render_sidebar_graph_filters(graph: LineageGraph) -> None:
 def _collect_legend_rows(graph: LineageGraph) -> list[tuple[str, str]]:
     """Build the list of `(icon_data_uri, label)` rows the legend should render.
 
-    Per-catalog brand variants (UC / Glue / BigQuery / DataZone) replace the
-    generic `Catalog Table` row when a catalog of that type is present.
-    `Topic with schema` and `DLQ topic` rows are added for the badge variants
-    that the renderer uses (see `graph_renderer.render_graph_raw`).
+    Only emits rows for variants actually rendered in the graph:
+    - The generic "Kafka Topic" row appears only if at least one topic is
+      neither a topic-with-schema nor a DLQ (otherwise both badge variants
+      cover all topics and the plain icon never shows on the canvas).
+    - Per-catalog brand variants replace the generic "Catalog Table" row
+      whenever any catalog node is present.
     """
     type_counts = _get_type_counts(graph)
     rows: list[tuple[str, str]] = []
@@ -151,6 +153,7 @@ def _collect_legend_rows(graph: LineageGraph) -> list[tuple[str, str]]:
     catalog_types_present: set[str] = set()
     topic_with_schema = False
     dlq_topic = False
+    plain_topic = False
     topics_with_schema_ids: set[str] = set()
     for edge in graph.edges:
         if edge.edge_type == EdgeType.HAS_SCHEMA:
@@ -159,10 +162,14 @@ def _collect_legend_rows(graph: LineageGraph) -> list[tuple[str, str]]:
         if n.node_type == NodeType.CATALOG_TABLE and n.catalog_type:
             catalog_types_present.add(n.catalog_type)
         if n.node_type == NodeType.KAFKA_TOPIC:
-            if n.node_id in topics_with_schema_ids:
+            has_schema = n.node_id in topics_with_schema_ids
+            is_dlq = n.attributes.get("role") == "dlq"
+            if has_schema:
                 topic_with_schema = True
-            if n.attributes.get("role") == "dlq":
+            if is_dlq:
                 dlq_topic = True
+            if not has_schema and not is_dlq:
+                plain_topic = True
 
     for ntype in NodeType:
         if type_counts.get(ntype, 0) == 0:
@@ -175,7 +182,11 @@ def _collect_legend_rows(graph: LineageGraph) -> list[tuple[str, str]]:
                 rows.append((CATALOG_ICONS.get(ct, NODE_ICONS[ntype]), style.label))
             continue
         if ntype == NodeType.KAFKA_TOPIC:
-            rows.append((NODE_ICONS[ntype], NODE_TYPE_LABELS.get(ntype, ntype.value)))
+            # Only show the plain "Kafka Topic" row when at least one
+            # topic actually renders with the plain icon (no badge variant
+            # covers it).
+            if plain_topic:
+                rows.append((NODE_ICONS[ntype], NODE_TYPE_LABELS.get(ntype, ntype.value)))
             if topic_with_schema:
                 rows.append((TOPIC_WITH_SCHEMA_ICON, "Topic with schema"))
             if dlq_topic:
@@ -183,6 +194,20 @@ def _collect_legend_rows(graph: LineageGraph) -> list[tuple[str, str]]:
             continue
         rows.append((NODE_ICONS[ntype], NODE_TYPE_LABELS.get(ntype, ntype.value)))
     return rows
+
+
+def _present_edge_types(graph: LineageGraph) -> set[EdgeType]:
+    """Return the set of EdgeType values that the graph actually renders.
+
+    Excludes HAS_SCHEMA — that edge type isn't drawn on the canvas (schemas
+    are surfaced as topic info), so it shouldn't appear in the edge legend.
+    """
+    present: set[EdgeType] = set()
+    for edge in graph.edges:
+        if edge.edge_type == EdgeType.HAS_SCHEMA:
+            continue
+        present.add(edge.edge_type)
+    return present
 
 
 def _render_sidebar_legend(graph: LineageGraph) -> None:
@@ -207,7 +232,10 @@ def _render_sidebar_legend(graph: LineageGraph) -> None:
     # ── Edge types ───────────────────────────────────────────────
     st.caption("Edges")
     edge_html_parts = []
+    present_edges = _present_edge_types(graph)
     for etype in EDGE_TYPE_LABELS:
+        if etype not in present_edges:
+            continue
         color = EDGE_COLORS.get(etype, "#757575")
         label = EDGE_TYPE_LABELS[etype]
         dashes = EDGE_DASHES.get(etype, False)
