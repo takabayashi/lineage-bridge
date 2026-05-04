@@ -170,10 +170,21 @@ else
     prompt GCP_PROJECT "GCP project ID" ""
 fi
 
-# BigQuery dataset
+# Demo suffix — pinned in tfvars so bash and terraform agree on the
+# random hex used by demo_prefix and the BigQuery dataset name. Reuse
+# any value already in tfvars (so re-running setup is idempotent), else
+# generate a fresh 8-char hex.
+DEMO_SUFFIX=$(get_tfvar "demo_suffix")
+if [ -z "$DEMO_SUFFIX" ]; then
+  DEMO_SUFFIX=$(openssl rand -hex 4)
+fi
+
+# BigQuery dataset — auto-derive from demo_suffix unless the user has
+# explicitly pinned a different name (e.g. to share data across runs).
 BQ_DATASET=$(get_tfvar "bigquery_dataset")
-BQ_DATASET="${BQ_DATASET:-lineage_bridge}"
-prompt BQ_DATASET "BigQuery dataset name" "$BQ_DATASET"
+DEFAULT_BQ_DATASET="lineage_bridge_${DEMO_SUFFIX}"
+BQ_DATASET="${BQ_DATASET:-$DEFAULT_BQ_DATASET}"
+prompt BQ_DATASET "BigQuery dataset name (auto-suffixed; override only to share)" "$BQ_DATASET"
 
 # GCP region
 GCP_REGION=$(get_tfvar "gcp_region")
@@ -194,6 +205,10 @@ cat > "$TFVARS" <<EOF
 # Confluent Cloud
 confluent_cloud_api_key    = "$CONFLUENT_KEY"
 confluent_cloud_api_secret = "$CONFLUENT_SECRET"
+
+# Demo identity — pinned so bash + terraform agree (used by 'bq mk' and
+# the BigQuery sink connector to name the same dataset).
+demo_suffix      = "$DEMO_SUFFIX"
 
 # GCP / BigQuery
 gcp_project_id   = "$GCP_PROJECT"

@@ -65,14 +65,32 @@ fi
 
 echo "  GCP Project: $GCP_PROJECT"
 
-# ── Read BigQuery dataset from tfvars (default: lineage_bridge) ───────────
+# ── Read BigQuery dataset from tfvars ─────────────────────────────────────
+# Setup-tfvars.sh always pins both demo_suffix and bigquery_dataset (e.g.
+# "lineage_bridge_a1b2c3d4") so bash and terraform name the same dataset.
+# When neither is in tfvars (e.g. user wrote tfvars by hand and left
+# bigquery_dataset empty), derive the same value Terraform would: the demo
+# prefix with hyphens flipped to underscores. Falls back to the legacy
+# "lineage_bridge" name only when no demo_suffix is available either, and
+# warns the user since that path is collision-prone.
 
-BQ_DATASET="lineage_bridge"
-if [ -f "$TFVARS" ]; then
-  TFVAR_DATASET=$(grep -E '^bigquery_dataset' "$TFVARS" 2>/dev/null \
-    | sed 's/.*= *"\(.*\)"/\1/' || true)
-  if [ -n "$TFVAR_DATASET" ]; then
-    BQ_DATASET="$TFVAR_DATASET"
+read_tfvar() {
+  [ -f "$TFVARS" ] || return 0
+  grep -E "^$1[[:space:]]*=" "$TFVARS" 2>/dev/null \
+    | sed 's/.*= *"\(.*\)"/\1/' || true
+}
+
+BQ_DATASET=$(read_tfvar bigquery_dataset)
+DEMO_SUFFIX=$(read_tfvar demo_suffix)
+
+if [ -z "$BQ_DATASET" ]; then
+  if [ -n "$DEMO_SUFFIX" ]; then
+    BQ_DATASET="lineage_bridge_${DEMO_SUFFIX}"
+  else
+    BQ_DATASET="lineage_bridge"
+    echo "  ⚠ bigquery_dataset and demo_suffix both empty in tfvars."
+    echo "    Falling back to '$BQ_DATASET' — may collide with other"
+    echo "    sessions in the same GCP project. Run setup-tfvars.sh to fix."
   fi
 fi
 
@@ -173,7 +191,7 @@ echo ""
 echo "▸ Generating .env file..."
 
 PROJECT_DIR="$(cd "$DEMO_DIR/../../.." && pwd)"
-ENV_FILE="$PROJECT_DIR/.env"
+ENV_FILE="$DEMO_DIR/.env"
 
 if [ -f "$ENV_FILE" ]; then
     backup="$ENV_FILE.backup.$(date +%Y%m%d_%H%M%S)"

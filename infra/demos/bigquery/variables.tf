@@ -29,9 +29,24 @@ variable "gcp_sa_key_json" {
 }
 
 variable "bigquery_dataset" {
-  description = "BigQuery dataset name for sink connector"
+  description = <<-EOT
+    BigQuery dataset name for sink connector. Auto-derived from demo_suffix
+    when left empty (e.g. ``lineage_bridge_a1b2c3d4``). Only set explicitly
+    when you need to share a dataset across runs.
+  EOT
   type        = string
-  default     = "lineage_bridge"
+  default     = ""
+}
+
+variable "demo_suffix" {
+  description = <<-EOT
+    Pre-generated 8-char hex suffix used for the demo prefix and BigQuery
+    dataset name. setup-tfvars.sh generates this so 'bq mk' (which runs
+    before terraform apply) can name the dataset the same way the
+    Confluent connector will.
+  EOT
+  type        = string
+  default     = ""
 }
 
 variable "gcp_region" {

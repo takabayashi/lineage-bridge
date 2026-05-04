@@ -60,21 +60,34 @@ TF_ORDERS=$(terraform state show confluent_tableflow_topic.orders 2>/dev/null | 
 if [[ -n "$TF_ORDERS" ]]; then
   echo "  Tableflow topics already provisioned — skipping key creation"
 else
+  KEY_STDERR=$(mktemp)
+  set +e
   KEY_OUTPUT=$(confluent api-key create --resource tableflow \
     --service-account "$SA_ID" \
     --environment "$ENV_ID" \
-    -o json 2>&1)
+    -o json 2>"$KEY_STDERR")
+  KEY_STATUS=$?
+  set -e
 
-  if [[ $? -ne 0 ]]; then
-    echo "ERROR: Failed to create Tableflow API key."
-    echo "$KEY_OUTPUT"
+  if [[ $KEY_STATUS -ne 0 ]]; then
+    echo "ERROR: 'confluent api-key create' exited $KEY_STATUS."
+    echo "--- stdout ---"; echo "${KEY_OUTPUT:-<empty>}"
+    echo "--- stderr ---"; cat "$KEY_STDERR"
     echo ""
     echo "Make sure you're logged in: confluent login"
+    rm -f "$KEY_STDERR"
     exit 1
   fi
 
-  TF_API_KEY=$(echo "$KEY_OUTPUT" | python3 -c "import json,sys; print(json.load(sys.stdin)['api_key'])")
-  TF_API_SECRET=$(echo "$KEY_OUTPUT" | python3 -c "import json,sys; print(json.load(sys.stdin)['api_secret'])")
+  if ! TF_API_KEY=$(printf '%s' "$KEY_OUTPUT" | python3 -c "import json,sys; print(json.load(sys.stdin)['api_key'])" 2>/dev/null) \
+     || ! TF_API_SECRET=$(printf '%s' "$KEY_OUTPUT" | python3 -c "import json,sys; print(json.load(sys.stdin)['api_secret'])" 2>/dev/null); then
+    echo "ERROR: could not parse api_key/api_secret from 'confluent api-key create' output."
+    echo "--- stdout ---"; echo "${KEY_OUTPUT:-<empty>}"
+    echo "--- stderr ---"; cat "$KEY_STDERR"
+    rm -f "$KEY_STDERR"
+    exit 1
+  fi
+  rm -f "$KEY_STDERR"
 
   echo "  Key created: $TF_API_KEY"
 
@@ -98,7 +111,7 @@ echo ""
 echo "▸ Generating .env file..."
 
 PROJECT_DIR="$(cd "$DEMO_DIR/../../.." && pwd)"
-ENV_FILE="$PROJECT_DIR/.env"
+ENV_FILE="$DEMO_DIR/.env"
 
 if [ -f "$ENV_FILE" ]; then
     backup="$ENV_FILE.backup.$(date +%Y%m%d_%H%M%S)"

@@ -43,9 +43,21 @@ provider "confluent" {
 module "core" {
   source = "../modules/confluent-core"
 
-  demo_label                 = "bq"
-  cloud_provider             = "GCP"
-  cloud_region               = var.gcp_region
+  demo_label     = "bq"
+  demo_suffix    = var.demo_suffix
+  cloud_provider = "GCP"
+  cloud_region   = var.gcp_region
+}
+
+# ── Dataset name: derive from demo_prefix when not explicitly set ───────────
+# Bash needs to know this value before terraform apply (see setup-tfvars.sh
+# pinning demo_suffix), and the connector resources need the exact same
+# string. Computing it here in one place keeps them in sync.
+locals {
+  bigquery_dataset_name = (
+    var.bigquery_dataset != "" ? var.bigquery_dataset
+    : replace(module.core.demo_prefix, "-", "_")
+  )
 }
 
 # ── Wait for datagen connectors to register schemas ─────────────────────────
@@ -263,7 +275,7 @@ resource "confluent_connector" "bigquery_sink_enriched" {
     "ingestion.mode"           = "STREAMING"
     "topics"                   = "lineage_bridge.enriched_orders"
     "project"                  = var.gcp_project_id
-    "datasets"                 = var.bigquery_dataset
+    "datasets"                 = local.bigquery_dataset_name
     "auto.create.tables"       = "true"
     "auto.update.schemas"      = "true"
     "sanitize.topics"          = "true"
@@ -299,7 +311,7 @@ resource "confluent_connector" "bigquery_sink_order_stats" {
     "ingestion.mode"           = "STREAMING"
     "topics"                   = "lineage_bridge.order_stats"
     "project"                  = var.gcp_project_id
-    "datasets"                 = var.bigquery_dataset
+    "datasets"                 = local.bigquery_dataset_name
     "auto.create.tables"       = "true"
     "auto.update.schemas"      = "true"
     "sanitize.topics"          = "true"

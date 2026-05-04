@@ -26,7 +26,10 @@ resource "random_id" "suffix" {
 }
 
 locals {
-  demo_prefix = var.demo_label != "" ? "lb-${var.demo_label}-${random_id.suffix.hex}" : "lb-demo-${random_id.suffix.hex}"
+  # Honour an externally-pinned suffix when the caller (e.g. BigQuery's
+  # setup-tfvars.sh) needs bash to know the value before terraform apply.
+  effective_suffix = var.demo_suffix != "" ? var.demo_suffix : random_id.suffix.hex
+  demo_prefix      = var.demo_label != "" ? "lb-${var.demo_label}-${local.effective_suffix}" : "lb-demo-${local.effective_suffix}"
 }
 
 # ── Environment ─────────────────────────────────────────────────────────────
