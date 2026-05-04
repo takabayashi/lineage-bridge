@@ -611,9 +611,9 @@ resource "terraform_data" "update_trust_phase1" {
     ]
 })}'
     EOT
-  }
+}
 
-  depends_on = [databricks_storage_credential.tableflow, time_sleep.role_propagation]
+depends_on = [databricks_storage_credential.tableflow, time_sleep.role_propagation]
 }
 
 resource "time_sleep" "phase1" {
@@ -668,9 +668,9 @@ resource "terraform_data" "update_trust_phase2" {
     ]
 })}'
     EOT
-  }
+}
 
-  depends_on = [time_sleep.phase1, confluent_provider_integration.aws]
+depends_on = [time_sleep.phase1, confluent_provider_integration.aws]
 }
 
 resource "time_sleep" "phase2" {
@@ -747,6 +747,31 @@ resource "databricks_grants" "schema" {
     principal  = "account users"
     privileges = ["USE_SCHEMA", "SELECT", "CREATE_TABLE", "MODIFY"]
   }
+}
+
+# Confluent Tableflow auto-creates a SECOND schema in the catalog using the
+# raw cluster ID (with hyphens) — distinct from databricks_schema.demo above
+# which uses underscores. The notebook job reads from this hyphen-schema (the
+# only place the materialized tables actually live) and writes its derived
+# `customer_order_summary` table back into it. Without an explicit grant here,
+# the job fails with PERMISSION_DENIED on CREATE TABLE.
+#
+# We grant on the schema by name (Tableflow owns its lifecycle, not Terraform)
+# and depend on health_check so the schema exists by the time the grant runs.
+resource "databricks_grants" "tableflow_schema" {
+  schema = "${databricks_catalog.demo.name}.${module.core.kafka_cluster_id}"
+
+  grant {
+    principal  = "account users"
+    privileges = ["USE_SCHEMA", "SELECT", "CREATE_TABLE", "MODIFY"]
+  }
+
+  depends_on = [
+    confluent_catalog_integration.demo,
+    confluent_tableflow_topic.orders,
+    confluent_tableflow_topic.customers,
+    terraform_data.health_check,
+  ]
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -917,6 +942,7 @@ resource "databricks_job" "customer_order_summary" {
   depends_on = [
     databricks_grants.catalog,
     databricks_grants.schema,
+    databricks_grants.tableflow_schema,
     confluent_catalog_integration.demo,
   ]
 }

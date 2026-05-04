@@ -442,6 +442,33 @@ def _render_type_specific(
         if a.get("inferred_from"):
             st.markdown(f"**Inferred from connector:** `{a['inferred_from']}`")
 
+    elif ntype == NodeType.NOTEBOOK:
+        st.markdown("**Databricks notebook**")
+        if a.get("notebook_name"):
+            st.markdown(f"**Notebook:** {a['notebook_name']}")
+        if a.get("notebook_path"):
+            st.code(a["notebook_path"], language="text")
+        ncol1, ncol2 = st.columns(2)
+        with ncol1:
+            if a.get("notebook_id") is not None:
+                st.markdown(f"**Notebook ID:** `{a['notebook_id']}`")
+            if a.get("workspace_id") is not None:
+                st.markdown(f"**Workspace ID:** `{a['workspace_id']}`")
+        with ncol2:
+            if a.get("job_id") is not None:
+                st.markdown(f"**Job ID:** `{a['job_id']}`")
+            if a.get("job_name"):
+                st.markdown(f"**Job:** {a['job_name']}")
+        if a.get("schedule_cron"):
+            tz = a.get("schedule_timezone") or "UTC"
+            paused = " (paused)" if a.get("schedule_paused") else ""
+            st.markdown(f"**Schedule:** `{a['schedule_cron']}` {tz}{paused}")
+        if a.get("last_run_state"):
+            result = a.get("last_run_result")
+            state = a["last_run_state"]
+            line = f"**Last run:** {state}" + (f" — {result}" if result else "")
+            st.markdown(line)
+
 
 def _render_catalog_table(sel_node, a: dict, ncolor: str) -> None:
     """Catalog-table type-specific rendering — UC / Glue / BigQuery / DataZone."""

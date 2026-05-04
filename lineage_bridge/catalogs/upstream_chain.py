@@ -26,6 +26,7 @@ _DEFAULT_TYPES: set[NodeType] = {
     NodeType.KSQLDB_QUERY,
     NodeType.EXTERNAL_DATASET,
     NodeType.TABLEFLOW_TABLE,
+    NodeType.NOTEBOOK,
 }
 
 # Map NodeType → short kind label used in JSON output. Keeping these stable
@@ -37,6 +38,7 @@ _KIND_LABELS: dict[NodeType, str] = {
     NodeType.KSQLDB_QUERY: "ksqldb_query",
     NodeType.EXTERNAL_DATASET: "external_dataset",
     NodeType.TABLEFLOW_TABLE: "tableflow_table",
+    NodeType.NOTEBOOK: "notebook",
 }
 
 

@@ -33,6 +33,10 @@ class NodeType(StrEnum):
     SCHEMA = "schema"
     EXTERNAL_DATASET = "external_dataset"
     CONSUMER_GROUP = "consumer_group"
+    # Processing node sitting between two CATALOG_TABLE nodes — discovered
+    # via the Databricks lineage-tracking API's notebookInfos field. Sibling
+    # of FLINK_JOB / KSQLDB_QUERY (transform-style node, not a data store).
+    NOTEBOOK = "notebook"
 
 
 class EdgeType(StrEnum):
@@ -117,6 +121,10 @@ class PushResult:
     comments_set: int = 0
     bridge_rows_inserted: int = 0
     errors: list[str] = field(default_factory=list)
+    # Benign skips (e.g. PERMISSION_DENIED on tables the principal doesn't own,
+    # bridge INSERT after a CREATE the principal lacked rights for). The push
+    # still completes; these are surfaced as warnings, not errors.
+    skipped: list[str] = field(default_factory=list)
 
 
 class LineageGraph:
@@ -136,20 +144,32 @@ class LineageGraph:
     def add_node(self, node: LineageNode) -> None:
         """Add or update a node in the graph.
 
-        If the node already exists, its last_seen is updated and attributes
-        are merged (new values overwrite old ones).
+        If the node already exists, attributes/tags are merged and optional
+        scalar fields (cluster_id, environment_name, url, ...) prefer a
+        non-None value from either side — extractors that don't know a
+        topic's cluster (Flink, ksqlDB) shouldn't blow away that field
+        when KafkaAdmin set it earlier.
         """
         if node.node_id in self._nodes:
             existing = self._nodes[node.node_id]
             merged_attrs = {**existing.attributes, **node.attributes}
             merged_tags = list(set(existing.tags + node.tags))
-            self._nodes[node.node_id] = node.model_copy(
-                update={
-                    "first_seen": existing.first_seen,
-                    "attributes": merged_attrs,
-                    "tags": merged_tags,
-                }
-            )
+            update: dict[str, Any] = {
+                "first_seen": existing.first_seen,
+                "attributes": merged_attrs,
+                "tags": merged_tags,
+            }
+            for f in (
+                "environment_id",
+                "environment_name",
+                "cluster_id",
+                "cluster_name",
+                "catalog_type",
+                "url",
+            ):
+                if getattr(node, f) is None and getattr(existing, f) is not None:
+                    update[f] = getattr(existing, f)
+            self._nodes[node.node_id] = node.model_copy(update=update)
         else:
             self._nodes[node.node_id] = node
         self._graph.add_node(node.node_id)
@@ -172,6 +192,30 @@ class LineageGraph:
         else:
             self._edges[key] = edge
         self._graph.add_edge(edge.src_id, edge.dst_id, edge_type=edge.edge_type.value)
+
+    def remove_edge(self, src_id: str, dst_id: str, edge_type: EdgeType) -> bool:
+        """Remove the edge with the given composite key. Returns True if removed.
+
+        No-op (returns False) if the edge doesn't exist. Used by the
+        Databricks UC provider to swap a TRANSFORMS table-to-table edge
+        for a NOTEBOOK hop when the upstream lineage pass turns up the
+        producer attribution that the downstream pass missed.
+        """
+        key = (src_id, dst_id, edge_type.value)
+        if key not in self._edges:
+            return False
+        del self._edges[key]
+        # networkx DiGraph: edges are keyed by (src,dst); remove only when
+        # no other edge type still uses that pair (we don't model multi-edge
+        # variants on the nx side, so this is fine for the typical case).
+        if any(
+            (s, d, t) in self._edges
+            for (s, d, t) in [(src_id, dst_id, et.value) for et in EdgeType if et != edge_type]
+        ):
+            return True
+        if self._graph.has_edge(src_id, dst_id):
+            self._graph.remove_edge(src_id, dst_id)
+        return True
 
     # ── Queries ─────────────────────────────────────────────────────────
 

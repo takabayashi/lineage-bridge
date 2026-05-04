@@ -1128,6 +1128,27 @@
       "url": null,
       "first_seen": "2026-05-01T22:43:07.561310Z",
       "last_seen": "2026-05-01T22:43:07.561310Z"
+    },
+    {
+      "node_id": "databricks:notebook:env-abc123:42",
+      "system": "databricks",
+      "node_type": "notebook",
+      "qualified_name": "42",
+      "display_name": "Notebook 42",
+      "environment_id": "env-abc123",
+      "environment_name": null,
+      "cluster_id": null,
+      "cluster_name": null,
+      "catalog_type": null,
+      "attributes": {
+        "notebook_id": 42,
+        "workspace_id": 1234567890,
+        "workspace_url": "https://dbc-example.cloud.databricks.com"
+      },
+      "tags": [],
+      "url": null,
+      "first_seen": "2026-04-30T12:00:00+00:00",
+      "last_seen": "2026-04-30T12:00:00+00:00"
     }
   ],
   "edges": [
@@ -1455,6 +1476,24 @@
       "attributes": {},
       "first_seen": "2026-05-01T22:43:07.561478Z",
       "last_seen": "2026-05-01T22:43:07.561478Z"
+    },
+    {
+      "src_id": "databricks:uc_table:env-abc123:main.streaming.enriched_orders",
+      "dst_id": "databricks:notebook:env-abc123:42",
+      "edge_type": "consumes",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-04-30T12:00:00+00:00",
+      "last_seen": "2026-04-30T12:00:00+00:00"
+    },
+    {
+      "src_id": "databricks:notebook:env-abc123:42",
+      "dst_id": "databricks:uc_table:env-abc123:main.analytics.daily_order_summary",
+      "edge_type": "produces",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-04-30T12:00:00+00:00",
+      "last_seen": "2026-04-30T12:00:00+00:00"
     }
   ]
 }

@@ -66,7 +66,13 @@ class DatabricksSQLClient:
 
             if status == "FAILED":
                 error_msg = result.get("status", {}).get("error", {}).get("message", "unknown")
-                logger.error("SQL statement failed: %s — %s", sql[:100], error_msg)
+                # Logged at WARNING — the caller (e.g. DatabricksUCProvider) is
+                # the only one positioned to decide whether this is a real push
+                # error or a benign skip (cross-owner catalog spill, missing
+                # bridge schema before CREATE retry, etc.). Logging at ERROR
+                # here painted every benign skip as an alarming failure in
+                # the UI log even when the push result was clean.
+                logger.warning("SQL statement failed: %s — %s", sql[:100], error_msg)
 
             return result
 

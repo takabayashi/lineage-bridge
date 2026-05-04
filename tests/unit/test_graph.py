@@ -103,6 +103,33 @@ def test_add_edge_missing_destination(sample_node, sample_edge):
         graph.add_edge(edge)
 
 
+def test_remove_edge_returns_true_when_present(sample_node, sample_edge):
+    """remove_edge deletes a known edge and returns True."""
+    graph = LineageGraph()
+    src = sample_node("orders", NodeType.KAFKA_TOPIC)
+    dst = sample_node("derived", NodeType.KAFKA_TOPIC)
+    graph.add_node(src)
+    graph.add_node(dst)
+    graph.add_edge(sample_edge(src.node_id, dst.node_id, EdgeType.PRODUCES))
+
+    removed = graph.remove_edge(src.node_id, dst.node_id, EdgeType.PRODUCES)
+
+    assert removed is True
+    assert graph.get_edge(src.node_id, dst.node_id, EdgeType.PRODUCES) is None
+    assert graph.edge_count == 0
+
+
+def test_remove_edge_returns_false_when_absent(sample_node, sample_edge):
+    """remove_edge is a no-op (returns False) when the edge doesn't exist."""
+    graph = LineageGraph()
+    src = sample_node("a", NodeType.KAFKA_TOPIC)
+    dst = sample_node("b", NodeType.KAFKA_TOPIC)
+    graph.add_node(src)
+    graph.add_node(dst)
+
+    assert graph.remove_edge(src.node_id, dst.node_id, EdgeType.PRODUCES) is False
+
+
 # ── test_get_neighbors_upstream ────────────────────────────────────────
 
 

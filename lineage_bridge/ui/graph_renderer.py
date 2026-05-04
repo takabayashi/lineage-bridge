@@ -242,6 +242,19 @@ def _build_tooltip_details(node: LineageNode, ntype: NodeType, a: dict) -> list[
         if a.get("inferred_from"):
             detail_lines.append(f"From: {a['inferred_from']}")
 
+    elif ntype == NodeType.NOTEBOOK:
+        # The chip's display_name already shows the notebook name; this
+        # second line surfaces the job (if any) so the canvas reads
+        # "{notebook} / job: {job_name}" without the run id noise.
+        if a.get("job_name"):
+            detail_lines.append(f"job: {a['job_name']}")
+        elif a.get("notebook_id") is not None:
+            detail_lines.append(f"ID: {a['notebook_id']}")
+        if a.get("last_run_result"):
+            detail_lines.append(f"Last: {a['last_run_result']}")
+        elif a.get("last_run_state"):
+            detail_lines.append(f"Last: {a['last_run_state']}")
+
     return detail_lines
 
 

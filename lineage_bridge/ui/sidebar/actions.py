@@ -390,12 +390,20 @@ def _render_publish_row(settings, graph: LineageGraph, t: _PublishTarget) -> Non
                     result = t.push_fn(settings, graph, params)
                     msg = _format_push_result(t.short_name, result)
                     errs = getattr(result, "errors", None)
+                    skips = getattr(result, "skipped", None)
                     state = "error" if errs else "complete"
                     status.update(label=msg, state=state)
                     if errs:
                         _record_activity_alert(
                             "error",
                             f"Push to {t.short_name}: {len(errs)} error(s)",
+                            "push_log",
+                        )
+                    elif skips:
+                        _record_activity_alert(
+                            "warning",
+                            f"Push to {t.short_name}: {len(skips)} skipped "
+                            "(catalogs you don't own)",
                             "push_log",
                         )
                     else:
@@ -414,6 +422,8 @@ def _format_push_result(target: str, result) -> str:
         parts.append(f"{result.properties_set} props")
     if getattr(result, "comments_set", 0):
         parts.append(f"{result.comments_set} comments")
+    if getattr(result, "skipped", None):
+        parts.append(f"{len(result.skipped)} skipped")
     if getattr(result, "errors", None):
         parts.append(f"{len(result.errors)} error(s)")
     return " · ".join(parts)

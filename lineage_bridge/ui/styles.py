@@ -43,6 +43,7 @@ NODE_COLORS: dict[NodeType, str] = {
     NodeType.SCHEMA: "#90CAF9",  # Confluent pale blue
     NodeType.EXTERNAL_DATASET: "#757575",  # neutral gray
     NodeType.CONSUMER_GROUP: "#2196F3",  # Confluent mid blue
+    NodeType.NOTEBOOK: "#FF3621",  # Databricks brand red
 }
 
 # ── Node sizes (agraph pixel diameter) ─────────────────────────────────
@@ -56,6 +57,7 @@ NODE_SIZES: dict[NodeType, int] = {
     NodeType.SCHEMA: 28,
     NodeType.EXTERNAL_DATASET: 34,
     NodeType.CONSUMER_GROUP: 30,
+    NodeType.NOTEBOOK: 38,
 }
 
 # ── Edge colors per type ───────────────────────────────────────────────
@@ -99,6 +101,7 @@ NODE_TYPE_LABELS: dict[NodeType, str] = {
     NodeType.SCHEMA: "Schema",
     NodeType.EXTERNAL_DATASET: "External Dataset",
     NodeType.CONSUMER_GROUP: "Consumer Group",
+    NodeType.NOTEBOOK: "Notebook",
 }
 
 EDGE_TYPE_LABELS: dict[EdgeType, str] = {
@@ -121,6 +124,7 @@ NODE_SHAPES: dict[NodeType, str] = {
     NodeType.SCHEMA: "image",
     NodeType.EXTERNAL_DATASET: "image",
     NodeType.CONSUMER_GROUP: "image",
+    NodeType.NOTEBOOK: "image",
 }
 
 # ── SVG icons for each node type ──────────────────────────────────────
@@ -236,6 +240,18 @@ _SYMBOLS: dict[NodeType, str] = {
         'fill="#fff"/>'
         # small down arrow below cloud
         '<polygon points="-4,5 4,5 0,11" fill="#fff"/>'
+    ),
+    # Notebook — code-cell document (rounded page with a filled header band
+    # and three content lines, evoking a Jupyter/Databricks notebook).
+    NodeType.NOTEBOOK: (
+        '<rect x="-12" y="-14" width="24" height="28" rx="3" '
+        'fill="none" stroke="#fff" stroke-width="2"/>'
+        # filled header (cell title bar)
+        '<rect x="-9" y="-11" width="18" height="5" rx="1" fill="#fff"/>'
+        # three content lines
+        '<line x1="-9" y1="-1" x2="9" y2="-1" stroke="#fff" stroke-width="1.5"/>'
+        '<line x1="-9" y1="4" x2="6" y2="4" stroke="#fff" stroke-width="1.5"/>'
+        '<line x1="-9" y1="9" x2="9" y2="9" stroke="#fff" stroke-width="1.5"/>'
     ),
     # Consumer Group — three stacked user circles (group of consumers)
     NodeType.CONSUMER_GROUP: (
@@ -543,6 +559,7 @@ NODE_TYPE_EMOJI: dict[NodeType, str] = {
     NodeType.SCHEMA: "\u2637",  # ☷ (document)
     NodeType.EXTERNAL_DATASET: "\u2601",  # ☁ (cloud)
     NodeType.CONSUMER_GROUP: "\u2638",  # ☸ (group)
+    NodeType.NOTEBOOK: "\u270e",  # ✎ (pencil — notebook/code)
 }
 
 
@@ -659,7 +676,7 @@ def _build_external_dataset_url(node: Any) -> str | None:
 def build_node_url(node: Any) -> str | None:
     """Build a URL for any node type — dispatches to catalog providers for catalog nodes."""
     from lineage_bridge.catalogs import get_provider
-    from lineage_bridge.models.graph import NodeType
+    from lineage_bridge.models.graph import NodeType, SystemType
 
     if node.node_type == NodeType.CATALOG_TABLE:
         catalog_type = getattr(node, "catalog_type", None)
@@ -669,6 +686,12 @@ def build_node_url(node: Any) -> str | None:
         return provider.build_url(node) if provider else None
     if node.node_type == NodeType.EXTERNAL_DATASET:
         return _build_external_dataset_url(node)
+    # Databricks notebook: route through the UC provider so the deeplink
+    # uses the workspace URL we know about (and the path-based URL form
+    # when we discovered notebook_path during job enrichment).
+    if node.node_type == NodeType.NOTEBOOK and node.system == SystemType.DATABRICKS:
+        provider = get_provider("UNITY_CATALOG")
+        return provider.build_url(node) if provider else None
     return build_confluent_cloud_url(node)
 
 

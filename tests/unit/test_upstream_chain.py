@@ -171,6 +171,49 @@ class TestBuildUpstreamChain:
         g.add_node(_uc_target())
         assert build_upstream_chain(g, "databricks:uc_table:env-1:cat.sch.target") == []
 
+    def test_includes_notebook_hop(self):
+        """A NOTEBOOK node sitting between two UC tables surfaces in the chain.
+
+        Locks in the cross-reference: when databricks_uc.py inserts notebook
+        nodes between source and derived tables, the chain shape that UC
+        TBLPROPERTIES / Glue / DataZone consume must include them.
+        """
+        g = LineageGraph()
+        src = LineageNode(
+            node_id="databricks:uc_table:env-1:cat.sch.src",
+            system=SystemType.DATABRICKS,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="UNITY_CATALOG",
+            qualified_name="cat.sch.src",
+            display_name="src",
+            environment_id="env-1",
+        )
+        notebook = LineageNode(
+            node_id="databricks:notebook:env-1:101",
+            system=SystemType.DATABRICKS,
+            node_type=NodeType.NOTEBOOK,
+            qualified_name="101",
+            display_name="Notebook 101",
+            environment_id="env-1",
+            attributes={"notebook_id": 101, "workspace_id": 7},
+        )
+        target = _uc_target()
+        for n in (src, notebook, target):
+            g.add_node(n)
+        g.add_edge(
+            LineageEdge(src_id=src.node_id, dst_id=notebook.node_id, edge_type=EdgeType.CONSUMES)
+        )
+        g.add_edge(
+            LineageEdge(src_id=notebook.node_id, dst_id=target.node_id, edge_type=EdgeType.PRODUCES)
+        )
+
+        chain = build_upstream_chain(g, target.node_id)
+        kinds = [(h.hop, h.kind, h.qualified_name) for h in chain]
+        # CATALOG_TABLE is not in _DEFAULT_TYPES (catalog tables are anchor
+        # points, not hops), so only the notebook surfaces. The notebook
+        # appearing at hop=1 is the assertion that matters.
+        assert kinds == [(1, "notebook", "101")]
+
 
 class TestChainToJson:
     def test_round_trip_compact(self):
