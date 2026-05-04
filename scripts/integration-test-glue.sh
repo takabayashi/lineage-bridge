@@ -340,16 +340,41 @@ test_change_watcher() {
 test_api_server() {
   log_info "Test 7: API Server"
 
+  # Refuse to start if port 8000 is already taken — otherwise our `uvicorn`
+  # exits silently and the curl calls below hit some other process,
+  # producing nonsense results (e.g. tasks that never complete).
+  if lsof -ti :8000 >/dev/null 2>&1; then
+    HOLDER_PID=$(lsof -ti :8000 | head -1)
+    HOLDER_CMD=$(ps -p "$HOLDER_PID" -o command= 2>/dev/null | head -c 100)
+    test_failed "API server (port 8000 already in use by PID $HOLDER_PID: $HOLDER_CMD)"
+    log_warn "  Free the port and re-run: kill $HOLDER_PID"
+    echo ""
+    return
+  fi
+
   uv run lineage-bridge-api >/tmp/glue-test7-api.log 2>&1 &
   API_PID=$!
 
-  sleep 5
+  # Wait up to 10s for the server to either bind or fail.
+  for _ in {1..20}; do
+    sleep 0.5
+    if curl -sf http://localhost:8000/api/v1/health >/dev/null 2>&1; then
+      break
+    fi
+    if ! ps -p $API_PID >/dev/null 2>&1; then
+      test_failed "API server (process died during startup)"
+      tail -5 /tmp/glue-test7-api.log
+      echo ""
+      return
+    fi
+  done
 
   # Test 7a: Health check
   if curl -s http://localhost:8000/api/v1/health | grep -q '"status":"ok"'; then
     test_passed "API server health check"
   else
     test_failed "API server health check"
+    tail -5 /tmp/glue-test7-api.log
   fi
 
   # Test 7b: Trigger extraction task
