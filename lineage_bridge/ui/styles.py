@@ -9,6 +9,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from lineage_bridge.models.graph import EdgeType, NodeType
 
@@ -589,12 +590,17 @@ def build_confluent_cloud_url(node: Any) -> str | None:
     if ntype == NodeType.KAFKA_TOPIC:
         if not cluster:
             return None
-        return f"{base}/{env}/clusters/{cluster}/topics/{name}/overview"
+        return f"{base}/{env}/clusters/{cluster}/topics/{quote(name, safe='')}/overview"
 
     if ntype == NodeType.CONNECTOR:
         if not cluster:
             return None
-        return f"{base}/{env}/clusters/{cluster}/connectors/{name}/overview"
+        # Confluent Cloud's UI keys connector deeplinks by the lcc-XXXXX
+        # resource ID, not the logical name. Fall back to the URL-encoded
+        # name for self-managed connectors that don't have an lcc id.
+        attrs = getattr(node, "attributes", {}) or {}
+        connector_path = attrs.get("confluent_id") or quote(name, safe="")
+        return f"{base}/{env}/clusters/{cluster}/connectors/{connector_path}/overview"
 
     if ntype == NodeType.FLINK_JOB:
         return f"{base}/{env}/flink/compute-pools"
@@ -613,7 +619,10 @@ def build_confluent_cloud_url(node: Any) -> str | None:
             return None
         # qualified_name is "cluster_id.topic_name", extract the topic part
         topic_name = name.split(".", 1)[-1] if "." in name else name
-        return f"{base}/{env}/clusters/{cluster}/topics/{topic_name}/overview?tab=cloud"
+        return (
+            f"{base}/{env}/clusters/{cluster}/topics/"
+            f"{quote(topic_name, safe='')}/overview?tab=cloud"
+        )
 
     return None
 
