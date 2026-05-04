@@ -22,6 +22,10 @@ terraform {
       source  = "hashicorp/time"
       version = "~> 0.9"
     }
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 5.0"
+    }
   }
 
   backend "local" {
@@ -34,6 +38,16 @@ terraform {
 provider "confluent" {
   cloud_api_key    = var.confluent_cloud_api_key
   cloud_api_secret = var.confluent_cloud_api_secret
+}
+
+# Google provider authenticates with the same SA the BQ Sink connectors use
+# (the keyfile is provisioned by scripts/provision-demo.sh and passed in via
+# var.gcp_sa_key_json). The SA already has roles/bigquery.dataEditor on the
+# dataset since it creates tables via the connector.
+provider "google" {
+  project     = var.gcp_project_id
+  region      = var.gcp_region
+  credentials = var.gcp_sa_key_json
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -58,6 +72,9 @@ locals {
     var.bigquery_dataset != "" ? var.bigquery_dataset
     : replace(module.core.demo_prefix, "-", "_")
   )
+  # Demo SA created out-of-band by scripts/provision-demo.sh (SA_NAME constant
+  # there). Hardcoded in both places — keep them in sync.
+  gcp_sa_email = "lb-demo-bigquery@${var.gcp_project_id}.iam.gserviceaccount.com"
 }
 
 # ── Wait for datagen connectors to register schemas ─────────────────────────
@@ -325,5 +342,62 @@ resource "confluent_connector" "bigquery_sink_order_stats" {
 
   depends_on = [
     confluent_flink_statement.order_stats,
+  ]
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BIGQUERY — Scheduled CTAS joining the two sink tables
+# ═══════════════════════════════════════════════════════════════════════════════
+# Creates a third BQ table by joining `enriched_orders` and `order_stats` on
+# `order_status`. Runs every hour via the BigQuery Data Transfer Service.
+#
+# Why this exists: it extends the lineage chain into the GCP side so the BQ
+# Lineage tab shows the full pipeline end-to-end — Datagen → Kafka → Flink →
+# Sink connector → BQ table → BQ Query → joined table. The Confluent metadata
+# we registered in Dataplex Catalog stays clickable on every upstream node.
+
+# Prerequisites for this resource (API enable + SA self-actAs binding) are
+# set up by scripts/provision-demo.sh using the operator's gcloud credentials,
+# because the demo SA terraform runs as can't manage project-level service
+# enablement or its own IAM policy without admin permissions.
+resource "google_bigquery_data_transfer_config" "joined_orders_ctas" {
+  project                = var.gcp_project_id
+  location               = "us"
+  display_name           = "${module.core.demo_prefix} joined_orders CTAS"
+  data_source_id         = "scheduled_query"
+  schedule               = "every 1 hours"
+  destination_dataset_id = local.bigquery_dataset_name
+
+  # NOTE: query is a plain SELECT (no CREATE TABLE DDL) — the Data Transfer
+  # Service writes the result into the destination table managed by
+  # destination_table_name_template + write_disposition. Using DDL here would
+  # conflict with write_disposition and the run fails with INVALID_ARGUMENT.
+  params = {
+    query                            = <<-SQL
+      SELECT
+        eo.order_id,
+        eo.customer_id,
+        eo.customer_name,
+        eo.customer_country,
+        eo.product_name,
+        eo.quantity,
+        eo.price,
+        eo.order_status,
+        os.order_count    AS status_order_count,
+        os.total_quantity AS status_total_quantity,
+        CURRENT_TIMESTAMP() AS computed_at
+      FROM `${var.gcp_project_id}.${local.bigquery_dataset_name}.lineage_bridge_enriched_orders` eo
+      LEFT JOIN `${var.gcp_project_id}.${local.bigquery_dataset_name}.lineage_bridge_order_stats` os
+        ON eo.order_status = os.order_status
+    SQL
+    destination_table_name_template = "lineage_bridge_joined_orders"
+    write_disposition               = "WRITE_TRUNCATE"
+  }
+
+  service_account_name = local.gcp_sa_email
+
+  depends_on = [
+    confluent_connector.bigquery_sink_enriched,
+    confluent_connector.bigquery_sink_order_stats,
   ]
 }

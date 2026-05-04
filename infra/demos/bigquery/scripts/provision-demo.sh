@@ -120,10 +120,17 @@ else
   echo "  Created: $SA_EMAIL"
 fi
 
-# Grant BigQuery roles (idempotent — won't error if already granted)
+# Grant BigQuery roles (idempotent — won't error if already granted).
+# - dataEditor + jobUser: read/write data + run jobs (used by sink connectors)
+# - bigquery.admin: includes bigquery.transfers.update so the SA can create
+#   the scheduled CTAS via terraform (the more granular `bigquery.transfers`
+#   permission isn't its own role at project scope).
 echo "  Granting BigQuery permissions..."
 
-for ROLE in "roles/bigquery.dataEditor" "roles/bigquery.jobUser"; do
+for ROLE in \
+  "roles/bigquery.dataEditor" \
+  "roles/bigquery.jobUser" \
+  "roles/bigquery.admin"; do
   gcloud projects add-iam-policy-binding "$GCP_PROJECT" \
     --member="serviceAccount:$SA_EMAIL" \
     --role="$ROLE" \
@@ -132,6 +139,32 @@ for ROLE in "roles/bigquery.dataEditor" "roles/bigquery.jobUser"; do
     > /dev/null 2>&1
   echo "    Granted: $ROLE"
 done
+
+# The Data Transfer Service mints short-lived tokens for the SA when it runs
+# the scheduled query, and terraform itself needs `actAs` on the SA when
+# setting service_account_name. Both are SA self-bindings — terraform can't
+# manage these because the SA can't read its own IAM policy without admin
+# perms (chicken-and-egg).
+echo "  Granting self-impersonation roles for scheduled query..."
+for ROLE in \
+  "roles/iam.serviceAccountTokenCreator" \
+  "roles/iam.serviceAccountUser"; do
+  gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" \
+    --member="serviceAccount:$SA_EMAIL" \
+    --role="$ROLE" \
+    --project="$GCP_PROJECT" \
+    --quiet \
+    > /dev/null 2>&1 || true
+  echo "    Granted: $ROLE"
+done
+
+# Enable the BigQuery Data Transfer API (terraform's google_project_service
+# would require serviceusage.services.list which the SA doesn't have).
+echo "  Enabling bigquerydatatransfer.googleapis.com..."
+gcloud services enable bigquerydatatransfer.googleapis.com \
+  --project="$GCP_PROJECT" \
+  --quiet \
+  > /dev/null 2>&1 || echo "    (already enabled)"
 
 # ── Step 3: Create SA key ─────────────────────────────────────────────
 

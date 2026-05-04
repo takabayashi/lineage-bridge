@@ -41,6 +41,16 @@ output "bigquery_dataset" {
   value       = local.bigquery_dataset_name
 }
 
+output "joined_orders_table" {
+  description = "Fully-qualified BQ table produced by the scheduled CTAS join"
+  value       = "${var.gcp_project_id}.${local.bigquery_dataset_name}.lineage_bridge_joined_orders"
+}
+
+output "scheduled_query_id" {
+  description = "BigQuery Data Transfer config ID for the scheduled CTAS"
+  value       = google_bigquery_data_transfer_config.joined_orders_ctas.id
+}
+
 output "demo_env_file" {
   description = "Suggested .env contents for LineageBridge"
   value       = <<-EOT
