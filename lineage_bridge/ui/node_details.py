@@ -25,10 +25,11 @@ import streamlit as st
 
 from lineage_bridge.models.graph import EdgeType, LineageGraph, LineageNode, NodeType
 from lineage_bridge.ui.styles import (
-    NODE_TYPE_EMOJI,
     NODE_TYPE_LABELS,
     build_node_url,
+    clean_display_name,
     color_for_node,
+    icon_for_node,
     label_for_node,
     render_status_badge_html,
 )
@@ -69,7 +70,8 @@ def render_node_details(graph: LineageGraph) -> None:
     a = sel_node.attributes
     cloud_url = sel_node.url or build_node_url(sel_node)
     ntype = sel_node.node_type
-    type_icon = NODE_TYPE_EMOJI.get(ntype, "•")
+    cleaned_name = clean_display_name(sel_node.display_name)
+    type_icon_svg = icon_for_node(sel_node)
 
     # ── Header: type icon + name + status pill + close-X ─────────
     status_value = a.get("phase") or a.get("state")
@@ -79,16 +81,25 @@ def render_node_details(graph: LineageGraph) -> None:
 
     h_left, h_right = st.columns([8, 1])
     with h_left:
+        # Use the same SVG icon the legend / canvas uses so the panel
+        # header matches the visual identity in the graph (was a unicode
+        # marker that looked different from the actual node icon).
+        icon_img = (
+            f"<img src='{type_icon_svg}' width='20' height='20' "
+            f"style='vertical-align:middle;margin-right:4px'/>"
+            if type_icon_svg
+            else ""
+        )
         st.markdown(
             f"<div class='detail-head' style='border-left-color:{ncolor};"
             f"background:linear-gradient(135deg, {ncolor}22 0%, {ncolor}08 100%);'>"
             f"<div class='detail-head-row'>"
-            f"<span class='detail-head-icon' style='color:{ncolor}'>{type_icon}</span>"
+            f"{icon_img}"
             f"<span class='detail-head-type' style='color:{ncolor}'>{ntype_label}</span>"
             f"<span class='detail-head-status'>{status_pill}</span>"
             f"</div>"
-            f"<div class='detail-head-name' title='{sel_node.display_name}'>"
-            f"{sel_node.display_name}"
+            f"<div class='detail-head-name' title='{cleaned_name}'>"
+            f"{cleaned_name}"
             f"</div>"
             f"</div>",
             unsafe_allow_html=True,
@@ -414,7 +425,7 @@ def _render_type_specific(
                 topic_node = graph.get_node(se.src_id)
                 if topic_node:
                     role = se.attributes.get("role", "value")
-                    st.caption(f"- {topic_node.display_name} ({role})")
+                    st.caption(f"- {clean_display_name(topic_node.display_name)} ({role})")
 
     elif ntype == NodeType.CONSUMER_GROUP:
         st.markdown("**Consumer group**")
@@ -537,7 +548,7 @@ def _render_topic_schemas(graph: LineageGraph, sel_id: str, ncolor: str) -> None
             f"<span style='background:{role_color};color:white;"
             f"padding:1px 6px;border-radius:4px;font-size:11px;'>"
             f"{role}</span> "
-            f"<strong>{schema_node.display_name}</strong>"
+            f"<strong>{clean_display_name(schema_node.display_name)}</strong>"
             f"<br><span style='font-size:12px;color:#999;'>"
             f"{sa.get('schema_type', '')} "
             f"{'v' + str(sa['version']) if sa.get('version') else ''}"
@@ -602,7 +613,9 @@ def _render_neighbour_side(prefix: str, title: str, neighbours: list[LineageNode
         return
 
     # Group by NodeType for long lists. Each type group becomes an expander
-    # so the whole panel stays scannable even at 80+ neighbours.
+    # so the whole panel stays scannable even at 80+ neighbours. Use the
+    # SVG icon (same as the legend/canvas) for the group header by picking
+    # any representative node from the group.
     grouped: dict[NodeType, list[LineageNode]] = defaultdict(list)
     for nb in neighbours:
         grouped[nb.node_type].append(nb)
@@ -610,23 +623,32 @@ def _render_neighbour_side(prefix: str, title: str, neighbours: list[LineageNode
     # Show largest groups first so the most-relevant ones are at the top.
     sorted_groups = sorted(grouped.items(), key=lambda kv: -len(kv[1]))
     for ntype, group in sorted_groups:
-        icon = NODE_TYPE_EMOJI.get(ntype, "•")
         type_label = NODE_TYPE_LABELS.get(ntype, ntype.value)
-        with st.expander(f"{icon} {type_label} ({len(group)})", expanded=False):
+        with st.expander(f"{type_label} ({len(group)})", expanded=False):
             for nb in group:
                 _render_neighbour_button(prefix, nb)
 
 
 def _render_neighbour_button(prefix: str, nb: LineageNode) -> None:
-    """One button — clicking sets selected_node to the neighbour."""
-    icon = NODE_TYPE_EMOJI.get(nb.node_type, "•")
-    if st.button(
-        f"{icon}  {nb.display_name}",
-        key=f"nb_{prefix}_{nb.node_id}",
-        width="stretch",
-    ):
-        st.session_state.selected_node = nb.node_id
-        st.rerun()
+    """One row: SVG icon (matches legend/canvas) + clickable name button."""
+    icon_uri = icon_for_node(nb)
+    cleaned = clean_display_name(nb.display_name)
+    ic, btn = st.columns([1, 8], vertical_alignment="center")
+    with ic:
+        if icon_uri:
+            st.markdown(
+                f"<img src='{icon_uri}' width='18' height='18' "
+                f"style='display:block;margin:0 auto'/>",
+                unsafe_allow_html=True,
+            )
+    with btn:
+        if st.button(
+            cleaned,
+            key=f"nb_{prefix}_{nb.node_id}",
+            width="stretch",
+        ):
+            st.session_state.selected_node = nb.node_id
+            st.rerun()
 
 
 # Keys consumed by the explicit type-specific branches above. Anything not

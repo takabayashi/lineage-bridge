@@ -24,6 +24,7 @@ from lineage_bridge.ui.styles import (
     build_edge_vis_props,
     build_node_vis_props,
     build_status_badge_icon,
+    clean_display_name,
     color_for_node,
     icon_for_node,
     label_for_node,
@@ -36,8 +37,13 @@ def _trunc(text: str, max_len: int = 40) -> str:
 
 
 def _short_name(node: LineageNode) -> str:
-    """Return a short display name — last segment of qualified_name."""
-    name = node.display_name
+    """Return a short display name — last dotted segment, with type tags stripped.
+
+    Strips redundant type indicators like ``(Tableflow)`` / ``UC:`` /
+    ``Glue:`` baked into the display name — the type is already conveyed
+    by the node's icon and panel header.
+    """
+    name = clean_display_name(node.display_name)
     if "." in name:
         return name.rsplit(".", 1)[-1]
     return name
@@ -143,13 +149,14 @@ def _build_tooltip(node: LineageNode) -> str:
         details_html = "<div class='lb-tt-details'>" + " · ".join(detail_lines) + "</div>"
 
     short = _trunc(_short_name(node), 40)
+    full_name = clean_display_name(node.display_name)
     return (
         f"<div class='lb-tt' style='border-left-color:{color}'>"
         f"<div class='lb-tt-head'>"
         f"<span class='lb-tt-type' style='color:{color}'>{label}</span>"
         f"{status_html}"
         f"</div>"
-        f"<div class='lb-tt-name' title='{node.display_name}'>{short}</div>"
+        f"<div class='lb-tt-name' title='{full_name}'>{short}</div>"
         f"{loc_html}{tags_html}{details_html}{metrics_html}"
         f"<div class='lb-tt-foot'>Click for details · Double-click to focus</div>"
         f"</div>"

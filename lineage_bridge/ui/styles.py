@@ -710,3 +710,52 @@ def icon_for_node(node: Any) -> str:
     if node.node_type == NodeType.CATALOG_TABLE and getattr(node, "catalog_type", None):
         return CATALOG_ICONS.get(node.catalog_type, NODE_ICONS.get(NodeType.CATALOG_TABLE, ""))
     return NODE_ICONS.get(node.node_type, "")
+
+
+# Type tags some upstream sources (sample data, certain Confluent APIs) bake
+# into display_name. Stripping them at render time keeps the UI clean
+# without losing data — the actual type is already conveyed by the node icon
+# and the panel header. Patterns are deliberately conservative: they only
+# match the known type vocabulary, never arbitrary parens or colons.
+_TYPE_PAREN_TAGS: tuple[str, ...] = (
+    "(Tableflow)",
+    "(ksqlDB)",
+    "(Flink)",
+    "(UC)",
+    "(Unity Catalog)",
+    "(Glue)",
+    "(BigQuery)",
+    "(BQ)",
+    "(DataZone)",
+    "(DZ)",
+)
+_TYPE_PREFIX_TAGS: tuple[str, ...] = (
+    "UC:",
+    "Glue:",
+    "BQ:",
+    "BigQuery:",
+    "DZ:",
+    "DataZone:",
+    "Tableflow:",
+)
+
+
+def clean_display_name(name: str) -> str:
+    """Strip ``(Tableflow)`` / ``UC:`` / ``Glue:`` etc. from a display name.
+
+    The type is already represented visually by the node icon and the panel
+    header's type label; baking it into the name itself is redundant and
+    pushes the actual identifier off-screen on long names.
+    """
+    if not name:
+        return name
+    cleaned = name.strip()
+    for suffix in _TYPE_PAREN_TAGS:
+        if cleaned.endswith(suffix):
+            cleaned = cleaned[: -len(suffix)].rstrip()
+            break
+    for prefix in _TYPE_PREFIX_TAGS:
+        if cleaned.startswith(prefix):
+            cleaned = cleaned[len(prefix) :].lstrip()
+            break
+    return cleaned or name  # fall back to original if we stripped to empty
