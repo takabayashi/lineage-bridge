@@ -422,6 +422,10 @@ def _format_push_result(target: str, result) -> str:
         parts.append(f"{result.properties_set} props")
     if getattr(result, "comments_set", 0):
         parts.append(f"{result.comments_set} comments")
+    if getattr(result, "external_metadata_registered", 0):
+        parts.append(f"{result.external_metadata_registered} external_metadata")
+    if getattr(result, "lineage_relationships_created", 0):
+        parts.append(f"{result.lineage_relationships_created} lineage rel(s)")
     if getattr(result, "skipped", None):
         parts.append(f"{len(result.skipped)} skipped")
     if getattr(result, "errors", None):
@@ -456,6 +460,17 @@ def _databricks_target(settings, graph: LineageGraph) -> _PublishTarget:
         st.checkbox("Set table properties", value=True, key="push_properties")
         st.checkbox("Set table comments", value=True, key="push_comments")
         st.checkbox("Create bridge table", value=False, key="push_bridge_table")
+        st.checkbox(
+            "Push to Databricks Lineage tab (External Lineage API)",
+            value=bool(getattr(settings, "databricks_use_native_lineage", False)),
+            key="push_native_lineage",
+            help=(
+                "Registers each upstream Confluent topic as an external_metadata "
+                "object and creates an external_lineage_relationship to the UC "
+                "table — surfaces in Databricks' built-in Lineage tab. Requires "
+                "CREATE_EXTERNAL_METADATA on the metastore."
+            ),
+        )
         _render_warehouse_picker(settings)
 
     def _push(settings, graph, params):
@@ -472,7 +487,12 @@ def _databricks_target(settings, graph: LineageGraph) -> _PublishTarget:
         detail=f"{len(uc_tables)} UC table(s)",
         render_options=_render_options,
         push_fn=_push,
-        push_param_keys=("push_properties", "push_comments", "push_bridge_table"),
+        push_param_keys=(
+            "push_properties",
+            "push_comments",
+            "push_bridge_table",
+            "push_native_lineage",
+        ),
         eligible_count=len(uc_tables),
     )
 

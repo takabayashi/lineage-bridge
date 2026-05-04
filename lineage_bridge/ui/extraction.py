@@ -107,6 +107,11 @@ def _run_lineage_push(settings, graph, params: dict):
             "set_properties": params.get("push_properties", True),
             "set_comments": params.get("push_comments", True),
             "create_bridge_table": params.get("push_bridge_table", False),
+            # Native External Lineage API path. Default falls back to the
+            # legacy TBLPROPERTIES + bridge writer when the flag is unset.
+            "use_native_lineage": params.get(
+                "push_native_lineage", settings.databricks_use_native_lineage
+            ),
         },
     )
     return _run_async(run_push(req, settings, graph, on_progress=_ui_progress("push_log")))

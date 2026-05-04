@@ -708,6 +708,22 @@ resource "databricks_schema" "demo" {
   comment      = "Schema for Kafka cluster ${module.core.kafka_cluster_id}"
 }
 
+# Metastore-level grant: CREATE_EXTERNAL_METADATA enables LineageBridge's
+# native-lineage push, which writes Confluent topics to the Databricks
+# Lineage tab via /api/2.0/lineage-tracking/external-lineage. Without
+# this grant the push falls back to the legacy TBLPROPERTIES + bridge
+# table writer (and emits one WARNING per topic on PERMISSION_DENIED).
+data "databricks_current_metastore" "this" {}
+
+resource "databricks_grants" "metastore_external_metadata" {
+  metastore = data.databricks_current_metastore.this.id
+
+  grant {
+    principal  = var.databricks_client_id
+    privileges = ["CREATE_EXTERNAL_METADATA"]
+  }
+}
+
 resource "databricks_grants" "storage_credential" {
   storage_credential = databricks_storage_credential.tableflow.id
 

@@ -120,6 +120,11 @@ class PushResult:
     properties_set: int = 0
     comments_set: int = 0
     bridge_rows_inserted: int = 0
+    # Native-lineage path (Databricks External Lineage API): how many
+    # upstream Confluent objects were registered as external_metadata
+    # and how many UC table relationships were wired.
+    external_metadata_registered: int = 0
+    lineage_relationships_created: int = 0
     errors: list[str] = field(default_factory=list)
     # Benign skips (e.g. PERMISSION_DENIED on tables the principal doesn't own,
     # bridge INSERT after a CREATE the principal lacked rights for). The push

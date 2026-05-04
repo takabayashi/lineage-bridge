@@ -1067,6 +1067,101 @@ class TestPushLineage:
         assert any("PERMISSION_DENIED" in s for s in result.skipped)
 
     @respx.mock
+    async def test_push_native_lineage_registers_topics_and_relationships(
+        self, provider, push_graph, sql_client
+    ):
+        """use_native_lineage=True calls the External Lineage API instead of
+        writing TBLPROPERTIES — Confluent topics show up as external_metadata
+        and one external_lineage_relationship per (topic → UC table) pair."""
+        meta = respx.post(f"{WORKSPACE_URL}/api/2.0/lineage-tracking/external-metadata").mock(
+            return_value=httpx.Response(200, json={"name": "ok"})
+        )
+        rel = respx.post(f"{WORKSPACE_URL}/api/2.0/lineage-tracking/external-lineage").mock(
+            return_value=httpx.Response(200, json={"id": "rel-1"})
+        )
+
+        result = await provider.push_lineage(
+            push_graph,
+            sql_client=sql_client,
+            set_properties=False,
+            set_comments=False,
+            create_bridge_table=False,
+            use_native_lineage=True,
+        )
+        assert meta.called, "external_metadata POST not issued"
+        assert rel.called, "external_lineage POST not issued"
+        assert result.external_metadata_registered >= 1
+        assert result.lineage_relationships_created >= 1
+        assert result.properties_set == 0
+        assert result.comments_set == 0
+        assert not result.errors
+
+    @respx.mock
+    async def test_push_native_lineage_dedupes_topics_across_uc_tables(
+        self, provider, push_graph, sql_client
+    ):
+        """One topic produces two UC tables → one external_metadata + two
+        relationships, not two external_metadata."""
+        topic_id = "confluent:kafka_topic:env-abc:orders"
+        second_uc = LineageNode(
+            node_id="databricks:uc_table:env-abc:cat.sch.orders_v3",
+            system=SystemType.DATABRICKS,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="UNITY_CATALOG",
+            qualified_name="cat.sch.orders_v3",
+            display_name="cat.sch.orders_v3",
+        )
+        push_graph.add_node(second_uc)
+        push_graph.add_edge(
+            LineageEdge(src_id=topic_id, dst_id=second_uc.node_id, edge_type=EdgeType.MATERIALIZES)
+        )
+        meta = respx.post(f"{WORKSPACE_URL}/api/2.0/lineage-tracking/external-metadata").mock(
+            return_value=httpx.Response(200, json={"name": "ok"})
+        )
+        rel = respx.post(f"{WORKSPACE_URL}/api/2.0/lineage-tracking/external-lineage").mock(
+            return_value=httpx.Response(200, json={"id": "rel"})
+        )
+
+        result = await provider.push_lineage(
+            push_graph,
+            sql_client=sql_client,
+            set_properties=False,
+            set_comments=False,
+            use_native_lineage=True,
+        )
+        assert meta.call_count == 1, "topic should be registered once across both UC tables"
+        assert rel.call_count == 2
+        assert result.external_metadata_registered == 1
+        assert result.lineage_relationships_created == 2
+
+    @respx.mock
+    async def test_push_native_lineage_403_on_metadata_skips_relationship(
+        self, provider, push_graph, sql_client
+    ):
+        """When CREATE_EXTERNAL_METADATA is missing, skip the relationship
+        POST for that topic and record a warning in result.skipped instead
+        of crashing the whole push."""
+        respx.post(f"{WORKSPACE_URL}/api/2.0/lineage-tracking/external-metadata").mock(
+            return_value=httpx.Response(403, json={"error_code": "PERMISSION_DENIED"})
+        )
+        rel = respx.post(f"{WORKSPACE_URL}/api/2.0/lineage-tracking/external-lineage").mock(
+            return_value=httpx.Response(200, json={"id": "rel"})
+        )
+
+        result = await provider.push_lineage(
+            push_graph,
+            sql_client=sql_client,
+            set_properties=False,
+            set_comments=False,
+            use_native_lineage=True,
+        )
+        assert not rel.called, "relationship POST should be skipped when metadata fails"
+        assert result.external_metadata_registered == 0
+        assert result.lineage_relationships_created == 0
+        assert any("CREATE_EXTERNAL_METADATA" in s for s in result.skipped)
+        assert not result.errors
+
+    @respx.mock
     async def test_push_lineage_routes_unexpected_failures_to_errors(
         self, provider, push_graph, sql_client
     ):

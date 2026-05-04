@@ -94,6 +94,17 @@ class Settings(BaseSettings):
         default=None,
         description="Databricks SQL Warehouse ID for statement execution",
     )
+    databricks_use_native_lineage: bool = Field(
+        default=False,
+        description=(
+            "When True, push_lineage uses the Databricks External Lineage API "
+            "(/api/2.0/lineage-tracking/external-lineage) to surface Confluent "
+            "topics in the Databricks Lineage tab as first-class upstream "
+            "objects. Requires CREATE_EXTERNAL_METADATA on the metastore. "
+            "Default False — falls back to the legacy TBLPROPERTIES + bridge "
+            "table writer."
+        ),
+    )
 
     # ── AWS ──────────────────────────────────────────────────────────────
     aws_region: str = Field(

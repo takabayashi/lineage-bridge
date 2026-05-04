@@ -42,6 +42,7 @@ import pytest
 from lineage_bridge.catalogs.databricks_uc import DatabricksUCProvider
 from lineage_bridge.models.graph import (
     EdgeType,
+    LineageEdge,
     LineageGraph,
     LineageNode,
     NodeType,
@@ -203,6 +204,63 @@ async def test_notebook_url_deeplinks_to_workspace(seeded_graph, workspace_url, 
         assert f"/#workspace{notebook.attributes['notebook_path']}" in url
     else:
         assert f"/#notebook/{notebook.attributes['notebook_id']}" in url
+
+
+async def test_native_lineage_push_round_trip(seeded_graph, workspace_url, token, catalog, schema):
+    """End-to-end: push_lineage with use_native_lineage=True registers each
+    Confluent topic as external_metadata + creates a lineage relationship
+    against the live workspace.
+
+    Skipped (not failed) when the principal lacks CREATE_EXTERNAL_METADATA
+    on the metastore — the push itself reports the skip via
+    PushResult.skipped, but we'd rather pytest emit a clean SKIP than a
+    failure since this test relies on a metastore-admin grant the demo
+    Terraform may not have applied yet.
+    """
+    # Seed an upstream Kafka topic and materialize it into one of the
+    # existing UC tables — push_lineage's native path walks upstream from
+    # each UC node and only fires when a KAFKA_TOPIC is found.
+    uc_node = next(n for n in seeded_graph.nodes if n.node_type == NodeType.CATALOG_TABLE)
+    topic = LineageNode(
+        node_id="confluent:kafka_topic:env-integration:lineage_bridge.smoke_topic",
+        system=SystemType.CONFLUENT,
+        node_type=NodeType.KAFKA_TOPIC,
+        qualified_name="lineage_bridge.smoke_topic",
+        display_name="lineage_bridge.smoke_topic",
+        environment_id="env-integration",
+        cluster_id=schema,
+    )
+    seeded_graph.add_node(topic)
+    seeded_graph.add_edge(
+        LineageEdge(src_id=topic.node_id, dst_id=uc_node.node_id, edge_type=EdgeType.MATERIALIZES)
+    )
+
+    provider = DatabricksUCProvider(workspace_url=workspace_url, token=token)
+    result = await provider.push_lineage(
+        seeded_graph,
+        sql_client=None,
+        set_properties=False,
+        set_comments=False,
+        create_bridge_table=False,
+        use_native_lineage=True,
+    )
+
+    if any("CREATE_EXTERNAL_METADATA" in s for s in result.skipped):
+        import pytest as _pytest
+
+        _pytest.skip(
+            "Principal lacks CREATE_EXTERNAL_METADATA on the metastore. "
+            "Apply infra/demos/uc/main.tf (databricks_grants.metastore_external_metadata) "
+            "or grant the privilege manually to enable this test."
+        )
+
+    assert not result.errors, f"native push errored: {result.errors}"
+    assert result.external_metadata_registered >= 1, (
+        "expected at least one Confluent topic registered as external_metadata"
+    )
+    assert result.lineage_relationships_created >= 1, (
+        "expected at least one external_lineage relationship"
+    )
 
 
 async def test_notebook_wires_consumes_and_produces_edges(

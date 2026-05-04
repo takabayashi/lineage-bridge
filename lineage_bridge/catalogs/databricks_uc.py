@@ -583,13 +583,29 @@ class DatabricksUCProvider:
         set_comments: bool = True,
         create_bridge_table: bool = False,
         bridge_table_name: str | None = None,
+        use_native_lineage: bool = False,
         on_progress: Callable[[str, str], None] | None = None,
     ) -> PushResult:
-        """Push Confluent lineage metadata to UC tables via the Statement Execution API.
+        """Push Confluent lineage metadata to UC tables.
 
-        Provider builds its own `DatabricksSQLClient` if none is supplied,
-        discovering a running warehouse if `warehouse_id` is also unset.
-        Tests can inject a mock `sql_client` directly.
+        Two output modes — they're orthogonal and can both run in the same
+        push:
+
+        * **TBLPROPERTIES + COMMENT + bridge table** (legacy default) —
+          writes the upstream chain into table properties and a
+          ``confluent_lineage`` bridge table queryable from SQL. Surfaces
+          in the table's "Details" tab but not in the Databricks Lineage
+          tab.
+        * **External Lineage API** (``use_native_lineage=True``) — registers
+          each upstream Confluent topic as an ``external_metadata`` object
+          (system_type=CONFLUENT) and creates an
+          ``external_lineage_relationship`` to the UC table. Surfaces
+          natively in the Databricks Lineage tab.
+
+        Provider builds its own ``DatabricksSQLClient`` if none is supplied,
+        discovering a running warehouse if ``warehouse_id`` is also unset.
+        Tests can inject a mock ``sql_client`` directly. The native-lineage
+        path uses its own httpx client — no warehouse needed.
         """
         from lineage_bridge.clients.databricks_sql import DatabricksSQLClient
 
@@ -637,6 +653,9 @@ class DatabricksUCProvider:
         if on_progress:
             on_progress("Push", f"Found {len(uc_nodes)} UC tables to update")
 
+        if use_native_lineage:
+            await self._push_native_lineage(graph, uc_nodes, result, on_progress)
+
         # Derive bridge table name from the first UC node's catalog
         if create_bridge_table:
             if not bridge_table_name:
@@ -673,6 +692,122 @@ class DatabricksUCProvider:
             on_progress("Push", f"Done — {result.tables_updated} tables updated")
 
         return result
+
+    async def _push_native_lineage(
+        self,
+        graph: LineageGraph,
+        uc_nodes: list[LineageNode],
+        result: PushResult,
+        on_progress: Callable[[str, str], None] | None,
+    ) -> None:
+        """Native push: register Confluent topics + wire UC table relationships.
+
+        For every UC table in the seed list, walks upstream to find any
+        ``KAFKA_TOPIC`` nodes and:
+
+        1. Upserts each topic as an ``external_metadata`` object with
+           ``system_type=CONFLUENT``. Idempotent — re-running the push
+           PATCHes URL/description on existing objects.
+        2. Creates an ``external_lineage_relationship`` from the topic's
+           external_metadata to the UC table.
+
+        Permission gate: needs ``CREATE_EXTERNAL_METADATA`` on the
+        metastore. The client logs a single warning and returns ``None``
+        on 403, which we surface via ``result.skipped`` so the caller
+        can downgrade to a warning banner.
+        """
+        if not self._workspace_url or not self._token:
+            result.errors.append("Native lineage push: workspace URL / token missing")
+            return
+
+        from lineage_bridge.clients.databricks_external_lineage import (
+            SYSTEM_TYPE_CONFLUENT,
+            ExternalMetadataRef,
+            TableRef,
+            create_lineage_relationship,
+            upsert_external_metadata,
+        )
+
+        # One external_metadata object per upstream topic, deduped across
+        # UC tables that share the same source.
+        topic_to_em_name: dict[str, str] = {}
+
+        async with httpx.AsyncClient(
+            base_url=self._workspace_url,
+            headers={"Authorization": f"Bearer {self._token}"},
+            timeout=30.0,
+        ) as client:
+            for uc_node in uc_nodes:
+                upstream = graph.get_upstream(uc_node.node_id)
+                topics = [n for n, _e, _h in upstream if n.node_type == NodeType.KAFKA_TOPIC]
+                if not topics:
+                    continue
+
+                if on_progress:
+                    on_progress(
+                        "Push",
+                        f"native lineage for {uc_node.qualified_name}: "
+                        f"{len(topics)} upstream topic(s)",
+                    )
+
+                for topic in topics:
+                    em_name = topic_to_em_name.get(topic.qualified_name)
+                    if em_name is None:
+                        em_name = self._external_metadata_name(topic)
+                        em_resp = await upsert_external_metadata(
+                            client,
+                            name=em_name,
+                            system_type=SYSTEM_TYPE_CONFLUENT,
+                            description=(
+                                f"Confluent topic {topic.qualified_name} "
+                                f"(env {topic.environment_id}, cluster "
+                                f"{topic.cluster_id})"
+                                if topic.environment_id and topic.cluster_id
+                                else f"Confluent topic {topic.qualified_name}"
+                            ),
+                            url=topic.url,
+                        )
+                        if em_resp is None:
+                            # Permission denied or transient failure — log
+                            # once and skip the relationship; continuing on
+                            # other topics is still useful since some may
+                            # already exist from prior pushes.
+                            result.skipped.append(
+                                f"external_metadata {em_name}: not registered "
+                                "(check CREATE_EXTERNAL_METADATA grant)"
+                            )
+                            continue
+                        topic_to_em_name[topic.qualified_name] = em_name
+                        result.external_metadata_registered += 1
+
+                    rel = await create_lineage_relationship(
+                        client,
+                        source=ExternalMetadataRef(name=em_name),
+                        target=TableRef(name=uc_node.qualified_name),
+                    )
+                    if rel is not None:
+                        result.lineage_relationships_created += 1
+
+        if on_progress:
+            on_progress(
+                "Push",
+                f"native lineage done — "
+                f"{result.external_metadata_registered} external_metadata, "
+                f"{result.lineage_relationships_created} relationship(s)",
+            )
+
+    @staticmethod
+    def _external_metadata_name(topic: LineageNode) -> str:
+        """Stable, metastore-unique name for a Confluent topic.
+
+        Format: ``confluent_<env_id>_<topic_with_dots_to_underscores>``.
+        env_id keeps two demos in the same metastore from colliding when
+        they share a topic name; replacing dots with underscores keeps
+        the value valid for Databricks identifier rules.
+        """
+        env = (topic.environment_id or "noenv").replace("-", "_")
+        topic_name = topic.qualified_name.replace(".", "_").replace("-", "_")
+        return f"confluent_{env}_{topic_name}"
 
     async def _set_table_properties(
         self,
