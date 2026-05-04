@@ -235,20 +235,21 @@ class GoogleLineageProvider:
         if on_progress:
             on_progress("Push", f"Found {len(google_nodes)} Google tables to update")
 
-        # Register Kafka topics in Dataplex Catalog so the BQ Lineage tab can
-        # show schema for the upstream Confluent nodes — the OpenLineage
-        # processor itself drops every facet at storage time, so the Catalog
-        # entry is the only path to surface column metadata. Failures are
-        # non-fatal: missing entries just mean the schema panel stays empty.
+        # Register Confluent assets (topics, Flink jobs, connectors, ksqlDB
+        # queries, consumer groups) in Dataplex Catalog so the BQ Lineage tab
+        # can surface schema/SQL/config for upstream Confluent nodes — the
+        # OpenLineage processor drops every facet at storage time, so the
+        # Catalog entry is the only path to surface metadata. Failures are
+        # non-fatal: missing entries just mean the side panels stay empty.
         try:
             from lineage_bridge.catalogs.google_dataplex import DataplexAssetRegistrar
 
             registrar = DataplexAssetRegistrar(self._project_id, self._location, headers)
-            registered, registrar_errors = await registrar.register_kafka_assets(
+            registered, registrar_errors = await registrar.register_confluent_assets(
                 graph, on_progress=on_progress
             )
             if registered and on_progress:
-                on_progress("Catalog", f"Registered {registered} Kafka entries in Dataplex")
+                on_progress("Catalog", f"Registered {registered} Confluent entries in Dataplex")
             for err in registrar_errors:
                 result.errors.append(err)
         except Exception as exc:
@@ -296,6 +297,24 @@ class GoogleLineageProvider:
                             await asyncio.sleep(_BACKOFF_BASE * (2**attempt))
                         else:
                             result.errors.append(f"Push error for event {event.run.runId}: {exc}")
+
+        # PATCH the Lineage processes Google just created with origin →
+        # Catalog FQN + a small attributes dict. Lets the BQ Lineage UI
+        # surface SQL/config inline and deep-link to the Catalog entry.
+        try:
+            from lineage_bridge.catalogs.google_dataplex import DataplexAssetRegistrar
+
+            linker = DataplexAssetRegistrar(self._project_id, self._location, headers)
+            linked, link_errors = await linker.link_processes_to_catalog(
+                graph, on_progress=on_progress
+            )
+            if linked and on_progress:
+                on_progress("Lineage", f"Linked {linked} process(es) to Catalog entries")
+            for err in link_errors:
+                result.errors.append(err)
+        except Exception as exc:
+            logger.warning("Process linkage skipped: %s", exc, exc_info=True)
+            result.errors.append(f"Process linkage skipped: {exc}")
 
         if on_progress:
             on_progress(
