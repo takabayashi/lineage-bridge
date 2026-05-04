@@ -76,8 +76,9 @@ class SchemaRegistryClient(ConfluentClient):
             schema_type = schema_info.get("schemaType", "AVRO")
             schema_str = schema_info.get("schema", "")
 
-            # Count fields (best-effort).
-            field_count = self._count_fields(schema_str, schema_type)
+            # Parse fields once; count + structured list are both derived.
+            fields = self._parse_fields(schema_str, schema_type)
+            field_count = len(fields) if fields is not None else None
 
             nodes.append(
                 LineageNode(
@@ -92,6 +93,7 @@ class SchemaRegistryClient(ConfluentClient):
                         "version": schema_info.get("version"),
                         "schema_id": schema_info.get("id"),
                         "field_count": field_count,
+                        "fields": fields or [],
                         "schema_string": schema_str,
                     },
                 )
@@ -115,21 +117,55 @@ class SchemaRegistryClient(ConfluentClient):
         logger.info("SchemaRegistry extracted %d nodes, %d edges", len(nodes), len(edges))
         return nodes, edges
 
-    # ── field counting ──────────────────────────────────────────────────
+    # ── field parsing ───────────────────────────────────────────────────
 
     @staticmethod
-    def _count_fields(schema_str: str, schema_type: str) -> int | None:
-        """Best-effort field count from the raw schema string."""
+    def _parse_fields(schema_str: str, schema_type: str) -> list[dict[str, str]] | None:
+        """Best-effort structured field list from the raw schema string.
+
+        Returns a list of ``{name, type, description?}`` dicts, or ``None``
+        if the schema can't be parsed (e.g. PROTOBUF, malformed JSON).
+        Consumed by catalog providers that surface schema metadata.
+        """
         if not schema_str:
             return None
         try:
             if schema_type == "AVRO":
                 parsed = json.loads(schema_str)
-                return len(parsed.get("fields", []))
+                out: list[dict[str, str]] = []
+                for f in parsed.get("fields", []):
+                    if not isinstance(f, dict) or not f.get("name"):
+                        continue
+                    entry: dict[str, str] = {"name": str(f["name"])}
+                    if f.get("type") is not None:
+                        entry["type"] = json.dumps(f["type"]) if isinstance(
+                            f["type"], (dict, list)
+                        ) else str(f["type"])
+                    doc = f.get("doc") or f.get("description")
+                    if doc:
+                        entry["description"] = str(doc)
+                    out.append(entry)
+                return out
             if schema_type == "JSON":
                 parsed = json.loads(schema_str)
                 props = parsed.get("properties", {})
-                return len(props) if props else None
+                if not isinstance(props, dict) or not props:
+                    return None
+                out_json: list[dict[str, str]] = []
+                for name, spec in props.items():
+                    entry = {"name": str(name)}
+                    if isinstance(spec, dict):
+                        if spec.get("type") is not None:
+                            entry["type"] = (
+                                json.dumps(spec["type"])
+                                if isinstance(spec["type"], (list, dict))
+                                else str(spec["type"])
+                            )
+                        desc = spec.get("description")
+                        if desc:
+                            entry["description"] = str(desc)
+                    out_json.append(entry)
+                return out_json
         except Exception:
             pass
         return None

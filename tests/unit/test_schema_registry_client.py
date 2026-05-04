@@ -72,48 +72,64 @@ class TestTopicFromSubject:
         assert result == ("", "value")
 
 
-# ── _count_fields ──────────────────────────────────────────────────────
+# ── _parse_fields ──────────────────────────────────────────────────────
 
 
-class TestCountFields:
+class TestParseFields:
     def test_avro_fields(self, schema_version_payload):
         schema_str = schema_version_payload["schema"]
-        count = SchemaRegistryClient._count_fields(schema_str, "AVRO")
-        # The fixture has 8 fields
+        fields = SchemaRegistryClient._parse_fields(schema_str, "AVRO")
         parsed = json.loads(schema_str)
-        expected = len(parsed["fields"])
-        assert count == expected
-        assert count == 8
+        assert fields is not None
+        assert len(fields) == len(parsed["fields"]) == 8
+        # Each entry should at minimum carry a name
+        for f in fields:
+            assert "name" in f
+
+    def test_avro_field_with_doc(self):
+        schema_str = json.dumps(
+            {
+                "type": "record",
+                "name": "Order",
+                "fields": [
+                    {"name": "id", "type": "string", "doc": "Primary key"},
+                    {"name": "items", "type": {"type": "array", "items": "string"}},
+                ],
+            }
+        )
+        fields = SchemaRegistryClient._parse_fields(schema_str, "AVRO")
+        assert fields == [
+            {"name": "id", "type": "string", "description": "Primary key"},
+            {"name": "items", "type": '{"type": "array", "items": "string"}'},
+        ]
 
     def test_json_schema_properties(self):
         schema_str = json.dumps(
             {
                 "type": "object",
                 "properties": {
-                    "name": {"type": "string"},
+                    "name": {"type": "string", "description": "User name"},
                     "age": {"type": "integer"},
                 },
             }
         )
-        count = SchemaRegistryClient._count_fields(schema_str, "JSON")
-        assert count == 2
+        fields = SchemaRegistryClient._parse_fields(schema_str, "JSON")
+        assert fields is not None
+        assert {"name": "name", "type": "string", "description": "User name"} in fields
+        assert {"name": "age", "type": "integer"} in fields
 
     def test_json_schema_no_properties(self):
         schema_str = json.dumps({"type": "object"})
-        count = SchemaRegistryClient._count_fields(schema_str, "JSON")
-        assert count is None
+        assert SchemaRegistryClient._parse_fields(schema_str, "JSON") is None
 
     def test_empty_string(self):
-        count = SchemaRegistryClient._count_fields("", "AVRO")
-        assert count is None
+        assert SchemaRegistryClient._parse_fields("", "AVRO") is None
 
     def test_invalid_json(self):
-        count = SchemaRegistryClient._count_fields("{not valid json", "AVRO")
-        assert count is None
+        assert SchemaRegistryClient._parse_fields("{not valid json", "AVRO") is None
 
     def test_unknown_schema_type(self):
-        count = SchemaRegistryClient._count_fields('{"fields":[]}', "PROTOBUF")
-        assert count is None
+        assert SchemaRegistryClient._parse_fields('{"fields":[]}', "PROTOBUF") is None
 
 
 # ── extract ────────────────────────────────────────────────────────────
