@@ -116,6 +116,52 @@ def _resolve_extraction_context():
     }
 
 
+def _record_activity_alert(kind: str, message: str, log_key: str) -> None:
+    """Persist a strong error/warning signal + fire a toast.
+
+    The banner in `app.py` reads `_activity_alert` and renders a
+    persistent `st.error` / `st.warning` until the user dismisses it.
+    The activity-log drawer auto-expands when this flag is set so the
+    user sees the offending entries without hunting for them.
+    """
+    import contextlib
+
+    icon = "🚨" if kind == "error" else "⚠️"
+    with contextlib.suppress(Exception):
+        # st.toast may not be available in some Streamlit versions / test
+        # harnesses; the persistent banner still fires regardless.
+        st.toast(message, icon=icon)
+    st.session_state._activity_alert = {"kind": kind, "message": message, "log": log_key}
+
+
+def _post_action_alert(action_label: str, log_key: str) -> None:
+    """Inspect *log_key*'s entries after an action and surface any warnings.
+
+    Errors/warnings that happen mid-action are appended to the log via the
+    progress callback; without this scan they'd be invisible unless the
+    user opened the drawer. Counts them, sets `_activity_alert` so the
+    banner + auto-expanded drawer surface them.
+    """
+    from lineage_bridge.ui.logs import severity_counts
+
+    lines = st.session_state.get(log_key) or []
+    counts = severity_counts(lines)
+    err = counts.get("error", 0)
+    warn = counts.get("warning", 0)
+    if err:
+        _record_activity_alert(
+            "error",
+            f"{action_label} completed with {err} error(s) and {warn} warning(s)",
+            log_key,
+        )
+    elif warn:
+        _record_activity_alert(
+            "warning",
+            f"{action_label} completed with {warn} warning(s)",
+            log_key,
+        )
+
+
 def _build_extraction_params(ctx: dict) -> dict:
     """Translate the extraction context + extractor toggles into a params dict."""
     return {
@@ -191,6 +237,7 @@ def _render_sidebar_actions() -> None:
     if action == "extract":
         params = _build_extraction_params(ctx)
         st.session_state.extraction_log = []
+        st.session_state._activity_alert = None
         with st.status("Extracting lineage...", expanded=True) as status:
             try:
                 result = _run_extraction_with_params(settings, params)
@@ -206,13 +253,16 @@ def _render_sidebar_actions() -> None:
                     label=f"Done — {result.node_count} nodes, {result.edge_count} edges",
                     state="complete",
                 )
+                _post_action_alert("Extraction", "extraction_log")
                 st.rerun()
             except Exception as exc:
                 status.update(label=f"Failed: {exc}", state="error")
+                _record_activity_alert("error", f"Extraction failed: {exc}", "extraction_log")
 
     elif action == "enrich":
         params = st.session_state.last_extraction_params or {}
         st.session_state.extraction_log = []
+        st.session_state._activity_alert = None
         with st.status("Enriching graph...", expanded=True) as status:
             try:
                 result = _run_enrichment_on_graph(settings, st.session_state.graph, params)
@@ -222,14 +272,17 @@ def _render_sidebar_actions() -> None:
                     label=f"Enriched — {result.node_count} nodes, {result.edge_count} edges",
                     state="complete",
                 )
+                _post_action_alert("Enrichment", "extraction_log")
                 st.rerun()
             except Exception as exc:
                 status.update(label=f"Failed: {exc}", state="error")
+                _record_activity_alert("error", f"Enrichment failed: {exc}", "extraction_log")
 
     elif action == "refresh":
         params = dict(st.session_state.last_extraction_params)
         params["enable_enrichment"] = True
         st.session_state.extraction_log = []
+        st.session_state._activity_alert = None
         with st.status("Refreshing...", expanded=True) as status:
             try:
                 result = _run_extraction_with_params(settings, params)
@@ -243,9 +296,11 @@ def _render_sidebar_actions() -> None:
                     label=f"Refreshed — {result.node_count} nodes, {result.edge_count} edges",
                     state="complete",
                 )
+                _post_action_alert("Refresh", "extraction_log")
                 st.rerun()
             except Exception as exc:
                 status.update(label=f"Failed: {exc}", state="error")
+                _record_activity_alert("error", f"Refresh failed: {exc}", "extraction_log")
 
     # Logs render in the bottom drawer (see lineage_bridge/ui/logs.py); no
     # in-sidebar expander any more — the sidebar is too narrow for them.
@@ -329,15 +384,28 @@ def _render_publish_row(settings, graph: LineageGraph, t: _PublishTarget) -> Non
             for k in t.push_param_keys:
                 params[k] = st.session_state.get(k, True)
             st.session_state.push_log = []
+            st.session_state._activity_alert = None
             with st.status(f"Pushing to {t.short_name}...", expanded=True) as status:
                 try:
                     result = t.push_fn(settings, graph, params)
                     msg = _format_push_result(t.short_name, result)
-                    state = "error" if getattr(result, "errors", None) else "complete"
+                    errs = getattr(result, "errors", None)
+                    state = "error" if errs else "complete"
                     status.update(label=msg, state=state)
+                    if errs:
+                        _record_activity_alert(
+                            "error",
+                            f"Push to {t.short_name}: {len(errs)} error(s)",
+                            "push_log",
+                        )
+                    else:
+                        _post_action_alert(f"Push to {t.short_name}", "push_log")
                     st.rerun()
                 except Exception as exc:
                     status.update(label=f"Failed: {exc}", state="error")
+                    _record_activity_alert(
+                        "error", f"Push to {t.short_name} failed: {exc}", "push_log"
+                    )
 
 
 def _format_push_result(target: str, result) -> str:

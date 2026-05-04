@@ -27,6 +27,11 @@ _DEFAULTS = {
     "_last_click_seq": None,
     "graph_height": 650,
     "watcher_engine": None,
+    # Stronger error signal: set by sidebar actions when an extraction or
+    # push fails or completes with warnings; consumed by the top-of-page
+    # alert banner and the activity-log drawer's auto-expand.
+    # Shape: {"kind": "error"|"warning", "message": str, "log": <log key>}
+    "_activity_alert": None,
 }
 
 

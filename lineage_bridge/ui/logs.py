@@ -98,10 +98,22 @@ def render_logs_drawer() -> None:
 
     summary_html = _build_summary_html(sources)
 
+    # Auto-expand when the most recent action raised an alert so the user
+    # sees the offending entries without having to hunt for them. The
+    # sidebar action helpers populate this flag; the top-of-page banner
+    # also reads it.
+    alert = st.session_state.get("_activity_alert")
+    auto_expand = bool(alert)
+    drawer_label = f"\U0001f4cb Activity log — {summary_html.text_summary}"
+    if alert:
+        drawer_label = (
+            f"\U0001f6a8 Activity log — {summary_html.text_summary}"
+            if alert.get("kind") == "error"
+            else f"⚠️ Activity log — {summary_html.text_summary}"
+        )
+
     st.markdown("<div class='logs-anchor'></div>", unsafe_allow_html=True)
-    with st.expander(
-        label=f"\U0001f4cb Activity log — {summary_html.text_summary}", expanded=False
-    ):
+    with st.expander(label=drawer_label, expanded=auto_expand):
         # Source switcher — only when both logs have content
         if len(sources) > 1:
             choice = st.segmented_control(

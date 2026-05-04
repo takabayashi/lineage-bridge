@@ -93,6 +93,33 @@ def _render_main_area():
         _render_watcher_tab()
 
 
+def _render_activity_alert_banner() -> None:
+    """Persistent top-of-page banner for the most recent extraction/push alert.
+
+    Renders only when sidebar actions populate `_activity_alert`. The user
+    dismisses by clicking ✕; the same alert also auto-expands the activity
+    drawer at the bottom so they can see the offending entries directly.
+    """
+    alert = st.session_state.get("_activity_alert")
+    if not alert:
+        return
+
+    kind = alert.get("kind", "warning")
+    message = alert.get("message", "Activity completed with issues")
+    log_label = "extraction" if alert.get("log") == "extraction_log" else "push"
+
+    bcol, dcol = st.columns([10, 1])
+    with bcol:
+        if kind == "error":
+            st.error(f"{message} — open the activity log below for details ({log_label}).")
+        else:
+            st.warning(f"{message} — open the activity log below for details ({log_label}).")
+    with dcol:
+        if st.button("✕", key="dismiss_activity_alert", help="Dismiss"):
+            st.session_state._activity_alert = None
+            st.rerun()
+
+
 def _render_status_strip(graph: LineageGraph) -> None:
     """Compact one-line status strip below the header.
 
@@ -299,6 +326,7 @@ def _handle_graph_click(payload) -> None:
 # ═══════════════════════════════════════════════════════════════════════
 
 _render_sidebar()
+_render_activity_alert_banner()
 _render_main_area()
 
 # ── Activity log (bottom drawer) ──────────────────────────────────────
