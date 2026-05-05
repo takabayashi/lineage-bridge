@@ -1,10 +1,10 @@
 # Quickstart Guide
 
-Let's get your first lineage graph running in about 5 minutes! We'll extract lineage from Confluent Cloud and visualize it in an interactive graph.
+Get your first lineage graph running in 30 seconds with our one-line quickstart, or follow the full walkthrough to connect to your Confluent Cloud environment.
 
-## Try It Now (Demo Mode)
+## 🚀 Fastest Start (Demo Mode)
 
-**Zero setup, zero credentials needed.** Just run:
+**Zero setup, zero credentials, zero waiting:**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/takabayashi/lineage-bridge/main/scripts/quickstart.sh | bash
@@ -35,141 +35,85 @@ Then open http://localhost:8501 and click **Load Demo Graph**.
 
 ---
 
-## What You'll Build
+## 📋 Connecting to Confluent Cloud
 
-By the end of this guide, you'll have:
+Ready to extract lineage from your real environment? You have two paths:
 
-- An interactive lineage graph showing topics, connectors, and transformations
-- A running Streamlit UI for exploring your data flows
-- Hands-on understanding of how LineageBridge works
+### Path A: Guided Setup (Recommended)
 
-Here's the journey:
+The **welcome dialog** appears automatically when you launch LineageBridge without credentials:
 
 ```mermaid
 graph LR
-    A[Install] --> B[Configure .env]
-    B --> C[Launch UI]
-    C --> D[Extract Lineage]
-    D --> E[Explore Graph]
-    E --> F[Export & Share]
+    A[Run quickstart] --> B[UI opens]
+    B --> C[Welcome dialog appears]
+    C --> D{Choose option}
+    D -->|Save & Connect| E[Enter credentials]
+    D -->|Skip for Now| F[Add later via sidebar]
+    D -->|Load Demo| G[Explore sample graph]
+    E --> H[Auto-saved to .env]
+    H --> I[Discover environments]
+    I --> J[Extract lineage]
     
     style A fill:#e1f5ff
-    style B fill:#e1f5ff
-    style C fill:#e1f5ff
-    style D fill:#e1f5ff
     style E fill:#90ee90
-    style F fill:#90ee90
+    style H fill:#90ee90
+    style I fill:#90ee90
+    style J fill:#90ee90
 ```
 
-## Prerequisites
+**Steps:**
 
-Before we start, make sure you have:
+1. Run the quickstart (if you haven't already)
+2. Welcome dialog appears
+3. Click **"Save & Connect"**
+4. Enter your [Cloud API Key](https://confluent.cloud/settings/api-keys)
+5. Credentials are saved automatically
+6. Start extracting!
 
-- [x] Python 3.11+ installed (check with `python --version`)
-- [x] A Confluent Cloud account with at least one Kafka cluster
-- [x] Cloud-level API credentials (OrgAdmin or EnvironmentAdmin role)
+!!! success "No .env Editing Required"
+    The welcome dialog handles everything—no manual configuration needed!
 
-!!! tip "No Confluent Cloud Account?"
-    Sign up for a free trial at [confluent.cloud](https://confluent.cloud). The free tier includes a Basic cluster—perfect for testing LineageBridge.
+### Path B: Manual Installation
 
-## Step 1: Install LineageBridge
-
-Pick your favorite installation method and let's get started:
-
-=== "uv (Recommended)"
-
-    We use uv for development—it's super fast:
-
-    ```bash
-    # Install uv if you don't have it
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    
-    # Clone and install LineageBridge
-    git clone https://github.com/takabayashi/lineage-bridge.git
-    cd lineage-bridge
-    uv pip install -e .
-    ```
-
-=== "pip"
-
-    Standard pip works great too:
-
-    ```bash
-    git clone https://github.com/takabayashi/lineage-bridge.git
-    cd lineage-bridge
-    pip install -e .
-    ```
-
-=== "Make"
-
-    Fastest setup—one command does it all:
-
-    ```bash
-    git clone https://github.com/takabayashi/lineage-bridge.git
-    cd lineage-bridge
-    make install
-    ```
-
-**Test that it worked:**
+For development or when you prefer manual control:
 
 ```bash
-lineage-bridge-extract --help
+# Clone and install
+git clone https://github.com/takabayashi/lineage-bridge.git
+cd lineage-bridge
+make install
+
+# Launch UI
+make ui
 ```
 
-If you see the help message, you're good to go!
-
-## Step 2: Configure Credentials
-
-### Create Your .env File
-
-Copy the example configuration:
-
-```bash
-cp .env.example .env
-```
-
-### Add Your Confluent Cloud Credentials
-
-Open `.env` in your favorite editor and add your API credentials:
+The **welcome dialog** will appear to guide credential setup. Or manually create `.env`:
 
 ```env
-# This is all you need to get started
 LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_KEY=your-cloud-api-key
 LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_SECRET=your-cloud-api-secret
 ```
 
-!!! question "How Do I Get These Keys?"
-    1. Log in to [Confluent Cloud](https://confluent.cloud)
-    2. Go to **Administration → API Keys**
-    3. Click **+ Add key**
-    4. Select **Cloud resource** scope
-    5. **Copy the key and secret immediately**—Confluent won't show them again!
-
-### Optional: Add Data Catalog Credentials
-
-Want to connect lineage to your data catalog? Add the appropriate credentials:
-
-=== "Databricks UC"
-
-    ```env
-    LINEAGE_BRIDGE_DATABRICKS_WORKSPACE_URL=https://your-workspace.databricks.com
-    LINEAGE_BRIDGE_DATABRICKS_TOKEN=dapi123456789abcdef
-    LINEAGE_BRIDGE_DATABRICKS_WAREHOUSE_ID=abc123def456
+!!! question "Where Do I Get API Keys?"
+    Create them in the [Confluent Cloud Console](https://confluent.cloud/settings/api-keys) or via CLI:
+    ```bash
+    confluent api-key create --resource cloud
     ```
-    
-    See the [Configuration Guide](configuration.md#databricks-unity-catalog) for details on getting these values.
 
-=== "AWS Glue"
+**Optional:** Add [data catalog credentials](configuration.md#data-catalog-credentials) for Unity Catalog, AWS Glue, or Google Data Lineage integration.
 
-    ```env
-    LINEAGE_BRIDGE_AWS_REGION=us-east-1
-    ```
-    
-    Also set up AWS credentials via `aws configure` or environment variables.
+---
 
-=== "Google Data Lineage"
+## 🎯 Your First Extraction
 
-    ```env
+Once credentials are configured (via welcome dialog or `.env`):
+
+### Step 1: Discover Your Environment
+
+The UI automatically discovers all your Confluent Cloud environments and clusters:
+
+```env
     LINEAGE_BRIDGE_GCP_PROJECT_ID=my-gcp-project
     LINEAGE_BRIDGE_GCP_LOCATION=us-central1
     ```

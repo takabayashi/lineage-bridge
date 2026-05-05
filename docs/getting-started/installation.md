@@ -1,42 +1,59 @@
 # Installation
 
-Let's get LineageBridge running on your machine. We'll keep this simple and get you up and running in just a few minutes.
+LineageBridge offers multiple installation paths depending on your needs—from a zero-setup one-liner for quick evaluation to a full development environment.
 
-## What You Need
+## 🚀 Recommended: One-Line Quickstart
 
-Here's what you'll need before starting:
+**Fastest way to try LineageBridge:**
 
-### System Requirements
+```bash
+curl -fsSL https://raw.githubusercontent.com/takabayashi/lineage-bridge/main/scripts/quickstart.sh | bash
+```
 
-- **Python 3.11 or newer** - We develop on 3.11, so that's what we recommend. Check your version with `python --version`
-- **Git** - You'll use this to clone the repo
-- **4GB RAM minimum** - Enough to run the Streamlit UI comfortably
-- **Internet access** - To talk to Confluent Cloud and data catalog APIs
+This automatically:
 
-### Confluent Cloud Account
+- ✅ Installs all dependencies (no Python setup needed)
+- ✅ Launches the UI with demo data
+- ✅ Opens your browser
+- ✅ Works on macOS, Linux, and WSL
 
-You'll need:
+**Perfect for:** First-time users, demos, evaluation
 
-- A Confluent Cloud account (grab a free trial at [confluent.cloud](https://confluent.cloud))
-- At least one Kafka cluster running somewhere
-- Cloud API credentials with read permissions (OrgAdmin or EnvironmentAdmin role)
+See the [Quickstart Guide](quickstart.md) for the full walkthrough.
 
-### Optional: Data Catalog Access
+---
 
-If you want to connect lineage to your data catalog, you'll need:
+## Alternative: Manual Installation
 
-- **Databricks Unity Catalog**: Workspace URL + personal access token
-- **AWS Glue**: AWS credentials with Glue read permissions
-- **Google Data Lineage**: GCP project with Data Lineage API enabled
+Choose manual installation when you need to:
 
-!!! tip "Getting API Credentials"
-    Head to [Configuration Guide](configuration.md#confluent-cloud-credentials) for step-by-step instructions on creating API keys in Confluent Cloud.
+- Develop or extend LineageBridge
+- Customize the installation
+- Work in an air-gapped environment
+- Integrate with existing tooling
 
-## Installation Methods
+### Prerequisites
 
-We support three ways to install LineageBridge. Pick whichever fits your workflow best.
+**System Requirements:**
 
-### Choose Your Method
+- Python 3.11+ (`python --version` to check)
+- Git
+- 4GB RAM minimum
+- Internet access (for API calls)
+
+**Confluent Cloud:** (optional for demo mode)
+
+- Account at [confluent.cloud](https://confluent.cloud) (free trial available)
+- At least one Kafka cluster
+- Cloud API key (OrgAdmin or EnvironmentAdmin)
+
+**Data Catalogs:** (optional)
+
+- **Databricks UC**: Workspace URL + token
+- **AWS Glue**: AWS credentials with Glue permissions
+- **Google Data Lineage**: GCP project + Data Lineage API enabled
+
+### Installation Steps
 
 === "uv (Recommended)"
 

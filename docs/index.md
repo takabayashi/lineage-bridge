@@ -8,69 +8,75 @@
 
 LineageBridge fills a gap: Confluent Cloud has rich stream processing lineage (connectors, Flink jobs, ksqlDB queries, consumer groups) but no way to export it as a queryable graph or bridge it into external data catalogs. LineageBridge extracts this lineage using only public APIs, connects it to Databricks Unity Catalog, AWS Glue, and Google Data Lineage via Tableflow, and renders everything in an interactive UI.
 
-## Architecture
+---
 
-```mermaid
-graph LR
-    A[Confluent Cloud APIs] --> B[Async Clients]
-    B --> C[Orchestrator<br/>5 Phases]
-    C --> D[LineageGraph<br/>networkx]
-    D --> E[Streamlit UI<br/>vis.js]
-    C --> F[Data Catalogs]
-    F --> G[Databricks UC]
-    F --> H[AWS Glue]
-    F --> I[Google Data Lineage]
-```
+## 🚀 Get Started in 30 Seconds
+
+=== "One-Line Quickstart"
+
+    **No installation, no configuration needed:**
+
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/takabayashi/lineage-bridge/main/scripts/quickstart.sh | bash
+    ```
+
+    This automatically:
+    
+    - ✅ Installs dependencies (uv + LineageBridge)
+    - ✅ Launches the interactive UI
+    - ✅ Opens your browser to http://localhost:8501
+    - ✅ Loads a sample graph for immediate exploration
+
+    **Perfect for:** First-time evaluation, demos, trying before committing
+
+=== "Docker"
+
+    **Container-friendly one-liner:**
+
+    ```bash
+    docker run -p 8501:8501 ghcr.io/takabayashi/lineage-bridge:latest
+    ```
+
+    Then open http://localhost:8501 → Click **"Load Demo Graph"**
+
+    **Perfect for:** Kubernetes, production deployments, isolated environments
+
+=== "Manual Install"
+
+    **For development and customization:**
+
+    ```bash
+    git clone https://github.com/takabayashi/lineage-bridge.git
+    cd lineage-bridge
+    uv pip install -e ".[dev]"
+    make ui
+    ```
+
+    A welcome dialog appears to guide credential setup.
+
+    **Perfect for:** Contributing, extending, production configuration
+
+---
 
 ## Key Features
 
-- **Complete Lineage Extraction**: Kafka topics, connectors, Flink, ksqlDB, consumer groups, schemas
-- **Multi-Catalog Integration**: Databricks Unity Catalog, AWS Glue, Google Data Lineage
-- **OpenLineage API**: REST API with 25 endpoints for programmatic access
-- **Interactive Visualization**: Directed graph with drag, zoom, search, and export
-- **Change Detection**: Real-time watcher with auto-extraction
-- **Demo Infrastructure**: 3 Terraform-based demos (UC, Glue, BigQuery)
+- **🎯 Zero-Friction Onboarding**: One-line quickstart + welcome dialog for guided setup
+- **🔍 Complete Lineage Discovery**: Topics, connectors, Flink, ksqlDB, consumer groups, schemas, catalog tables
+- **📊 Interactive Visualization**: Directed graph with drag, zoom, search, neighborhood filtering
+- **🔗 Multi-Catalog Integration**: Databricks UC, AWS Glue, Google Data Lineage, AWS DataZone
+- **🔄 Change Detection**: Real-time monitoring with auto-extraction on infrastructure changes
+- **🚀 Production-Ready**: REST API, OpenLineage endpoints, pluggable storage, Docker support
 
-## Try It Now
+## What's New
 
-**One-line demo** (no credentials needed):
+### v0.6.1 — One-Line Quickstart (Latest)
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/takabayashi/lineage-bridge/main/scripts/quickstart.sh | bash
-```
+- **🚀 One-line installer**: `curl | bash` quickstart script for instant demo mode
+- **🎨 Welcome dialog**: First-time credential setup guide with three options (connect / skip / demo)
+- **🐳 Docker publishing**: Pre-built images at `ghcr.io/takabayashi/lineage-bridge`
+- **📚 Enhanced docs**: Quickstart-first documentation flow
 
-**Or use Docker:**
-
-```bash
-docker run -p 8501:8501 ghcr.io/takabayashi/lineage-bridge:latest
-```
-
-Then open http://localhost:8501 and click **Load Demo Graph** to explore a sample lineage extraction.
-
-!!! tip "Zero Setup Required"
-    Demo mode loads a pre-built sample graph—perfect for evaluating LineageBridge before connecting to Confluent Cloud.
-
-## Quick Start (Connect to Confluent Cloud)
-
-Get running in 5 minutes:
-
-```bash
-# Install
-git clone https://github.com/takabayashi/lineage-bridge.git
-cd lineage-bridge
-uv pip install -e .
-
-# Configure
-cp .env.example .env
-# Edit .env with your Confluent Cloud API key
-
-# Run
-uv run streamlit run lineage_bridge/ui/app.py
-```
-
-Visit **[Getting Started →](getting-started/quickstart.md)** for detailed instructions.
-
-## What's New in v0.6.0
+### v0.6.0 — UX Redesign
 
 - 🎨 **Complete UX Redesign**: Sidebar collapsed from 8 to 4 expanders, credential dialogs, persistent logs
 - 🔧 **In-Process Watcher**: Threading-based change detection with REST polling (no separate daemon)

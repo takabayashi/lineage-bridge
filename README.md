@@ -9,7 +9,33 @@
 
 LineageBridge fills a gap: Confluent Cloud has rich stream processing lineage (connectors, Flink jobs, ksqlDB queries, consumer groups) but no way to export it as a queryable graph or bridge it into external data catalogs. LineageBridge extracts this lineage using only public APIs, connects it to Databricks Unity Catalog, AWS Glue, and Google Data Lineage / BigQuery via Tableflow, and renders everything in an interactive Streamlit UI.
 
-📚 **[Read the full documentation →](https://takabayashi.github.io/lineage-bridge/)** — quickstart, configuration, demos, catalog integration guides, architecture, API reference.
+## 🚀 Get Started in 30 Seconds
+
+**One-line install** (no dependencies, no configuration):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/takabayashi/lineage-bridge/main/scripts/quickstart.sh | bash
+```
+
+This automatically:
+- ✅ Installs all dependencies (uv + LineageBridge)
+- ✅ Launches the interactive UI
+- ✅ Opens your browser to http://localhost:8501
+- ✅ Loads a sample lineage graph for immediate exploration
+
+**No Confluent account needed** — try it in demo mode first, connect later!
+
+**Or use Docker:**
+
+```bash
+docker run -p 8501:8501 ghcr.io/takabayashi/lineage-bridge:latest
+```
+
+Then open http://localhost:8501 → Click **"Load Demo Graph"**
+
+---
+
+📚 **[Full Documentation →](https://takabayashi.github.io/lineage-bridge/)** — catalog integration, API reference, architecture deep-dive
 
 ## Architecture
 
@@ -71,173 +97,95 @@ Confluent Cloud APIs ──> Clients ──> Orchestrator ──> LineageGraph �
 - REST + OpenLineage API for programmatic access
 - Docker support with extract, UI, and watcher profiles
 
-## Try It Now
+## Connecting to Your Confluent Cloud
 
-**One-line demo** (no credentials needed):
+After trying the demo, connect to your real Confluent environment:
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/takabayashi/lineage-bridge/main/scripts/quickstart.sh | bash
-```
+**Option 1: Via Welcome Dialog** (easiest)
 
-This will:
-- Install dependencies automatically (uv + LineageBridge)
-- Launch the UI with a sample lineage graph
-- Open your browser to http://localhost:8501
-- No Confluent account needed — explore the demo graph immediately
+1. Run the quickstart or launch the UI
+2. A welcome dialog appears when no credentials are found
+3. Click **"Save & Connect"** and enter your Cloud API Key
+4. Credentials are saved to `.env` automatically
 
-To connect to your Confluent Cloud later, stop the UI (Ctrl+C) and run `cd ~/.lineage-bridge && make ui`.
+**Option 2: Manual Setup** (for development)
 
-**Docker demo**:
+If you need to customize or develop on LineageBridge:
 
 ```bash
-docker run -p 8501:8501 ghcr.io/takabayashi/lineage-bridge:latest
-```
-
-Then open http://localhost:8501 and click **Load Demo Graph**.
-
-### Comparison: Which Start Method?
-
-| Method | Setup Time | Use Case |
-|--------|-----------|----------|
-| **One-line script** | 30s | First-time evaluation, no git needed |
-| **Docker** | 10s | Quick demo, container-friendly |
-| **Manual install** | 2 min | Development, customization |
-| **Make targets** | 1 min | Cloned repo, recurring use |
-
-## Quick Start
-
-### Prerequisites
-
-- Python 3.11+
-- [uv](https://docs.astral.sh/uv/) (recommended) or pip
-- A Confluent Cloud account with at least one environment and Kafka cluster
-
-### Install
-
-```bash
+# Clone and install
 git clone https://github.com/takabayashi/lineage-bridge.git
 cd lineage-bridge
-uv pip install -e .
+uv pip install -e ".[dev]"
+
+# Get your Cloud API Key from:
+# https://confluent.cloud/settings/api-keys
+
+# Launch UI (welcome dialog will prompt for credentials)
+make ui
 ```
 
-### Configure
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` with your Confluent Cloud API credentials:
+The welcome dialog will appear and guide you through credential setup. Or manually create `.env`:
 
 ```env
 LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_KEY=your-cloud-api-key
 LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_SECRET=your-cloud-api-secret
 ```
 
-Only a cloud-level API key is required to start. The UI will guide you through adding cluster-scoped credentials if needed, or can auto-provision them via the Confluent CLI.
-
-Optional catalog credentials:
-
-```env
-# Databricks Unity Catalog
-LINEAGE_BRIDGE_DATABRICKS_WORKSPACE_URL=https://your-workspace.databricks.com
-LINEAGE_BRIDGE_DATABRICKS_TOKEN=your-databricks-token
-
-# AWS Glue (uses ambient AWS credentials / profile)
-LINEAGE_BRIDGE_AWS_REGION=us-east-1
-
-# Google Data Lineage / BigQuery (uses ambient gcloud / ADC credentials)
-LINEAGE_BRIDGE_GCP_PROJECT_ID=your-gcp-project
-LINEAGE_BRIDGE_GCP_LOCATION=us
-```
-
-For full configuration details, see the [Configuration guide](https://takabayashi.github.io/lineage-bridge/getting-started/configuration/).
-
-### Run
+**Available commands:**
 
 ```bash
-# Streamlit UI
-uv run streamlit run lineage_bridge/ui/app.py
-
-# CLI extraction
-uv run lineage-bridge-extract
-
-# Change-detection watcher
-uv run lineage-bridge-watch
-
-# REST + OpenLineage API server
-uv run lineage-bridge-api
+make ui          # Launch Streamlit UI
+make extract     # Run CLI extraction
+make watch       # Start change-detection watcher
+make api         # Start REST API server
+make test        # Run test suite
 ```
 
-Open http://localhost:8501, select an environment and cluster, and click **Extract Lineage**.
+See the [full documentation](https://takabayashi.github.io/lineage-bridge/getting-started/installation/) for advanced configuration.
 
-For a step-by-step walkthrough, see the [Quickstart guide](https://takabayashi.github.io/lineage-bridge/getting-started/quickstart/).
+## What's Included
 
-### Docker
+LineageBridge provides multiple tools for different workflows:
 
-```bash
-# Run the UI
-docker compose -f infra/docker/docker-compose.yml --profile ui up
+| Tool | Command | Purpose |
+|------|---------|---------|
+| **UI** | `make ui` | Interactive graph visualization + extraction |
+| **CLI** | `make extract` | Headless extraction to JSON |
+| **Watcher** | `make watch` | Continuous monitoring + auto-extraction |
+| **API** | `make api` | REST + OpenLineage API server |
+| **Docker** | `make docker-ui` | Containerized UI deployment |
 
-# Run extraction
-docker compose -f infra/docker/docker-compose.yml --profile extract up
+Run `make help` to see all available targets.
 
-# Run the watcher
-docker compose -f infra/docker/docker-compose.yml --profile watch up
+## Documentation
 
-# Or use Make shortcuts
-make docker-ui
-make docker-extract
-make docker-watch
-```
-
-## Make Targets
-
-All common operations are available via `make`:
-
-| Target | Description |
-|--------|-------------|
-| `make install` | Install project with dev dependencies |
-| `make ui` | Start the Streamlit UI |
-| `make extract` | Run lineage extraction CLI |
-| `make watch` | Run change-detection watcher CLI |
-| `make test` | Run tests |
-| `make lint` | Run linter |
-| `make format` | Format code and auto-fix lint issues |
-| `make clean` | Remove build artifacts and caches |
-| `make docker-build` | Build Docker images |
-| `make docker-ui` | Start UI via Docker |
-| `make docker-extract` | Run extraction via Docker |
-| `make docker-watch` | Run change-detection watcher via Docker |
-| `make docker-down` | Stop all Docker services |
-| `make demo-up` | Provision demo infrastructure (Confluent + AWS + Databricks) |
-| `make demo-down` | Tear down demo infrastructure |
+- **[Getting Started](https://takabayashi.github.io/lineage-bridge/getting-started/)** — Installation, quickstart, configuration
+- **[User Guide](https://takabayashi.github.io/lineage-bridge/user-guide/)** — UI walkthrough, CLI reference, graph navigation
+- **[Catalog Integration](https://takabayashi.github.io/lineage-bridge/catalog-integration/)** — Unity Catalog, AWS Glue, Google Data Lineage, DataZone
+- **[API Reference](https://takabayashi.github.io/lineage-bridge/api-reference/)** — REST API + OpenLineage endpoints
+- **[Demos](https://takabayashi.github.io/lineage-bridge/demos/)** — Deploy full-stack demos with Terraform
+- **[Architecture](https://takabayashi.github.io/lineage-bridge/architecture/)** — Design decisions, internals, extensibility
 
 ## Development
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, and code style guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
 ```bash
-# Install dev dependencies
-make install
-
-# Run tests
-make test
-
-# Lint & format
-make lint
-make format
+make install    # Install with dev dependencies
+make test       # Run test suite
+make lint       # Check code style
+make format     # Auto-format code
 ```
 
-## Roadmap
+## Recent Releases
 
-- [x] **Phase 1:** Confluent Lineage Extractor + Streamlit UI
-- [x] **Phase 2:** Catalog provider framework (Databricks UC + AWS Glue)
-- [x] **Phase 3:** UI decomposition + UX improvements
-- [x] **Phase 4:** Polish, hardening, v0.2.0 release
-- [x] **Post-v0.2.0:** UC integration fixes, Databricks lineage push, change-detection watcher
-- [x] **v0.4.0:** Glue enrichment, Google Data Lineage / BigQuery provider, demo infrastructure (Terraform), OpenLineage API
-- [x] **v0.5.0:** Complete UX redesign (Prism framework audit), native UC lineage via External Lineage API, catalog protocol v2, pluggable storage backends, services layer for UI/API parity
-- [ ] **Next:** Graph comparison, additional catalog providers, performance optimizations
+- **[v0.6.1](https://github.com/takabayashi/lineage-bridge/releases/tag/v0.6.1)** — One-line quickstart, welcome dialog, Docker publishing
+- **[v0.6.0](https://github.com/takabayashi/lineage-bridge/releases/tag/v0.6.0)** — Complete UX redesign, in-process watcher, enhanced credential flow
+- **[v0.5.0](https://github.com/takabayashi/lineage-bridge/releases/tag/v0.5.0)** — Native UC lineage, catalog protocol v2, pluggable storage, service layer
+- **[v0.4.0](https://github.com/takabayashi/lineage-bridge/releases/tag/v0.4.0)** — Google Data Lineage, DataZone, OpenLineage API, Terraform demos
+
+**Coming next:** Graph comparison, additional catalog providers, performance optimizations
 
 ## License
 
