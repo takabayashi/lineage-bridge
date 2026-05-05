@@ -51,12 +51,14 @@ uv run streamlit run lineage_bridge/ui/app.py
 
 Visit **[Getting Started →](getting-started/quickstart.md)** for detailed instructions.
 
-## What's New in v0.4.0
+## What's New in v0.6.0
 
-- ✨ **Multi-Demo Infrastructure**: 3 independent catalog demos (UC, Glue, BigQuery)
-- 🌐 **Google Data Lineage Provider**: BigQuery integration with OpenLineage events
-- 🚀 **OpenLineage API**: 25 REST endpoints for programmatic lineage access
-- 📊 **487 New Tests**: Comprehensive API test coverage (623 tests total, 68% coverage)
+- 🎨 **Complete UX Redesign**: Sidebar collapsed from 8 to 4 expanders, credential dialogs, persistent logs
+- 🔧 **In-Process Watcher**: Threading-based change detection with REST polling (no separate daemon)
+- 🏗️ **Service Layer** (v0.5.0): `run_extraction` / `run_enrichment` / `run_push` - unified API for UI/CLI/watcher
+- 💾 **Pluggable Storage** (v0.5.0): Memory/file/SQLite backends via `LINEAGE_BRIDGE_STORAGE__BACKEND`
+- 🔗 **Native UC Lineage** (v0.5.0): External Lineage API integration with column-level lineage
+- 🏷️ **Catalog Protocol v2** (v0.5.0): `CATALOG_TABLE` + `catalog_type` discriminator (UC/Glue/Google/DataZone)
 
 [View Full Changelog →](reference/changelog.md)
 

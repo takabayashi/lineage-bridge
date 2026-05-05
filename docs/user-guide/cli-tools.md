@@ -209,25 +209,9 @@ lineage-bridge-watch --env ENV_ID [OPTIONS]
 |------|------|---------|-------------|
 | `--cluster CLUSTER_ID` | string | None | Cluster ID filter. Repeatable. |
 | `--cooldown SECONDS` | float | `30.0` | Seconds to wait after last change before triggering extraction. |
-| `--poll-interval SECONDS` | float | `10.0` | Seconds between REST API polls (polling mode only). |
-| `--audit-log-bootstrap SERVERS` | string | None | Audit log cluster bootstrap servers (overrides env var). |
-| `--audit-log-key KEY` | string | None | Audit log API key (overrides env var). |
-| `--audit-log-secret SECRET` | string | None | Audit log API secret (overrides env var). |
+| `--poll-interval SECONDS` | float | `10.0` | Seconds between REST API polls. |
 | `--push-uc` | flag | false | Push lineage to Databricks UC after each extraction. |
 | `--push-glue` | flag | false | Push lineage to AWS Glue after each extraction. |
-
-### Modes
-
-The watcher has two modes:
-
-1. **REST API Polling** (default) — Polls Confluent Cloud APIs every `--poll-interval` seconds
-2. **Audit Log Consumer** — Subscribes to the Confluent Cloud audit log Kafka topic (requires additional credentials)
-
-Audit log mode activates when these are set:
-
-- `--audit-log-bootstrap` or `LINEAGE_BRIDGE_AUDIT_LOG_BOOTSTRAP_SERVERS`
-- `--audit-log-key` or `LINEAGE_BRIDGE_AUDIT_LOG_API_KEY`
-- `--audit-log-secret` or `LINEAGE_BRIDGE_AUDIT_LOG_API_SECRET`
 
 ### Examples
 
@@ -279,36 +263,6 @@ Shorter intervals (5-10s) are useful when:
 - You need near-real-time lineage updates
 - Changes are infrequent but must be detected quickly
 
-#### Audit Log Mode
-
-Use Kafka consumer for event-driven watching:
-
-```bash
-lineage-bridge-watch \
-  --env env-abc123 \
-  --audit-log-bootstrap pkc-audit.us-east-1.aws.confluent.cloud:9092 \
-  --audit-log-key YOUR_AUDIT_KEY \
-  --audit-log-secret YOUR_AUDIT_SECRET \
-  --cooldown 30
-```
-
-Or set environment variables:
-
-```bash
-export LINEAGE_BRIDGE_AUDIT_LOG_BOOTSTRAP_SERVERS="pkc-audit.us-east-1.aws.confluent.cloud:9092"
-export LINEAGE_BRIDGE_AUDIT_LOG_API_KEY="YOUR_AUDIT_KEY"
-export LINEAGE_BRIDGE_AUDIT_LOG_API_SECRET="YOUR_AUDIT_SECRET"
-
-lineage-bridge-watch --env env-abc123
-```
-
-Output:
-
-```
-Consuming audit log from pkc-audit.us-east-1.aws.confluent.cloud:9092 (cooldown: 30s)
-Press Ctrl+C to stop
-```
-
 #### Auto-Push to Databricks
 
 Extract and push lineage to Unity Catalog after each change:
@@ -347,17 +301,11 @@ The watcher monitors these lineage-relevant events:
 - Connector creation/update/deletion
 - ksqlDB cluster creation/deletion
 - Flink statement creation/update/deletion
-- Schema registration (audit log mode only)
+- Schema registration
 
 ### Environment Variables
 
-See [Configuration](../getting-started/configuration.md). Key variables:
-
-- `LINEAGE_BRIDGE_AUDIT_LOG_BOOTSTRAP_SERVERS` — Audit cluster bootstrap servers
-- `LINEAGE_BRIDGE_AUDIT_LOG_API_KEY` — Audit cluster API key
-- `LINEAGE_BRIDGE_AUDIT_LOG_API_SECRET` — Audit cluster API secret
-
-All extraction-related settings also apply (credentials, enrichment, etc.).
+See [Configuration](../getting-started/configuration.md) for all extraction-related settings (credentials, enrichment, etc.).
 
 ### Exit Codes
 
