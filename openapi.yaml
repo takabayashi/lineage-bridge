@@ -1,0 +1,1952 @@
+openapi: 3.1.0
+info:
+  title: LineageBridge API
+  description: OpenLineage-compatible REST API that exposes Confluent Cloud stream
+    lineage for integration with data catalogs (Databricks UC, AWS Glue, Google Data
+    Lineage, and more).
+  version: 0.3.0
+paths:
+  /api/v1/health:
+    get:
+      tags:
+      - meta
+      summary: Health
+      operationId: health_api_v1_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Health Api V1 Health Get
+  /api/v1/version:
+    get:
+      tags:
+      - meta
+      summary: Version
+      operationId: version_api_v1_version_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Version Api V1 Version Get
+  /api/v1/catalogs:
+    get:
+      tags:
+      - meta
+      summary: Catalogs
+      description: List registered catalog providers.
+      operationId: catalogs_api_v1_catalogs_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  additionalProperties:
+                    type: string
+                  type: object
+                type: array
+                title: Response Catalogs Api V1 Catalogs Get
+  /api/v1/lineage/events:
+    get:
+      tags:
+      - lineage
+      summary: Query Events
+      description: 'Query OpenLineage run events with optional filters.
+
+
+        Namespace and job support glob patterns (e.g. `confluent://*`).'
+      operationId: query_events_api_v1_lineage_events_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: namespace
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Namespace
+      - name: job
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Job
+      - name: since
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Since
+      - name: until
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Until
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 100
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RunEvent-Output'
+                title: Response Query Events Api V1 Lineage Events Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - lineage
+      summary: Ingest Events
+      description: 'Ingest OpenLineage RunEvent(s) from external systems.
+
+
+        Accepts a list of RunEvents and stores them for querying.
+
+        Events are also merged into the graph store via events_to_graph.'
+      operationId: ingest_events_api_v1_lineage_events_post
+      security:
+      - APIKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/RunEvent-Input'
+              title: Events
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Ingest Events Api V1 Lineage Events Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/lineage/events/{run_id}:
+    get:
+      tags:
+      - lineage
+      summary: Get Events By Run
+      description: Get all events for a specific run ID.
+      operationId: get_events_by_run_api_v1_lineage_events__run_id__get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Run Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RunEvent-Output'
+                title: Response Get Events By Run Api V1 Lineage Events  Run Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/lineage/datasets:
+    get:
+      tags:
+      - datasets
+      summary: List Datasets
+      description: List datasets. Supports glob patterns for namespace and name.
+      operationId: list_datasets_api_v1_lineage_datasets_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: namespace
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Namespace
+      - name: name
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Dataset'
+                title: Response List Datasets Api V1 Lineage Datasets Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/lineage/datasets/detail:
+    get:
+      tags:
+      - datasets
+      summary: Get Dataset
+      description: Get a specific dataset by namespace and name (query params).
+      operationId: get_dataset_api_v1_lineage_datasets_detail_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: namespace
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Namespace
+      - name: name
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dataset'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/lineage/datasets/lineage:
+    get:
+      tags:
+      - datasets
+      summary: Get Dataset Lineage
+      description: 'Traverse lineage for a dataset.
+
+
+        Returns the chain of jobs and datasets connected to this dataset
+
+        in the specified direction, up to the given depth.'
+      operationId: get_dataset_lineage_api_v1_lineage_datasets_lineage_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: namespace
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Namespace
+      - name: name
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Name
+      - name: direction
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^(upstream|downstream|both)$
+          default: upstream
+          title: Direction
+      - name: depth
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 50
+          minimum: 1
+          default: 5
+          title: Depth
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Dataset Lineage Api V1 Lineage Datasets Lineage
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/lineage/jobs:
+    get:
+      tags:
+      - jobs
+      summary: List Jobs
+      description: List jobs. Supports glob patterns for namespace and name.
+      operationId: list_jobs_api_v1_lineage_jobs_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: namespace
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Namespace
+      - name: name
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Job-Output'
+                title: Response List Jobs Api V1 Lineage Jobs Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/lineage/jobs/detail:
+    get:
+      tags:
+      - jobs
+      summary: Get Job
+      description: Get a job with its most recent inputs and outputs.
+      operationId: get_job_api_v1_lineage_jobs_detail_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: namespace
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Namespace
+      - name: name
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Job Api V1 Lineage Jobs Detail Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/graphs:
+    get:
+      tags:
+      - graphs
+      summary: List Graphs
+      description: List all in-memory graphs.
+      operationId: list_graphs_api_v1_graphs_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/GraphSummary'
+                type: array
+                title: Response List Graphs Api V1 Graphs Get
+      security:
+      - APIKeyHeader: []
+    post:
+      tags:
+      - graphs
+      summary: Create Graph
+      description: Create a new empty graph.
+      operationId: create_graph_api_v1_graphs_post
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Create Graph Api V1 Graphs Post
+      security:
+      - APIKeyHeader: []
+  /api/v1/graphs/{graph_id}:
+    get:
+      tags:
+      - graphs
+      summary: Get Graph
+      description: Get a full graph with nodes, edges, and stats.
+      operationId: get_graph_api_v1_graphs__graph_id__get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: graph_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Graph Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Get Graph Api V1 Graphs  Graph Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - graphs
+      summary: Delete Graph
+      operationId: delete_graph_api_v1_graphs__graph_id__delete
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: graph_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Graph Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Delete Graph Api V1 Graphs  Graph Id  Delete
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/graphs/{graph_id}/import:
+    post:
+      tags:
+      - graphs
+      summary: Import Graph
+      description: Import nodes and edges from JSON into an existing graph.
+      operationId: import_graph_api_v1_graphs__graph_id__import_post
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: graph_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Graph Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Data
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Import Graph Api V1 Graphs  Graph Id  Import Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/graphs/{graph_id}/export:
+    get:
+      tags:
+      - graphs
+      summary: Export Graph
+      description: Export graph as native LineageGraph JSON.
+      operationId: export_graph_api_v1_graphs__graph_id__export_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: graph_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Graph Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Export Graph Api V1 Graphs  Graph Id  Export Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/graphs/confluent/view:
+    get:
+      tags:
+      - graphs
+      summary: Confluent View
+      description: 'Confluent-only lineage view across all graphs.
+
+
+        Returns OpenLineage events for Confluent-system nodes only,
+
+        excluding catalog nodes (UC, Glue, Google).'
+      operationId: confluent_view_api_v1_graphs_confluent_view_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Confluent View Api V1 Graphs Confluent View Get
+      security:
+      - APIKeyHeader: []
+  /api/v1/graphs/enriched/view:
+    get:
+      tags:
+      - graphs
+      summary: Enriched View
+      description: 'Full enriched lineage view across all graphs.
+
+
+        Includes Confluent nodes plus all catalog nodes (UC, Glue, Google).
+
+        Optionally filter by system types.'
+      operationId: enriched_view_api_v1_graphs_enriched_view_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: systems
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Comma-separated system filter (e.g. confluent,databricks)
+          title: Systems
+        description: Comma-separated system filter (e.g. confluent,databricks)
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Enriched View Api V1 Graphs Enriched View Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/graphs/{graph_id}/nodes:
+    get:
+      tags:
+      - graphs
+      summary: List Nodes
+      description: List nodes with optional filters.
+      operationId: list_nodes_api_v1_graphs__graph_id__nodes_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: graph_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Graph Id
+      - name: type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/NodeType'
+          - type: 'null'
+          title: Type
+      - name: system
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/SystemType'
+          - type: 'null'
+          title: System
+      - name: env_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Env Id
+      - name: search
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Search
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Nodes Api V1 Graphs  Graph Id  Nodes Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    post:
+      tags:
+      - graphs
+      summary: Add Node
+      operationId: add_node_api_v1_graphs__graph_id__nodes_post
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: graph_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Graph Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LineageNode'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Add Node Api V1 Graphs  Graph Id  Nodes Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/graphs/{graph_id}/nodes/{node_id}:
+    get:
+      tags:
+      - graphs
+      summary: Get Node
+      operationId: get_node_api_v1_graphs__graph_id__nodes__node_id__get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: graph_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Graph Id
+      - name: node_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Node Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LineageNode'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/graphs/{graph_id}/edges:
+    post:
+      tags:
+      - graphs
+      summary: Add Edge
+      operationId: add_edge_api_v1_graphs__graph_id__edges_post
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: graph_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Graph Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LineageEdge'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                title: Response Add Edge Api V1 Graphs  Graph Id  Edges Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - graphs
+      summary: List Edges
+      operationId: list_edges_api_v1_graphs__graph_id__edges_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: graph_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Graph Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response List Edges Api V1 Graphs  Graph Id  Edges Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/graphs/{graph_id}/query/upstream/{node_id}:
+    get:
+      tags:
+      - graphs
+      summary: Query Upstream
+      operationId: query_upstream_api_v1_graphs__graph_id__query_upstream__node_id__get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: graph_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Graph Id
+      - name: node_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Node Id
+      - name: hops
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 50
+          minimum: 1
+          default: 3
+          title: Hops
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Query Upstream Api V1 Graphs  Graph Id  Query Upstream  Node
+                  Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/graphs/{graph_id}/query/downstream/{node_id}:
+    get:
+      tags:
+      - graphs
+      summary: Query Downstream
+      operationId: query_downstream_api_v1_graphs__graph_id__query_downstream__node_id__get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: graph_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Graph Id
+      - name: node_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Node Id
+      - name: hops
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 50
+          minimum: 1
+          default: 3
+          title: Hops
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Query Downstream Api V1 Graphs  Graph Id  Query Downstream  Node
+                  Id  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tasks:
+    get:
+      tags:
+      - tasks
+      summary: List Tasks
+      description: List recent tasks with optional filters.
+      operationId: list_tasks_api_v1_tasks_get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: task_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/TaskType'
+          - type: 'null'
+          title: Task Type
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/TaskStatus'
+          - type: 'null'
+          title: Status
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 20
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskInfo'
+                title: Response List Tasks Api V1 Tasks Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tasks/{task_id}:
+    get:
+      tags:
+      - tasks
+      summary: Get Task
+      description: Get a specific task by ID.
+      operationId: get_task_api_v1_tasks__task_id__get
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Task Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskInfo'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tasks/extract:
+    post:
+      tags:
+      - tasks
+      summary: Trigger Extraction
+      description: 'Trigger an async lineage extraction from Confluent Cloud.
+
+
+        Returns immediately with a task_id. Poll GET /tasks/{task_id} for progress.'
+      operationId: trigger_extraction_api_v1_tasks_extract_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - items:
+                  type: string
+                type: array
+              - type: 'null'
+              title: Environment Ids
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Trigger Extraction Api V1 Tasks Extract Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - APIKeyHeader: []
+  /api/v1/tasks/enrich:
+    post:
+      tags:
+      - tasks
+      summary: Trigger Enrichment
+      description: 'Trigger catalog enrichment on an existing graph.
+
+
+        Runs all registered catalog providers'' enrich() methods.
+
+        Returns immediately with a task_id.'
+      operationId: trigger_enrichment_api_v1_tasks_enrich_post
+      security:
+      - APIKeyHeader: []
+      parameters:
+      - name: graph_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Graph Id
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Trigger Enrichment Api V1 Tasks Enrich Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    ConfluentConnectorJobFacet:
+      properties:
+        connector_class:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Connector Class
+        connector_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Connector Type
+        cluster_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cluster Id
+        environment_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Environment Id
+      additionalProperties: true
+      type: object
+      title: ConfluentConnectorJobFacet
+      description: Confluent connector-specific metadata for a job.
+    ConfluentKafkaDatasetFacet:
+      properties:
+        cluster_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cluster Id
+        environment_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Environment Id
+        partitions:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Partitions
+        replication_factor:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Replication Factor
+        tags:
+          items:
+            type: string
+          type: array
+          title: Tags
+      additionalProperties: true
+      type: object
+      title: ConfluentKafkaDatasetFacet
+      description: Confluent Kafka-specific metadata for a dataset (topic).
+    DataQualityMetricsInputDatasetFacet:
+      properties:
+        rowCount:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Rowcount
+        bytes:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Bytes
+      additionalProperties: true
+      type: object
+      title: DataQualityMetricsInputDatasetFacet
+      description: Data quality metrics for an input dataset.
+    DataSourceDatasetFacet:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        uri:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Uri
+      additionalProperties: true
+      type: object
+      title: DataSourceDatasetFacet
+      description: Data source connection details for a dataset.
+    Dataset:
+      properties:
+        namespace:
+          type: string
+          title: Namespace
+          description: Dataset namespace (e.g. confluent://env-abc/lkc-123)
+        name:
+          type: string
+          title: Name
+          description: Dataset name (e.g. topic name or table name)
+        facets:
+          anyOf:
+          - $ref: '#/components/schemas/DatasetFacets-Output'
+          - type: 'null'
+      type: object
+      required:
+      - namespace
+      - name
+      title: Dataset
+      description: 'An OpenLineage dataset — a named data asset in a namespace.
+
+
+        In LineageBridge, Kafka topics, Tableflow tables, and catalog tables
+
+        (UC, Glue, Google) are represented as datasets.'
+    DatasetFacets-Input:
+      properties:
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/SchemaDatasetFacet'
+          - type: 'null'
+        dataSource:
+          anyOf:
+          - $ref: '#/components/schemas/DataSourceDatasetFacet'
+          - type: 'null'
+        documentation:
+          anyOf:
+          - $ref: '#/components/schemas/DocumentationDatasetFacet'
+          - type: 'null'
+        confluent_kafka:
+          anyOf:
+          - $ref: '#/components/schemas/ConfluentKafkaDatasetFacet'
+          - type: 'null'
+      additionalProperties: true
+      type: object
+      title: DatasetFacets
+      description: Container for dataset-level facets.
+    DatasetFacets-Output:
+      properties:
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/SchemaDatasetFacet'
+          - type: 'null'
+        dataSource:
+          anyOf:
+          - $ref: '#/components/schemas/DataSourceDatasetFacet'
+          - type: 'null'
+        documentation:
+          anyOf:
+          - $ref: '#/components/schemas/DocumentationDatasetFacet'
+          - type: 'null'
+        confluent_kafka:
+          anyOf:
+          - $ref: '#/components/schemas/ConfluentKafkaDatasetFacet'
+          - type: 'null'
+      additionalProperties: true
+      type: object
+      title: DatasetFacets
+      description: Container for dataset-level facets.
+    DocumentationDatasetFacet:
+      properties:
+        description:
+          type: string
+          title: Description
+      additionalProperties: true
+      type: object
+      required:
+      - description
+      title: DocumentationDatasetFacet
+      description: Human-readable documentation for a dataset.
+    DocumentationJobFacet:
+      properties:
+        description:
+          type: string
+          title: Description
+      additionalProperties: true
+      type: object
+      required:
+      - description
+      title: DocumentationJobFacet
+      description: Human-readable documentation for a job.
+    EdgeType:
+      type: string
+      enum:
+      - produces
+      - consumes
+      - transforms
+      - materializes
+      - has_schema
+      - member_of
+      title: EdgeType
+      description: Types of edges (relationships) in the lineage graph.
+    GraphSummary:
+      properties:
+        graph_id:
+          type: string
+          title: Graph Id
+        node_count:
+          type: integer
+          title: Node Count
+        edge_count:
+          type: integer
+          title: Edge Count
+        pipeline_count:
+          type: integer
+          title: Pipeline Count
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        last_modified:
+          type: string
+          format: date-time
+          title: Last Modified
+      type: object
+      required:
+      - graph_id
+      - node_count
+      - edge_count
+      - pipeline_count
+      - created_at
+      - last_modified
+      title: GraphSummary
+      description: Lightweight graph info for listing.
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    InputDataset-Input:
+      properties:
+        namespace:
+          type: string
+          title: Namespace
+        name:
+          type: string
+          title: Name
+        facets:
+          anyOf:
+          - $ref: '#/components/schemas/DatasetFacets-Input'
+          - type: 'null'
+        inputFacets:
+          anyOf:
+          - $ref: '#/components/schemas/InputDatasetFacets'
+          - type: 'null'
+      type: object
+      required:
+      - namespace
+      - name
+      title: InputDataset
+      description: A dataset consumed by a job.
+    InputDataset-Output:
+      properties:
+        namespace:
+          type: string
+          title: Namespace
+        name:
+          type: string
+          title: Name
+        facets:
+          anyOf:
+          - $ref: '#/components/schemas/DatasetFacets-Output'
+          - type: 'null'
+        inputFacets:
+          anyOf:
+          - $ref: '#/components/schemas/InputDatasetFacets'
+          - type: 'null'
+      type: object
+      required:
+      - namespace
+      - name
+      title: InputDataset
+      description: A dataset consumed by a job.
+    InputDatasetFacets:
+      properties:
+        dataQualityMetrics:
+          anyOf:
+          - $ref: '#/components/schemas/DataQualityMetricsInputDatasetFacet'
+          - type: 'null'
+      additionalProperties: true
+      type: object
+      title: InputDatasetFacets
+      description: Container for input-specific dataset facets.
+    Job-Input:
+      properties:
+        namespace:
+          type: string
+          title: Namespace
+          description: Job namespace (e.g. confluent://env-abc/lkc-123)
+        name:
+          type: string
+          title: Name
+          description: Job name (e.g. connector or query name)
+        facets:
+          anyOf:
+          - $ref: '#/components/schemas/JobFacets'
+          - type: 'null'
+      type: object
+      required:
+      - namespace
+      - name
+      title: Job
+      description: 'An OpenLineage job — a process that consumes and produces datasets.
+
+
+        In LineageBridge, connectors, ksqlDB queries, Flink jobs, and
+
+        consumer groups are represented as jobs.'
+    Job-Output:
+      properties:
+        namespace:
+          type: string
+          title: Namespace
+          description: Job namespace (e.g. confluent://env-abc/lkc-123)
+        name:
+          type: string
+          title: Name
+          description: Job name (e.g. connector or query name)
+        facets:
+          anyOf:
+          - $ref: '#/components/schemas/JobFacets'
+          - type: 'null'
+      type: object
+      required:
+      - namespace
+      - name
+      title: Job
+      description: 'An OpenLineage job — a process that consumes and produces datasets.
+
+
+        In LineageBridge, connectors, ksqlDB queries, Flink jobs, and
+
+        consumer groups are represented as jobs.'
+    JobFacets:
+      properties:
+        sql:
+          anyOf:
+          - $ref: '#/components/schemas/SqlJobFacet'
+          - type: 'null'
+        documentation:
+          anyOf:
+          - $ref: '#/components/schemas/DocumentationJobFacet'
+          - type: 'null'
+        sourceCodeLocation:
+          anyOf:
+          - $ref: '#/components/schemas/SourceCodeLocationJobFacet'
+          - type: 'null'
+        confluent_connector:
+          anyOf:
+          - $ref: '#/components/schemas/ConfluentConnectorJobFacet'
+          - type: 'null'
+      additionalProperties: true
+      type: object
+      title: JobFacets
+      description: Container for job-level facets.
+    LineageEdge:
+      properties:
+        src_id:
+          type: string
+          title: Src Id
+        dst_id:
+          type: string
+          title: Dst Id
+        edge_type:
+          $ref: '#/components/schemas/EdgeType'
+        confidence:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Confidence
+          description: 1.0 = deterministic, <1.0 = inferred
+          default: 1.0
+        attributes:
+          additionalProperties: true
+          type: object
+          title: Attributes
+        first_seen:
+          type: string
+          format: date-time
+          title: First Seen
+        last_seen:
+          type: string
+          format: date-time
+          title: Last Seen
+      type: object
+      required:
+      - src_id
+      - dst_id
+      - edge_type
+      title: LineageEdge
+      description: A directed edge in the lineage graph representing a data flow relationship.
+    LineageNode:
+      properties:
+        node_id:
+          type: string
+          title: Node Id
+          description: 'Unique identifier. Format: {system}:{type}:{env_id}:{qualified_name}'
+        system:
+          $ref: '#/components/schemas/SystemType'
+        node_type:
+          $ref: '#/components/schemas/NodeType'
+        qualified_name:
+          type: string
+          title: Qualified Name
+        display_name:
+          type: string
+          title: Display Name
+        environment_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Environment Id
+        environment_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Environment Name
+        cluster_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cluster Id
+        cluster_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cluster Name
+        catalog_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Catalog Type
+          description: |-
+            For NodeType.CATALOG_TABLE only — discriminator for which catalog
+            owns this node (e.g. 'UNITY_CATALOG', 'AWS_GLUE',
+            'GOOGLE_DATA_LINEAGE', 'AWS_DATAZONE'). None for non-catalog node
+            types. (Added in v0.5.0; per ADR-021.)
+        attributes:
+          additionalProperties: true
+          type: object
+          title: Attributes
+        tags:
+          items:
+            type: string
+          type: array
+          title: Tags
+        url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Url
+        first_seen:
+          type: string
+          format: date-time
+          title: First Seen
+        last_seen:
+          type: string
+          format: date-time
+          title: Last Seen
+      type: object
+      required:
+      - node_id
+      - system
+      - node_type
+      - qualified_name
+      - display_name
+      title: LineageNode
+      description: A node in the lineage graph representing a data asset or processing
+        step.
+    NodeType:
+      type: string
+      enum:
+      - kafka_topic
+      - connector
+      - ksqldb_query
+      - flink_job
+      - tableflow_table
+      - catalog_table
+      - schema
+      - external_dataset
+      - consumer_group
+      title: NodeType
+      description: |-
+        Types of nodes in the lineage graph.
+
+        v0.5.0 (ADR-021): the per-catalog values `uc_table` / `glue_table` /
+        `google_table` were collapsed into a single `catalog_table` value.
+        The `catalog_type` field on `LineageNode` carries the discriminator
+        (e.g. `UNITY_CATALOG`, `AWS_GLUE`, `GOOGLE_DATA_LINEAGE`).
+    OutputDataset-Input:
+      properties:
+        namespace:
+          type: string
+          title: Namespace
+        name:
+          type: string
+          title: Name
+        facets:
+          anyOf:
+          - $ref: '#/components/schemas/DatasetFacets-Input'
+          - type: 'null'
+        outputFacets:
+          anyOf:
+          - $ref: '#/components/schemas/OutputDatasetFacets'
+          - type: 'null'
+      type: object
+      required:
+      - namespace
+      - name
+      title: OutputDataset
+      description: A dataset produced by a job.
+    OutputDataset-Output:
+      properties:
+        namespace:
+          type: string
+          title: Namespace
+        name:
+          type: string
+          title: Name
+        facets:
+          anyOf:
+          - $ref: '#/components/schemas/DatasetFacets-Output'
+          - type: 'null'
+        outputFacets:
+          anyOf:
+          - $ref: '#/components/schemas/OutputDatasetFacets'
+          - type: 'null'
+      type: object
+      required:
+      - namespace
+      - name
+      title: OutputDataset
+      description: A dataset produced by a job.
+    OutputDatasetFacets:
+      properties:
+        outputStatistics:
+          anyOf:
+          - $ref: '#/components/schemas/OutputStatisticsOutputDatasetFacet'
+          - type: 'null'
+      additionalProperties: true
+      type: object
+      title: OutputDatasetFacets
+      description: Container for output-specific dataset facets.
+    OutputStatisticsOutputDatasetFacet:
+      properties:
+        rowCount:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Rowcount
+        bytes:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Bytes
+      additionalProperties: true
+      type: object
+      title: OutputStatisticsOutputDatasetFacet
+      description: Output statistics for a dataset.
+    Run:
+      properties:
+        runId:
+          type: string
+          title: Runid
+          description: Unique run identifier (UUID)
+        facets:
+          anyOf:
+          - $ref: '#/components/schemas/RunFacets'
+          - type: 'null'
+      type: object
+      required:
+      - runId
+      title: Run
+      description: An OpenLineage run — a single execution instance of a job.
+    RunEvent-Input:
+      properties:
+        eventTime:
+          type: string
+          format: date-time
+          title: Eventtime
+          description: ISO 8601 timestamp of the event
+        eventType:
+          $ref: '#/components/schemas/RunEventType'
+          description: Event type (START, COMPLETE, etc.)
+        run:
+          $ref: '#/components/schemas/Run'
+        job:
+          $ref: '#/components/schemas/Job-Input'
+        inputs:
+          items:
+            $ref: '#/components/schemas/InputDataset-Input'
+          type: array
+          title: Inputs
+        outputs:
+          items:
+            $ref: '#/components/schemas/OutputDataset-Input'
+          type: array
+          title: Outputs
+        producer:
+          type: string
+          title: Producer
+          description: URI identifying the producer of this event
+          default: https://github.com/takabayashi/lineage-bridge
+        schemaURL:
+          type: string
+          title: Schemaurl
+          description: URI of the OpenLineage schema for this event
+          default: https://openlineage.io/spec/2-0-2/OpenLineage.json#/$defs/RunEvent
+      type: object
+      required:
+      - eventTime
+      - eventType
+      - run
+      - job
+      title: OpenLineage RunEvent
+      description: 'An OpenLineage run event — the top-level event envelope.
+
+
+        Each event describes a state transition (START, RUNNING, COMPLETE, FAIL, ABORT)
+
+        of a job run, along with the datasets it consumes and produces.'
+    RunEvent-Output:
+      properties:
+        eventTime:
+          type: string
+          format: date-time
+          title: Eventtime
+          description: ISO 8601 timestamp of the event
+        eventType:
+          $ref: '#/components/schemas/RunEventType'
+          description: Event type (START, COMPLETE, etc.)
+        run:
+          $ref: '#/components/schemas/Run'
+        job:
+          $ref: '#/components/schemas/Job-Output'
+        inputs:
+          items:
+            $ref: '#/components/schemas/InputDataset-Output'
+          type: array
+          title: Inputs
+        outputs:
+          items:
+            $ref: '#/components/schemas/OutputDataset-Output'
+          type: array
+          title: Outputs
+        producer:
+          type: string
+          title: Producer
+          description: URI identifying the producer of this event
+          default: https://github.com/takabayashi/lineage-bridge
+        schemaURL:
+          type: string
+          title: Schemaurl
+          description: URI of the OpenLineage schema for this event
+          default: https://openlineage.io/spec/2-0-2/OpenLineage.json#/$defs/RunEvent
+      type: object
+      required:
+      - eventTime
+      - eventType
+      - run
+      - job
+      title: OpenLineage RunEvent
+      description: 'An OpenLineage run event — the top-level event envelope.
+
+
+        Each event describes a state transition (START, RUNNING, COMPLETE, FAIL, ABORT)
+
+        of a job run, along with the datasets it consumes and produces.'
+    RunEventType:
+      type: string
+      enum:
+      - START
+      - RUNNING
+      - COMPLETE
+      - FAIL
+      - ABORT
+      title: RunEventType
+      description: Types of OpenLineage run events.
+    RunFacets:
+      properties: {}
+      additionalProperties: true
+      type: object
+      title: RunFacets
+      description: Container for run-level facets.
+    SchemaDatasetFacet:
+      properties:
+        fields:
+          items:
+            $ref: '#/components/schemas/SchemaField'
+          type: array
+          title: Fields
+      additionalProperties: true
+      type: object
+      title: SchemaDatasetFacet
+      description: Schema information for a dataset.
+    SchemaField:
+      properties:
+        name:
+          type: string
+          title: Name
+        type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Type
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+      type: object
+      required:
+      - name
+      title: SchemaField
+      description: A single field in a dataset schema.
+    SourceCodeLocationJobFacet:
+      properties:
+        type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Type
+        url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Url
+      additionalProperties: true
+      type: object
+      title: SourceCodeLocationJobFacet
+      description: Source code location for a job.
+    SqlJobFacet:
+      properties:
+        query:
+          type: string
+          title: Query
+      additionalProperties: true
+      type: object
+      required:
+      - query
+      title: SqlJobFacet
+      description: SQL query associated with a job.
+    SystemType:
+      type: string
+      enum:
+      - confluent
+      - databricks
+      - aws
+      - google
+      - external
+      title: SystemType
+      description: Source systems that contribute nodes to the graph.
+    TaskInfo:
+      properties:
+        task_id:
+          type: string
+          title: Task Id
+        task_type:
+          $ref: '#/components/schemas/TaskType'
+        status:
+          $ref: '#/components/schemas/TaskStatus'
+          default: pending
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        started_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Started At
+        completed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Completed At
+        progress:
+          items:
+            type: string
+          type: array
+          title: Progress
+        result:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Result
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+        params:
+          additionalProperties: true
+          type: object
+          title: Params
+      type: object
+      required:
+      - task_id
+      - task_type
+      title: TaskInfo
+      description: Metadata and state for a single async task.
+    TaskStatus:
+      type: string
+      enum:
+      - pending
+      - running
+      - completed
+      - failed
+      title: TaskStatus
+      description: Lifecycle states for an async task.
+    TaskType:
+      type: string
+      enum:
+      - extract
+      - enrich
+      title: TaskType
+      description: Types of async operations.
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+  securitySchemes:
+    APIKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-Key
