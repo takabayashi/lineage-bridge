@@ -316,11 +316,9 @@ class WatcherEngine:
 
     async def _do_extraction(self):
         """Run the extraction pipeline."""
-        from lineage_bridge.extractors.orchestrator import (
-            run_extraction,
-            run_glue_push,
-            run_lineage_push,
-        )
+        from lineage_bridge.extractors.orchestrator import run_extraction
+        from lineage_bridge.services.push_service import run_push
+        from lineage_bridge.services.requests import PushRequest
 
         params = self.extraction_params
         graph = await run_extraction(
@@ -336,17 +334,14 @@ class WatcherEngine:
             enable_enrichment=params.get("enable_enrichment", True),
         )
 
-        # Push if configured
-        if params.get("push_uc", False):
+        # Push to each configured provider, isolating failures so one bad
+        # destination doesn't lose results from the others.
+        for provider_name in params.get("push_providers", []):
             try:
-                await run_lineage_push(self.settings, graph)
+                await run_push(PushRequest(provider=provider_name), self.settings, graph)
             except Exception:
-                logger.warning("UC push failed during watcher extraction", exc_info=True)
-
-        if params.get("push_glue", False):
-            try:
-                await run_glue_push(self.settings, graph)
-            except Exception:
-                logger.warning("Glue push failed during watcher extraction", exc_info=True)
+                logger.warning(
+                    "%s push failed during watcher extraction", provider_name, exc_info=True
+                )
 
         return graph

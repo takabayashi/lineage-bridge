@@ -15,8 +15,20 @@ from __future__ import annotations
 
 import streamlit as st
 
+from lineage_bridge.services.push_service import PUSH_PROVIDERS
 from lineage_bridge.ui.discovery import _try_load_settings
 from lineage_bridge.watcher.engine import WatcherEngine, WatcherState
+
+# Friendly checkbox labels for the "After change → publish to:" row.
+# Sourced from the canonical PUSH_PROVIDERS so adding a new catalog in
+# push_service.py automatically surfaces a watcher checkbox once we add
+# the label here.
+_PROVIDER_LABELS: dict[str, str] = {
+    "databricks_uc": "UC",
+    "aws_glue": "Glue",
+    "google": "Dataplex",
+    "datazone": "DataZone",
+}
 
 _STATE_COLORS = {
     WatcherState.STOPPED: ("#9E9E9E", "rgba(158,158,158,0.1)", "Stopped"),
@@ -138,11 +150,16 @@ def render_watcher_controls() -> None:
         )
 
         st.caption("After change → publish to:")
-        p1, p2 = st.columns(2)
-        with p1:
-            push_uc = st.checkbox("Push UC", key="watcher_push_uc", disabled=is_running)
-        with p2:
-            push_glue = st.checkbox("Push Glue", key="watcher_push_glue", disabled=is_running)
+        push_providers: list[str] = []
+        provider_cols = st.columns(len(PUSH_PROVIDERS))
+        for col, provider in zip(provider_cols, PUSH_PROVIDERS, strict=True):
+            with col:
+                if st.checkbox(
+                    _PROVIDER_LABELS.get(provider, provider),
+                    key=f"watcher_push_{provider}",
+                    disabled=is_running,
+                ):
+                    push_providers.append(provider)
 
     with c_right:
         if engine is not None:
@@ -190,8 +207,7 @@ def render_watcher_controls() -> None:
                     _start_watcher(
                         poll_interval=10,
                         cooldown=cooldown,
-                        push_uc=push_uc,
-                        push_glue=push_glue,
+                        push_providers=push_providers,
                         audit_bootstrap=bs,
                         audit_key=ak,
                         audit_secret=asec,
@@ -200,8 +216,7 @@ def render_watcher_controls() -> None:
                     _start_watcher(
                         poll_interval=poll_interval,
                         cooldown=cooldown,
-                        push_uc=push_uc,
-                        push_glue=push_glue,
+                        push_providers=push_providers,
                     )
                 st.rerun()
 
@@ -348,8 +363,7 @@ def _render_status_badge(engine: WatcherEngine, mode: str) -> None:
 def _start_watcher(
     poll_interval: float,
     cooldown: float,
-    push_uc: bool,
-    push_glue: bool,
+    push_providers: list[str],
     audit_bootstrap: str | None = None,
     audit_key: str | None = None,
     audit_secret: str | None = None,
@@ -376,8 +390,7 @@ def _start_watcher(
         "enable_stream_catalog": last_params.get("enable_stream_catalog", False),
         "enable_tableflow": last_params.get("enable_tableflow", True),
         "enable_enrichment": last_params.get("enable_enrichment", True),
-        "push_uc": push_uc,
-        "push_glue": push_glue,
+        "push_providers": list(push_providers),
     }
 
     engine = WatcherEngine(
