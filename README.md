@@ -44,19 +44,23 @@ Confluent Cloud APIs ──> Clients ──> Orchestrator ──> LineageGraph �
 - Sugiyama-style DAG layout with minimal edge crossings
 - Color-coded nodes by system (Confluent, Databricks, AWS, External)
 - Click-to-inspect detail panel with attributes, neighbors, and deep links
-- Search by qualified name
+- Search by qualified name with neighborhood filtering
 - Export graph as JSON
+- Streamlined sidebar (Setup/Run/Publish/Explore) with credential management dialogs
+- Real-time extraction progress with persistent logs
 
 ### Data Catalog Integration
-- **[Databricks Unity Catalog](https://takabayashi.github.io/lineage-bridge/catalog-integration/databricks-unity-catalog/):** Enrich UC tables with metadata, push lineage as table properties and comments
+- **[Databricks Unity Catalog](https://takabayashi.github.io/lineage-bridge/catalog-integration/databricks-unity-catalog/):** Enrich UC tables with metadata, push native lineage via External Lineage API
 - **[AWS Glue](https://takabayashi.github.io/lineage-bridge/catalog-integration/aws-glue/):** Enrich Glue tables with metadata, push lineage as table parameters
-- **[Google Data Lineage](https://takabayashi.github.io/lineage-bridge/catalog-integration/google-data-lineage/):** Enrich BigQuery tables with metadata, push lineage to the Google Data Lineage API
+- **[Google Data Lineage](https://takabayashi.github.io/lineage-bridge/catalog-integration/google-data-lineage/):** Enrich BigQuery tables with metadata, push lineage to Cloud Lineage API via Dataplex
 - [Extensible provider pattern](https://takabayashi.github.io/lineage-bridge/catalog-integration/adding-new-catalogs/) — add new catalogs with a single file
 
 ### Operations
 - Real-time metrics enrichment (throughput, consumer lag)
 - Change-detection watcher with REST polling and debounced re-extraction
-- Multi-credential support with auto key provisioning
+- Multi-credential support with encrypted cache and auto key provisioning
+- Pluggable storage backends (memory, file, SQLite)
+- REST + OpenLineage API for programmatic access
 - Docker support with extract, UI, and watcher profiles
 
 ## Quick Start
@@ -191,8 +195,8 @@ make format
 - [x] **Phase 4:** Polish, hardening, v0.2.0 release
 - [x] **Post-v0.2.0:** UC integration fixes, Databricks lineage push, change-detection watcher
 - [x] **v0.4.0:** Glue enrichment, Google Data Lineage / BigQuery provider, demo infrastructure (Terraform), OpenLineage API
-- [x] **Unreleased:** Official brand icons for graph nodes, comprehensive integration tests
-- [ ] **Next:** Graph comparison, additional catalog providers
+- [x] **v0.5.0:** Complete UX redesign (Prism framework audit), native UC lineage via External Lineage API, catalog protocol v2, pluggable storage backends, services layer for UI/API parity
+- [ ] **Next:** Graph comparison, additional catalog providers, performance optimizations
 
 ## License
 
