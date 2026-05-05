@@ -38,6 +38,9 @@ jobs:
 
     - name: Run tests with pytest
       run: uv run pytest tests/ -v --cov=lineage_bridge --cov-report=term-missing --cov-report=xml
+      env:
+        LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_KEY: dummy-key-for-ci
+        LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_SECRET: dummy-secret-for-ci
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
