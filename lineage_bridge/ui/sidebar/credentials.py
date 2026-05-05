@@ -24,7 +24,7 @@ from typing import Any
 
 import streamlit as st
 
-from lineage_bridge.config.cache import load_cache, update_cache
+from lineage_bridge.config.cache import load_cache, save_cache, update_cache
 
 
 def _live_disk_creds() -> tuple[dict, dict, dict]:
@@ -302,14 +302,25 @@ def env_credentials_dialog(env_id: str, env_name: str, has_flink: bool) -> None:
     st.markdown("**Schema Registry**")
     st.text_input(
         "Endpoint",
+        value=st.session_state.get(f"sr_endpoint_{env_id}", ""),
         key=f"sr_endpoint_{env_id}",
         placeholder="https://psrc-xxxxx.region.cloud.confluent.cloud",
     )
     c1, c2 = st.columns(2)
     with c1:
-        st.text_input("Key", key=f"sr_key_{env_id}", type="password")
+        st.text_input(
+            "Key",
+            value=st.session_state.get(f"sr_key_{env_id}", ""),
+            key=f"sr_key_{env_id}",
+            type="password",
+        )
     with c2:
-        st.text_input("Secret", key=f"sr_secret_{env_id}", type="password")
+        st.text_input(
+            "Secret",
+            value=st.session_state.get(f"sr_secret_{env_id}", ""),
+            key=f"sr_secret_{env_id}",
+            type="password",
+        )
 
     st.markdown("**Flink**")
     if not has_flink:
@@ -318,6 +329,7 @@ def env_credentials_dialog(env_id: str, env_name: str, has_flink: bool) -> None:
     with c3:
         st.text_input(
             "Flink Key",
+            value=st.session_state.get(f"flink_key_{env_id}", ""),
             key=f"flink_key_{env_id}",
             type="password",
             disabled=not has_flink,
@@ -325,6 +337,7 @@ def env_credentials_dialog(env_id: str, env_name: str, has_flink: bool) -> None:
     with c4:
         st.text_input(
             "Flink Secret",
+            value=st.session_state.get(f"flink_secret_{env_id}", ""),
             key=f"flink_secret_{env_id}",
             type="password",
             disabled=not has_flink,
@@ -341,6 +354,19 @@ def env_credentials_dialog(env_id: str, env_name: str, has_flink: bool) -> None:
         ):
             for suffix in ("sr_endpoint", "sr_key", "sr_secret", "flink_key", "flink_secret"):
                 st.session_state[f"{suffix}_{env_id}"] = ""
+            # Wipe the persisted creds for this env from disk + the in-memory
+            # mirror — otherwise `_seed_env_state` rehydrates them on the next
+            # render and the user sees the cleared values come back.
+            cache_data = load_cache()
+            if cache_data.get("sr_credentials"):
+                cache_data["sr_credentials"].pop(env_id, None)
+            if cache_data.get("flink_credentials"):
+                cache_data["flink_credentials"].pop(env_id, None)
+            save_cache(cache_data)
+            if isinstance(st.session_state.get("_cached_sr_creds"), dict):
+                st.session_state["_cached_sr_creds"].pop(env_id, None)
+            if isinstance(st.session_state.get("_cached_flink_creds"), dict):
+                st.session_state["_cached_flink_creds"].pop(env_id, None)
             st.rerun()
     with bcol2:
         if st.button(
@@ -382,14 +408,25 @@ def audit_log_credentials_dialog() -> None:
 
     st.text_input(
         "Bootstrap servers",
+        value=st.session_state.get("watcher_audit_bootstrap", ""),
         key="watcher_audit_bootstrap",
         placeholder="pkc-xxxxx.region.cloud.confluent.cloud:9092",
     )
     c1, c2 = st.columns(2)
     with c1:
-        st.text_input("API Key", key="watcher_audit_key", type="password")
+        st.text_input(
+            "API Key",
+            value=st.session_state.get("watcher_audit_key", ""),
+            key="watcher_audit_key",
+            type="password",
+        )
     with c2:
-        st.text_input("API Secret", key="watcher_audit_secret", type="password")
+        st.text_input(
+            "API Secret",
+            value=st.session_state.get("watcher_audit_secret", ""),
+            key="watcher_audit_secret",
+            type="password",
+        )
 
     st.divider()
     bcol1, bcol2 = st.columns([1, 1])
@@ -424,6 +461,11 @@ def audit_log_credentials_dialog() -> None:
                         "api_secret": asec,
                     }
                 )
+            elif not (bs or ak or asec):
+                # User emptied every field and hit Save — treat as Clear so
+                # the next render doesn't re-seed the old cached bundle back
+                # into the (now-empty) inputs.
+                update_cache(audit_log_credentials={})
             st.rerun()
 
 
@@ -444,9 +486,19 @@ def cluster_credentials_dialog(cluster_id: str, cluster_name: str) -> None:
 
     c1, c2 = st.columns(2)
     with c1:
-        st.text_input("API Key", key=f"cluster_key_{cluster_id}", type="password")
+        st.text_input(
+            "API Key",
+            value=st.session_state.get(f"cluster_key_{cluster_id}", ""),
+            key=f"cluster_key_{cluster_id}",
+            type="password",
+        )
     with c2:
-        st.text_input("API Secret", key=f"cluster_secret_{cluster_id}", type="password")
+        st.text_input(
+            "API Secret",
+            value=st.session_state.get(f"cluster_secret_{cluster_id}", ""),
+            key=f"cluster_secret_{cluster_id}",
+            type="password",
+        )
 
     st.divider()
     bcol1, bcol2 = st.columns([1, 1])
@@ -459,6 +511,14 @@ def cluster_credentials_dialog(cluster_id: str, cluster_name: str) -> None:
         ):
             st.session_state[f"cluster_key_{cluster_id}"] = ""
             st.session_state[f"cluster_secret_{cluster_id}"] = ""
+            # Wipe the persisted creds for this cluster from disk + the
+            # in-memory mirror — same reason as the env Clear button.
+            cache_data = load_cache()
+            if cache_data.get("cluster_credentials"):
+                cache_data["cluster_credentials"].pop(cluster_id, None)
+            save_cache(cache_data)
+            if isinstance(st.session_state.get("_cached_cluster_creds"), dict):
+                st.session_state["_cached_cluster_creds"].pop(cluster_id, None)
             st.rerun()
     with bcol2:
         if st.button(

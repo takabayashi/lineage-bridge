@@ -67,4 +67,41 @@ def load_cached_selections() -> None:
         st.session_state["_cached_flink_creds"] = disk_cache["flink_credentials"]
     if disk_cache.get("last_extraction_params"):
         st.session_state["last_extraction_params"] = disk_cache["last_extraction_params"]
+
+    # Eager-seed the credential widget keys so the Manage Credentials dialog
+    # shows cached values on its first open. The lazy `_seed_*_state` helpers
+    # in `sidebar/credentials.py` would do this on render, but Streamlit's
+    # dialog flow reads widget state before the inline-row seed propagates
+    # to the dialog body, leaving the form blank until a second open.
+    for env_id, cred in (disk_cache.get("sr_credentials") or {}).items():
+        for key, val in (
+            (f"sr_endpoint_{env_id}", cred.get("endpoint")),
+            (f"sr_key_{env_id}", cred.get("api_key")),
+            (f"sr_secret_{env_id}", cred.get("api_secret")),
+        ):
+            if val and key not in st.session_state:
+                st.session_state[key] = val
+    for env_id, cred in (disk_cache.get("flink_credentials") or {}).items():
+        for key, val in (
+            (f"flink_key_{env_id}", cred.get("api_key")),
+            (f"flink_secret_{env_id}", cred.get("api_secret")),
+        ):
+            if val and key not in st.session_state:
+                st.session_state[key] = val
+    for cluster_id, cred in (disk_cache.get("cluster_credentials") or {}).items():
+        for key, val in (
+            (f"cluster_key_{cluster_id}", cred.get("api_key")),
+            (f"cluster_secret_{cluster_id}", cred.get("api_secret")),
+        ):
+            if val and key not in st.session_state:
+                st.session_state[key] = val
+    audit_log = disk_cache.get("audit_log_credentials") or {}
+    for key, val in (
+        ("watcher_audit_bootstrap", audit_log.get("bootstrap_servers")),
+        ("watcher_audit_key", audit_log.get("api_key")),
+        ("watcher_audit_secret", audit_log.get("api_secret")),
+    ):
+        if val and key not in st.session_state:
+            st.session_state[key] = val
+
     st.session_state._cache_loaded = True
