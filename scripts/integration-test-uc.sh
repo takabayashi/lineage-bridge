@@ -94,10 +94,16 @@ check_prerequisites() {
 
   log_info "Using env file: $ENV_FILE"
 
-  # Check for required environment variables
-  set -a
-  source "$ENV_FILE"
-  set +a
+  # Load env vars via python-dotenv. Bash `source` mangles JSON values like
+  # LINEAGE_BRIDGE_CLUSTER_CREDENTIALS={"lkc-...":{...}} because the unquoted
+  # double quotes get stripped, producing invalid JSON downstream.
+  eval "$(uv run python3 -c '
+import shlex, sys
+from dotenv import dotenv_values
+for k, v in dotenv_values(sys.argv[1]).items():
+    if v is not None:
+        print(f"export {k}={shlex.quote(v)}")
+' "$ENV_FILE")"
   if [ -z "$LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_KEY" ]; then
     log_error "LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_KEY not set in .env"
     exit 1
@@ -269,22 +275,50 @@ test_change_watcher() {
 test_api_server() {
   log_info "Test 5: API Server"
 
+  # Refuse to start if port 8000 is already taken — otherwise our `uvicorn`
+  # exits silently and the curl calls below hit some other process,
+  # producing nonsense results (e.g. tasks that never complete).
+  if lsof -ti :8000 >/dev/null 2>&1; then
+    HOLDER_PID=$(lsof -ti :8000 | head -1)
+    HOLDER_CMD=$(ps -p "$HOLDER_PID" -o command= 2>/dev/null | head -c 100)
+    test_failed "API server (port 8000 already in use by PID $HOLDER_PID: $HOLDER_CMD)"
+    log_warn "  Free the port and re-run: kill $HOLDER_PID"
+    echo ""
+    return
+  fi
+
   # Start API server in background
   uv run lineage-bridge-api >/tmp/test5-api.log 2>&1 &
   API_PID=$!
 
-  # Wait for server to start
-  sleep 5
+  # Wait up to 10s for the server to either bind or fail.
+  for _ in {1..20}; do
+    sleep 0.5
+    if curl -sf http://localhost:8000/api/v1/health >/dev/null 2>&1; then
+      break
+    fi
+    if ! ps -p $API_PID >/dev/null 2>&1; then
+      test_failed "API server (process died during startup)"
+      tail -5 /tmp/test5-api.log
+      echo ""
+      return
+    fi
+  done
 
   # Test 5a: Health check
   if curl -s http://localhost:8000/api/v1/health | grep -q '"status":"ok"'; then
     test_passed "API server health check"
   else
     test_failed "API server health check"
+    tail -5 /tmp/test5-api.log
   fi
 
-  # Test 5b: Trigger extraction task
-  TASK_RESPONSE=$(curl -s -X POST http://localhost:8000/api/v1/tasks/extract)
+  # Test 5b: Trigger extraction task. Scope it to the UC demo env — a bare
+  # POST scans every env reachable by the cloud key, which 401s on unrelated
+  # clusters and pushes runtime past the 60s poll window.
+  TASK_RESPONSE=$(curl -s -X POST http://localhost:8000/api/v1/tasks/extract \
+    -H "Content-Type: application/json" \
+    -d "{\"environment_ids\": [\"$ENV_ID\"]}")
   TASK_ID=$(echo "$TASK_RESPONSE" | python3 -c "import json, sys; data=json.load(sys.stdin); print(data.get('task_id', ''))" 2>/dev/null || echo "")
 
   if [ -n "$TASK_ID" ]; then
@@ -320,8 +354,17 @@ test_api_server() {
     log_warn "API graphs endpoint (0 graphs - may not have completed extraction)"
   fi
 
-  # Cleanup
+  # Cleanup. `uv run` spawns a child python process; killing only $API_PID
+  # leaves the actual server orphaned on port 8000, which then blocks the
+  # next test run with "address already in use".
   kill $API_PID 2>/dev/null || true
+  HOLDER_PID=$(lsof -ti :8000 2>/dev/null | head -1)
+  if [ -n "$HOLDER_PID" ]; then
+    kill "$HOLDER_PID" 2>/dev/null || true
+    sleep 1
+    HOLDER_PID=$(lsof -ti :8000 2>/dev/null | head -1)
+    [ -n "$HOLDER_PID" ] && kill -9 "$HOLDER_PID" 2>/dev/null || true
+  fi
   echo ""
 }
 
@@ -365,6 +408,14 @@ test_docker_build() {
 # Test 7: MkDocs Build
 test_docs_build() {
   log_info "Test 7: Documentation Build"
+
+  # mkdocs lives in the optional `[docs]` extras group, not `[dev]`, so a
+  # plain `uv pip install -e ".[dev]"` venv won't have it. Skip cleanly with
+  # the install hint rather than failing the suite.
+  if ! uv run --no-sync python3 -c "import mkdocs" >/dev/null 2>&1; then
+    test_skipped "Documentation build (mkdocs not installed — run: make docs-install)"
+    return
+  fi
 
   if make docs-build 2>&1 | tee /tmp/test7.log | grep -q "INFO.*Building"; then
     # Check for broken links or errors

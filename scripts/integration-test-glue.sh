@@ -377,8 +377,12 @@ test_api_server() {
     tail -5 /tmp/glue-test7-api.log
   fi
 
-  # Test 7b: Trigger extraction task
-  TASK_RESPONSE=$(curl -s -X POST http://localhost:8000/api/v1/tasks/extract)
+  # Test 7b: Trigger extraction task. Scope it to the Glue demo env — a
+  # bare POST scans every env reachable by the cloud key, which 401s on
+  # unrelated clusters and pushes runtime past the 60s poll window.
+  TASK_RESPONSE=$(curl -s -X POST http://localhost:8000/api/v1/tasks/extract \
+    -H "Content-Type: application/json" \
+    -d "{\"environment_ids\": [\"$ENV_ID\"]}")
   TASK_ID=$(echo "$TASK_RESPONSE" | python3 -c "import json, sys; data=json.load(sys.stdin); print(data.get('task_id', ''))" 2>/dev/null || echo "")
 
   if [ -n "$TASK_ID" ]; then
@@ -406,8 +410,17 @@ test_api_server() {
     test_failed "API extraction task creation"
   fi
 
-  # Cleanup
+  # Cleanup. `uv run` spawns a child python process; killing only $API_PID
+  # leaves the actual server orphaned on port 8000, which then blocks the
+  # next test run with "address already in use".
   kill $API_PID 2>/dev/null || true
+  HOLDER_PID=$(lsof -ti :8000 2>/dev/null | head -1)
+  if [ -n "$HOLDER_PID" ]; then
+    kill "$HOLDER_PID" 2>/dev/null || true
+    sleep 1
+    HOLDER_PID=$(lsof -ti :8000 2>/dev/null | head -1)
+    [ -n "$HOLDER_PID" ] && kill -9 "$HOLDER_PID" 2>/dev/null || true
+  fi
   echo ""
 }
 
