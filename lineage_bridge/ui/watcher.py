@@ -208,6 +208,7 @@ def render_watcher_controls() -> None:
                         poll_interval=10,
                         cooldown=cooldown,
                         push_providers=push_providers,
+                        mode="audit",
                         audit_bootstrap=bs,
                         audit_key=ak,
                         audit_secret=asec,
@@ -217,6 +218,7 @@ def render_watcher_controls() -> None:
                         poll_interval=poll_interval,
                         cooldown=cooldown,
                         push_providers=push_providers,
+                        mode="polling",
                     )
                 st.rerun()
 
@@ -364,11 +366,15 @@ def _start_watcher(
     poll_interval: float,
     cooldown: float,
     push_providers: list[str],
+    mode: str = "auto",
     audit_bootstrap: str | None = None,
     audit_key: str | None = None,
     audit_secret: str | None = None,
 ) -> None:
     """Create and start a WatcherEngine, store in session state."""
+    from lineage_bridge.config.settings import ClusterCredential
+    from lineage_bridge.watcher.engine import WatcherMode
+
     settings = _try_load_settings()
     if not settings:
         st.error("Settings not loaded")
@@ -380,6 +386,24 @@ def _start_watcher(
         settings.audit_log_api_secret = audit_secret
 
     last_params = st.session_state.get("last_extraction_params", {})
+
+    # The sidebar's Extract action stashes per-cluster credentials in
+    # last_extraction_params, but `run_extraction` reads cluster keys from
+    # `Settings.cluster_credentials` — not from a kwarg. Merge in here so
+    # the watcher hits clusters with the same key the foreground extract
+    # used. Without this, a cluster whose key only exists in the encrypted
+    # cache (or was typed into the sidebar dialog this session) 401s when
+    # the watcher's first extraction runs.
+    ui_cluster_creds = last_params.get("cluster_credentials") or {}
+    if ui_cluster_creds:
+        merged: dict[str, ClusterCredential] = dict(settings.cluster_credentials or {})
+        for cid, cred in ui_cluster_creds.items():
+            merged[cid] = ClusterCredential(
+                api_key=cred.get("api_key", ""),
+                api_secret=cred.get("api_secret", ""),
+            )
+        settings = settings.model_copy(update={"cluster_credentials": merged})
+
     extraction_params = {
         "env_ids": last_params.get("env_ids", []),
         "cluster_ids": last_params.get("cluster_ids"),
@@ -391,6 +415,10 @@ def _start_watcher(
         "enable_tableflow": last_params.get("enable_tableflow", True),
         "enable_enrichment": last_params.get("enable_enrichment", True),
         "push_providers": list(push_providers),
+        # Per-env overrides flow straight through to run_extraction kwargs.
+        "sr_endpoints": last_params.get("sr_endpoints") or {},
+        "sr_credentials": last_params.get("sr_credentials") or {},
+        "flink_credentials": last_params.get("flink_credentials") or {},
     }
 
     engine = WatcherEngine(
@@ -398,6 +426,7 @@ def _start_watcher(
         extraction_params=extraction_params,
         cooldown_seconds=cooldown,
         poll_interval=poll_interval,
+        mode=WatcherMode(mode),
     )
 
     try:

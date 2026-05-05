@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from lineage_bridge.models.audit_event import AuditEvent
-from lineage_bridge.watcher.engine import WatcherEngine, WatcherState
+from lineage_bridge.watcher.engine import WatcherEngine, WatcherMode, WatcherState
 
 
 def _make_settings(**overrides):
@@ -355,6 +355,43 @@ class TestWatcherEngineAuditLogMode:
         )
         assert engine._use_audit_log is False
 
+    def test_explicit_polling_mode_overrides_audit_creds(self):
+        """mode=POLLING wins over audit-log creds present in Settings.
+
+        Regression: a stale LINEAGE_BRIDGE_AUDIT_LOG_* in .env used to
+        silently force audit-log mode even when the UI toggle was off.
+        The user could not actually choose REST polling unless they also
+        unset the env vars.
+        """
+        settings = _make_settings(
+            audit_log_bootstrap_servers="bs:9092",
+            audit_log_api_key="key",
+            audit_log_api_secret="secret",
+        )
+        engine = WatcherEngine(
+            settings=settings,
+            extraction_params=_make_params(),
+            mode=WatcherMode.POLLING,
+        )
+        assert engine._use_audit_log is False
+
+    def test_explicit_audit_mode_without_creds_raises_on_start(self):
+        """mode=AUDIT without creds is a configuration error, not a silent
+        downgrade — silently switching to polling would mask user mistakes.
+        """
+        settings = _make_settings(
+            audit_log_bootstrap_servers=None,
+            audit_log_api_key=None,
+            audit_log_api_secret=None,
+        )
+        engine = WatcherEngine(
+            settings=settings,
+            extraction_params=_make_params(),
+            mode=WatcherMode.AUDIT,
+        )
+        with pytest.raises(ValueError, match="Audit log mode requires"):
+            engine.start()
+
     def test_audit_log_loop_processes_events(self):
         """Audit log loop processes events and enters cooldown."""
         settings = _make_settings(
@@ -502,6 +539,43 @@ class TestDoExtractionPushDispatch:
 
         # Both providers must have been attempted even though UC raised.
         assert mock_run_push.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_extraction_params_pass_through_sr_and_flink_credentials(self):
+        """Per-env SR / Flink credentials reach run_extraction.
+
+        Without forwarding, the watcher would only see whatever Settings
+        was constructed from .env — the sidebar's Manage Credentials
+        dialog stores per-env overrides in last_extraction_params, and
+        the watcher must thread them through to match the foreground
+        Extract behaviour.
+        """
+        engine = WatcherEngine(
+            settings=_make_settings(),
+            extraction_params=_make_params(
+                sr_credentials={"env-test": {"endpoint": "https://psrc-x", "api_key": "K"}},
+                flink_credentials={"env-test": {"api_key": "FK", "api_secret": "FS"}},
+                sr_endpoints={"env-test": "https://psrc-x"},
+            ),
+        )
+        with (
+            patch(
+                "lineage_bridge.extractors.orchestrator.run_extraction",
+                new_callable=AsyncMock,
+                return_value=MagicMock(),
+            ) as mock_run_extraction,
+            patch(
+                "lineage_bridge.services.push_service.run_push",
+                new_callable=AsyncMock,
+            ),
+        ):
+            await engine._do_extraction()
+        kwargs = mock_run_extraction.call_args.kwargs
+        assert kwargs["sr_credentials"] == {
+            "env-test": {"endpoint": "https://psrc-x", "api_key": "K"}
+        }
+        assert kwargs["flink_credentials"] == {"env-test": {"api_key": "FK", "api_secret": "FS"}}
+        assert kwargs["sr_endpoints"] == {"env-test": "https://psrc-x"}
 
     @pytest.mark.asyncio
     async def test_orchestrator_no_longer_imports_deleted_push_wrappers(self):

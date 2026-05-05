@@ -27,6 +27,21 @@ class WatcherState(StrEnum):
     EXTRACTING = "extracting"
 
 
+class WatcherMode(StrEnum):
+    """Detection-strategy selection for the watcher.
+
+    AUTO preserves the legacy behavior (use audit-log Kafka consumer when
+    Settings has audit_log_* credentials, fall back to REST polling
+    otherwise). The UI must pass POLLING or AUDIT explicitly so the
+    user's toggle wins over whatever's in `.env` — without that, a stale
+    LINEAGE_BRIDGE_AUDIT_LOG_* in .env silently overrides "Use REST".
+    """
+
+    AUTO = "auto"
+    POLLING = "polling"
+    AUDIT = "audit"
+
+
 @dataclass
 class ExtractionRecord:
     """Record of a watcher-triggered extraction run."""
@@ -54,11 +69,13 @@ class WatcherEngine:
         *,
         cooldown_seconds: float = 30.0,
         poll_interval: float = 10.0,
+        mode: WatcherMode = WatcherMode.AUTO,
     ) -> None:
         self.settings = settings
         self.extraction_params = extraction_params
         self.cooldown_seconds = cooldown_seconds
         self.poll_interval = poll_interval
+        self.mode = mode
 
         self.state: WatcherState = WatcherState.STOPPED
         self.event_feed: deque[AuditEvent] = deque(maxlen=200)
@@ -93,6 +110,14 @@ class WatcherEngine:
         if not env_ids:
             raise ValueError("env_ids must be set in extraction_params")
 
+        if self.mode == WatcherMode.AUDIT and not self._audit_creds_configured:
+            raise ValueError(
+                "Audit log mode requires audit_log_bootstrap_servers + "
+                "audit_log_api_key + audit_log_api_secret on Settings. "
+                "Save them via the watcher's Manage dialog or set "
+                "LINEAGE_BRIDGE_AUDIT_LOG_* in .env."
+            )
+
         self._stop_event.clear()
         self.state = WatcherState.WATCHING
         self._thread = threading.Thread(
@@ -116,14 +141,28 @@ class WatcherEngine:
         logger.info("Watcher stopped")
 
     @property
-    def _use_audit_log(self) -> bool:
-        """Whether audit log Kafka consumer mode is configured."""
+    def _audit_creds_configured(self) -> bool:
+        """Whether Settings carry a usable audit-log credential bundle."""
         s = self.settings
         return bool(
             getattr(s, "audit_log_bootstrap_servers", None)
             and getattr(s, "audit_log_api_key", None)
             and getattr(s, "audit_log_api_secret", None)
         )
+
+    @property
+    def _use_audit_log(self) -> bool:
+        """Resolved choice: which loop to run.
+
+        Honors `mode` over Settings — an AUDIT request without creds is a
+        configuration error caught in `start()`, not a silent downgrade
+        to polling, because that would mask user mistakes.
+        """
+        if self.mode == WatcherMode.AUDIT:
+            return True
+        if self.mode == WatcherMode.POLLING:
+            return False
+        return self._audit_creds_configured
 
     def _run_loop(self) -> None:
         """Main loop: consume events → debounce → extract.
@@ -321,6 +360,12 @@ class WatcherEngine:
         from lineage_bridge.services.requests import PushRequest
 
         params = self.extraction_params
+        # Per-env SR/Flink overrides come in from the UI (sidebar dialog →
+        # last_extraction_params → _start_watcher) the same way the regular
+        # Extract action threads them. Cluster credentials, however, must
+        # already be merged into self.settings.cluster_credentials by the
+        # caller — `run_extraction` reads cluster keys off Settings, not as
+        # a kwarg.
         graph = await run_extraction(
             self.settings,
             environment_ids=params["env_ids"],
@@ -332,6 +377,9 @@ class WatcherEngine:
             enable_stream_catalog=params.get("enable_stream_catalog", False),
             enable_tableflow=params.get("enable_tableflow", True),
             enable_enrichment=params.get("enable_enrichment", True),
+            sr_endpoints=params.get("sr_endpoints"),
+            sr_credentials=params.get("sr_credentials"),
+            flink_credentials=params.get("flink_credentials"),
         )
 
         # Push to each configured provider, isolating failures so one bad
