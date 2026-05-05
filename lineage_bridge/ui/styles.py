@@ -44,6 +44,10 @@ NODE_COLORS: dict[NodeType, str] = {
     NodeType.EXTERNAL_DATASET: "#757575",  # neutral gray
     NodeType.CONSUMER_GROUP: "#2196F3",  # Confluent mid blue
     NodeType.NOTEBOOK: "#FF3621",  # Databricks brand red
+    # Catalog-side query/process. Default Google blue (only catalog supported
+    # today); the rendered color is overridden per `catalog_type` via
+    # CATALOG_STYLES at draw time.
+    NodeType.CATALOG_QUERY: "#4285F4",
 }
 
 # ── Node sizes (agraph pixel diameter) ─────────────────────────────────
@@ -58,6 +62,7 @@ NODE_SIZES: dict[NodeType, int] = {
     NodeType.EXTERNAL_DATASET: 34,
     NodeType.CONSUMER_GROUP: 30,
     NodeType.NOTEBOOK: 38,
+    NodeType.CATALOG_QUERY: 38,
 }
 
 # ── Edge colors per type ───────────────────────────────────────────────
@@ -102,6 +107,7 @@ NODE_TYPE_LABELS: dict[NodeType, str] = {
     NodeType.EXTERNAL_DATASET: "External Dataset",
     NodeType.CONSUMER_GROUP: "Consumer Group",
     NodeType.NOTEBOOK: "Notebook",
+    NodeType.CATALOG_QUERY: "Catalog Query",  # generic; per-catalog override via label_for_node()
 }
 
 EDGE_TYPE_LABELS: dict[EdgeType, str] = {
@@ -125,6 +131,7 @@ NODE_SHAPES: dict[NodeType, str] = {
     NodeType.EXTERNAL_DATASET: "image",
     NodeType.CONSUMER_GROUP: "image",
     NodeType.NOTEBOOK: "image",
+    NodeType.CATALOG_QUERY: "image",
 }
 
 # ── SVG icons for each node type ──────────────────────────────────────
@@ -252,6 +259,19 @@ _SYMBOLS: dict[NodeType, str] = {
         '<line x1="-9" y1="-1" x2="9" y2="-1" stroke="#fff" stroke-width="1.5"/>'
         '<line x1="-9" y1="4" x2="6" y2="4" stroke="#fff" stroke-width="1.5"/>'
         '<line x1="-9" y1="9" x2="9" y2="9" stroke="#fff" stroke-width="1.5"/>'
+    ),
+    # Catalog Query — terminal/SQL prompt: a chevron + cursor on a code page,
+    # signalling "a query that ran" vs the static CATALOG_TABLE document.
+    NodeType.CATALOG_QUERY: (
+        # rounded code page
+        '<rect x="-13" y="-12" width="26" height="24" rx="3" '
+        'fill="none" stroke="#fff" stroke-width="2"/>'
+        # chevron (>)
+        '<polyline points="-7,-4 -2,0 -7,4" fill="none" '
+        'stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>'
+        # cursor underline (_)
+        '<line x1="0" y1="6" x2="8" y2="6" stroke="#fff" stroke-width="2" '
+        'stroke-linecap="round"/>'
     ),
     # Consumer Group — three stacked user circles (group of consumers)
     NodeType.CONSUMER_GROUP: (
@@ -560,6 +580,7 @@ NODE_TYPE_EMOJI: dict[NodeType, str] = {
     NodeType.EXTERNAL_DATASET: "\u2601",  # ☁ (cloud)
     NodeType.CONSUMER_GROUP: "\u2638",  # ☸ (group)
     NodeType.NOTEBOOK: "\u270e",  # ✎ (pencil — notebook/code)
+    NodeType.CATALOG_QUERY: "❯",  # right-chevron — query/prompt
 }
 
 
@@ -727,7 +748,9 @@ def build_edge_vis_props(etype: EdgeType) -> dict[str, Any]:
 
 def _catalog_style(node: Any) -> CatalogStyle | None:
     """Return the CatalogStyle for a node, or None if it isn't a catalog table."""
-    if node.node_type != NodeType.CATALOG_TABLE:
+    # Both CATALOG_TABLE and CATALOG_QUERY use catalog_type as the discriminator
+    # (per ADR-021). Same color/label per catalog applies to either kind of node.
+    if node.node_type not in (NodeType.CATALOG_TABLE, NodeType.CATALOG_QUERY):
         return None
     ct = getattr(node, "catalog_type", None)
     return CATALOG_STYLES.get(ct) if ct else None

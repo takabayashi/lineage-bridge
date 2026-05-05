@@ -228,3 +228,198 @@ class TestNormalizeEventForGoogle:
         GoogleLineageProvider._normalize_event_for_google(event)
         assert [d.namespace for d in event.inputs] == ["kafka://lkc-abc"]
         assert [d.namespace for d in event.outputs] == ["bigquery"]
+
+
+# ── _walk_downstream_lineage ─────────────────────────────────────────────
+
+
+class TestWalkDownstreamLineage:
+    """Walk forward via Google Data Lineage API to surface BQ-side processes."""
+
+    @staticmethod
+    def _bq_table(table: str, project: str = "my-project", dataset: str = "ds") -> LineageNode:
+        qualified = f"{project}.{dataset}.{table}"
+        return LineageNode(
+            node_id=f"google:google_table:my-project:{qualified}",
+            system=SystemType.GOOGLE,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="GOOGLE_DATA_LINEAGE",
+            qualified_name=qualified,
+            display_name=qualified,
+            attributes={"project_id": project, "dataset_id": dataset, "table_name": table},
+        )
+
+    @pytest.fixture()
+    def fake_client(self):
+        """Mock httpx.AsyncClient.post/get returning canned Lineage API responses.
+
+        Each test sets `client.fake_state["search"|"batch"|"process"]` before
+        calling `_walk_downstream_lineage`.
+        """
+        from unittest.mock import AsyncMock, MagicMock
+
+        client = MagicMock()
+        client.fake_state: dict = {}
+
+        async def _post(url: str, json: dict):  # noqa: A002
+            resp = MagicMock()
+            resp.status_code = 200
+            if url.endswith(":searchLinks"):
+                src_fqn = json["source"]["fullyQualifiedName"]
+                resp.json = MagicMock(
+                    return_value={"links": client.fake_state["search"].get(src_fqn, [])}
+                )
+            elif url.endswith(":batchSearchLinkProcesses"):
+                resp.json = MagicMock(return_value={"processLinks": client.fake_state["batch"]})
+            else:
+                resp.status_code = 404
+                resp.json = MagicMock(return_value={})
+            return resp
+
+        async def _get(url: str):
+            resp = MagicMock()
+            proc_id = url.rsplit("/", 1)[-1]
+            data = client.fake_state["process"].get(proc_id)
+            if data is None:
+                resp.status_code = 404
+            else:
+                resp.status_code = 200
+                resp.json = MagicMock(return_value=data)
+            return resp
+
+        client.post = AsyncMock(side_effect=_post)
+        client.get = AsyncMock(side_effect=_get)
+        return client
+
+    async def test_emits_query_node_and_two_edges_for_known_target(
+        self, provider, fake_client
+    ):
+        """Single process linking a known source to a known target → query node + 2 TRANSFORMS edges."""
+        graph = LineageGraph()
+        src = self._bq_table("enriched_orders")
+        tgt = self._bq_table("joined_orders")
+        graph.add_node(src)
+        graph.add_node(tgt)
+
+        fake_client.fake_state = {
+            "search": {
+                "bigquery:my-project.ds.enriched_orders": [
+                    {
+                        "name": "projects/p/locations/us/links/L1",
+                        "source": {"fullyQualifiedName": "bigquery:my-project.ds.enriched_orders"},
+                        "target": {"fullyQualifiedName": "bigquery:my-project.ds.joined_orders"},
+                    }
+                ],
+                "bigquery:my-project.ds.joined_orders": [],
+            },
+            "batch": [
+                {
+                    "process": "projects/p/locations/us/processes/P1",
+                    "links": [{"link": "projects/p/locations/us/links/L1"}],
+                }
+            ],
+            "process": {
+                "P1": {
+                    "displayName": "BigQuery scheduled query: joined_orders CTAS",
+                    "attributes": {"sql": "SELECT 1", "schedule": "every 1 hours"},
+                    "origin": {
+                        "sourceType": "CUSTOM",
+                        "name": "custom:bigquery-query:proj.joined_orders_ctas",
+                    },
+                }
+            },
+        }
+
+        await provider._walk_downstream_lineage(fake_client, graph)
+
+        query_nodes = [n for n in graph.nodes if n.node_type == NodeType.CATALOG_QUERY]
+        assert len(query_nodes) == 1
+        q = query_nodes[0]
+        assert q.catalog_type == "GOOGLE_DATA_LINEAGE"
+        assert q.attributes["sql"] == "SELECT 1"
+        assert q.attributes["catalog_fqn"] == "custom:bigquery-query:proj.joined_orders_ctas"
+
+        edges = list(graph.edges)
+        assert any(
+            e.src_id == src.node_id and e.dst_id == q.node_id and e.edge_type == EdgeType.TRANSFORMS
+            for e in edges
+        )
+        assert any(
+            e.src_id == q.node_id and e.dst_id == tgt.node_id and e.edge_type == EdgeType.TRANSFORMS
+            for e in edges
+        )
+
+    async def test_unknown_target_table_added_as_catalog_table(self, provider, fake_client):
+        """Walk discovers a downstream BQ table not yet in the graph → adds CATALOG_TABLE."""
+        graph = LineageGraph()
+        src = self._bq_table("enriched_orders")
+        graph.add_node(src)
+
+        fake_client.fake_state = {
+            "search": {
+                "bigquery:my-project.ds.enriched_orders": [
+                    {
+                        "name": "projects/p/locations/us/links/L1",
+                        "source": {"fullyQualifiedName": "bigquery:my-project.ds.enriched_orders"},
+                        "target": {"fullyQualifiedName": "bigquery:my-project.ds.brand_new_table"},
+                    }
+                ]
+            },
+            "batch": [
+                {
+                    "process": "projects/p/locations/us/processes/P1",
+                    "links": [{"link": "projects/p/locations/us/links/L1"}],
+                }
+            ],
+            "process": {"P1": {"displayName": "Q1", "attributes": {}, "origin": {}}},
+        }
+
+        await provider._walk_downstream_lineage(fake_client, graph)
+
+        catalog_tables = [n for n in graph.nodes if n.node_type == NodeType.CATALOG_TABLE]
+        new_table = next(
+            (n for n in catalog_tables if n.qualified_name == "my-project.ds.brand_new_table"),
+            None,
+        )
+        assert new_table is not None
+        assert new_table.catalog_type == "GOOGLE_DATA_LINEAGE"
+        assert new_table.attributes["table_name"] == "brand_new_table"
+
+    async def test_idempotent_on_re_run(self, provider, fake_client):
+        """Calling the walk twice with the same data must not duplicate nodes/edges."""
+        graph = LineageGraph()
+        src = self._bq_table("enriched_orders")
+        tgt = self._bq_table("joined_orders")
+        graph.add_node(src)
+        graph.add_node(tgt)
+
+        fake_client.fake_state = {
+            "search": {
+                "bigquery:my-project.ds.enriched_orders": [
+                    {
+                        "name": "projects/p/locations/us/links/L1",
+                        "source": {"fullyQualifiedName": "bigquery:my-project.ds.enriched_orders"},
+                        "target": {"fullyQualifiedName": "bigquery:my-project.ds.joined_orders"},
+                    }
+                ],
+                "bigquery:my-project.ds.joined_orders": [],
+            },
+            "batch": [
+                {
+                    "process": "projects/p/locations/us/processes/P1",
+                    "links": [{"link": "projects/p/locations/us/links/L1"}],
+                }
+            ],
+            "process": {"P1": {"displayName": "Q1", "attributes": {}, "origin": {}}},
+        }
+
+        await provider._walk_downstream_lineage(fake_client, graph)
+        nodes_after_first = list(graph.nodes)
+        edges_after_first = list(graph.edges)
+
+        await provider._walk_downstream_lineage(fake_client, graph)
+        nodes_after_second = list(graph.nodes)
+        edges_after_second = list(graph.edges)
+
+        assert len(nodes_after_first) == len(nodes_after_second)
+        assert len(edges_after_first) == len(edges_after_second)

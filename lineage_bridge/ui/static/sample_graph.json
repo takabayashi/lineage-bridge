@@ -1149,6 +1149,28 @@
       "url": null,
       "first_seen": "2026-04-30T12:00:00+00:00",
       "last_seen": "2026-04-30T12:00:00+00:00"
+    },
+    {
+      "node_id": "google:catalog_query:demo:scheduled_join",
+      "system": "google",
+      "node_type": "catalog_query",
+      "qualified_name": "BigQuery scheduled query: joined_orders CTAS",
+      "display_name": "BigQuery scheduled query: joined_orders CTAS",
+      "environment_id": null,
+      "environment_name": null,
+      "cluster_id": null,
+      "cluster_name": null,
+      "catalog_type": "GOOGLE_DATA_LINEAGE",
+      "attributes": {
+        "process_resource": "projects/000/locations/us/processes/demo",
+        "catalog_fqn": "custom:bigquery-query:demo.joined_orders_ctas",
+        "transfer_config_id": "demo-transfer-config",
+        "schedule": "every 1 hours"
+      },
+      "tags": [],
+      "url": null,
+      "first_seen": "2026-05-05T00:14:43.789578+00:00",
+      "last_seen": "2026-05-05T00:14:43.789578+00:00"
     }
   ],
   "edges": [
@@ -1494,6 +1516,24 @@
       "attributes": {},
       "first_seen": "2026-04-30T12:00:00+00:00",
       "last_seen": "2026-04-30T12:00:00+00:00"
+    },
+    {
+      "src_id": "databricks:uc_table:env-abc123:main.streaming.orders_avro",
+      "dst_id": "google:catalog_query:demo:scheduled_join",
+      "edge_type": "transforms",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-05T00:14:43.789578+00:00",
+      "last_seen": "2026-05-05T00:14:43.789578+00:00"
+    },
+    {
+      "src_id": "google:catalog_query:demo:scheduled_join",
+      "dst_id": "databricks:uc_table:env-abc123:main.streaming.enriched_orders",
+      "edge_type": "transforms",
+      "confidence": 1.0,
+      "attributes": {},
+      "first_seen": "2026-05-05T00:14:43.789578+00:00",
+      "last_seen": "2026-05-05T00:14:43.789578+00:00"
     }
   ]
 }

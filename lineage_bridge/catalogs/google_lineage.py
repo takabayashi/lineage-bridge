@@ -124,6 +124,14 @@ class GoogleLineageProvider:
                     continue
                 await self._enrich_node(client, graph, node)
 
+            # Walk forward from each known BQ table via the Data Lineage API
+            # to surface BQ-side transformations (scheduled queries, Dataform
+            # models, ad-hoc CTAS) as CATALOG_QUERY nodes in the local graph.
+            try:
+                await self._walk_downstream_lineage(client, graph)
+            except Exception as exc:
+                logger.warning("Downstream lineage walk failed: %s", exc, exc_info=True)
+
     async def _enrich_node(
         self,
         client: httpx.AsyncClient,
@@ -203,6 +211,252 @@ class GoogleLineageProvider:
                 )
                 if attempt < _MAX_RETRIES - 1:
                     await asyncio.sleep(_BACKOFF_BASE * (2**attempt))
+
+    async def _walk_downstream_lineage(
+        self,
+        client: httpx.AsyncClient,
+        graph: LineageGraph,
+    ) -> None:
+        """Walk forward from each BQ table via the Data Lineage API.
+
+        For each ``CATALOG_TABLE`` node with ``catalog_type=GOOGLE_DATA_LINEAGE``,
+        queries Google's ``searchLinks`` for downstream relationships, resolves
+        the linking processes via ``batchSearchLinkProcesses``, and adds:
+          - one ``CATALOG_QUERY`` node per unique process (sql/state/origin
+            attributes copied off the process resource);
+          - a ``CATALOG_TABLE`` node for any target table not already in the
+            graph (e.g. a BQ table produced by a scheduled query that isn't
+            wired into our Tableflow extraction);
+          - ``TRANSFORMS`` edges ``source_table → query → target_table``.
+
+        One hop only — does not recurse from newly-discovered tables. Per-table
+        failures (404, 403, transient errors) are logged and swallowed so the
+        rest of the walk continues.
+        """
+        google_tables = graph.filter_catalog_nodes("GOOGLE_DATA_LINEAGE")
+        if not google_tables:
+            return
+
+        parent = f"projects/{self._project_id}/locations/{self._location}"
+
+        # Index every existing BQ catalog node by its FQN, so we can recognize
+        # links whose source/target we already know about and avoid creating
+        # duplicate table nodes when the lineage walk loops back on itself.
+        fqn_to_node: dict[str, LineageNode] = {}
+        for n in google_tables:
+            fqn = self._bq_fqn_from_node(n)
+            if fqn:
+                fqn_to_node[fqn] = n
+
+        seen_processes: set[str] = set()
+
+        for source_node in google_tables:
+            source_fqn = self._bq_fqn_from_node(source_node)
+            if not source_fqn:
+                continue
+
+            try:
+                resp = await client.post(
+                    f"{_API_BASE}/{parent}:searchLinks",
+                    json={"source": {"fullyQualifiedName": source_fqn}},
+                )
+            except httpx.HTTPError as exc:
+                logger.debug("searchLinks transport error for %s: %s", source_fqn, exc)
+                continue
+            if resp.status_code != 200:
+                logger.debug(
+                    "searchLinks for %s -> %d (skip)", source_fqn, resp.status_code
+                )
+                continue
+            links = resp.json().get("links", [])
+            if not links:
+                continue
+
+            try:
+                proc_resp = await client.post(
+                    f"{_API_BASE}/{parent}:batchSearchLinkProcesses",
+                    json={"links": [link["name"] for link in links]},
+                )
+            except httpx.HTTPError as exc:
+                logger.debug("batchSearchLinkProcesses transport error: %s", exc)
+                continue
+            if proc_resp.status_code != 200:
+                continue
+            process_links = proc_resp.json().get("processLinks", [])
+
+            # Group links by the process that produced them so we can emit one
+            # CATALOG_QUERY node per process with all its source/target edges.
+            link_by_name = {link["name"]: link for link in links}
+            process_to_links: dict[str, list[dict[str, Any]]] = {}
+            for pl in process_links:
+                proc_resource = pl.get("process")
+                if not proc_resource:
+                    continue
+                for link_ref in pl.get("links", []):
+                    link = link_by_name.get(link_ref.get("link"))
+                    if link:
+                        process_to_links.setdefault(proc_resource, []).append(link)
+
+            for proc_resource, proc_links in process_to_links.items():
+                if proc_resource in seen_processes:
+                    # Process already added during a prior source-table iteration;
+                    # only need to add any missing edges below.
+                    process_node_id = self._catalog_query_node_id(proc_resource)
+                else:
+                    seen_processes.add(proc_resource)
+                    proc_node = await self._build_catalog_query_node(
+                        client, proc_resource
+                    )
+                    if proc_node is None:
+                        continue
+                    graph.add_node(proc_node)
+                    process_node_id = proc_node.node_id
+
+                for link in proc_links:
+                    src_fqn = link.get("source", {}).get("fullyQualifiedName")
+                    tgt_fqn = link.get("target", {}).get("fullyQualifiedName")
+
+                    src_node = fqn_to_node.get(src_fqn) if src_fqn else None
+                    if src_node is not None:
+                        try:
+                            graph.add_edge(
+                                LineageEdge(
+                                    src_id=src_node.node_id,
+                                    dst_id=process_node_id,
+                                    edge_type=EdgeType.TRANSFORMS,
+                                )
+                            )
+                        except ValueError:
+                            pass  # process node missing somehow — skip the edge
+
+                    tgt_node = fqn_to_node.get(tgt_fqn) if tgt_fqn else None
+                    if tgt_node is None and tgt_fqn:
+                        tgt_node = self._build_catalog_table_from_fqn(tgt_fqn)
+                        if tgt_node is not None:
+                            graph.add_node(tgt_node)
+                            fqn_to_node[tgt_fqn] = tgt_node
+                    if tgt_node is not None:
+                        try:
+                            graph.add_edge(
+                                LineageEdge(
+                                    src_id=process_node_id,
+                                    dst_id=tgt_node.node_id,
+                                    edge_type=EdgeType.TRANSFORMS,
+                                )
+                            )
+                        except ValueError:
+                            pass
+
+    @staticmethod
+    def _bq_fqn_from_node(node: LineageNode) -> str | None:
+        """Build ``bigquery:<project>.<dataset>.<table>`` from a CATALOG_TABLE node."""
+        attrs = node.attributes
+        project_id = attrs.get("project_id")
+        dataset_id = attrs.get("dataset_id")
+        table_name = attrs.get("table_name")
+        if not all([project_id, dataset_id, table_name]):
+            return None
+        return f"bigquery:{project_id}.{dataset_id}.{table_name}"
+
+    @staticmethod
+    def _parse_bq_fqn(fqn: str) -> tuple[str, str, str] | None:
+        """Reverse of ``_bq_fqn_from_node`` — returns ``(project, dataset, table)``."""
+        if not fqn or not fqn.startswith("bigquery:"):
+            return None
+        parts = fqn[len("bigquery:") :].split(".")
+        if len(parts) != 3 or not all(parts):
+            return None
+        return parts[0], parts[1], parts[2]
+
+    def _catalog_query_node_id(self, proc_resource: str) -> str:
+        """Stable node_id derived from the Lineage API process resource name."""
+        proc_id = proc_resource.rsplit("/", 1)[-1]
+        return f"google:catalog_query:{self._project_id}:{proc_id}"
+
+    async def _build_catalog_query_node(
+        self,
+        client: httpx.AsyncClient,
+        proc_resource: str,
+    ) -> LineageNode | None:
+        """GET the process detail and turn it into a CATALOG_QUERY node."""
+        try:
+            resp = await client.get(f"{_API_BASE}/{proc_resource}")
+        except httpx.HTTPError as exc:
+            logger.debug("Process GET transport error: %s", exc)
+            return None
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        proc_id = proc_resource.rsplit("/", 1)[-1]
+        display_name = data.get("displayName") or proc_id
+        attrs: dict[str, Any] = dict(data.get("attributes") or {})
+        origin = data.get("origin") or {}
+        origin_name = origin.get("name")
+        if origin_name:
+            attrs["catalog_fqn"] = origin_name
+            attrs["origin_source_type"] = origin.get("sourceType", "")
+        attrs["process_resource"] = proc_resource
+        return LineageNode(
+            node_id=self._catalog_query_node_id(proc_resource),
+            system=SystemType.GOOGLE,
+            node_type=NodeType.CATALOG_QUERY,
+            catalog_type="GOOGLE_DATA_LINEAGE",
+            qualified_name=display_name,
+            display_name=display_name,
+            attributes=attrs,
+            url=self._catalog_query_url(attrs, proc_resource),
+        )
+
+    def _catalog_query_url(
+        self, attrs: dict[str, Any], proc_resource: str
+    ) -> str | None:
+        """Best-effort GCP console deep link for a catalog query node.
+
+        Preference order:
+          1. Scheduled query page if `transfer_config_id` is in attrs (set by
+             our DataplexAssetRegistrar.link_processes_to_catalog patch path
+             for BQ Data Transfer-backed queries).
+          2. Generic Dataplex Lineage process viewer otherwise — useful for
+             Google-auto-emitted processes (ad-hoc CTAS, Dataform) where we
+             don't know the upstream control-plane resource.
+        """
+        if not self._project_id:
+            return None
+        transfer_id = attrs.get("transfer_config_id")
+        if transfer_id:
+            return (
+                "https://console.cloud.google.com/bigquery/scheduled-queries/"
+                f"locations/{self._location}/configs/{transfer_id}/runs"
+                f"?project={self._project_id}"
+            )
+        # Fallback: link to the source BQ table list — at least lands the
+        # user in the right project's BQ console.
+        return (
+            "https://console.cloud.google.com/bigquery"
+            f"?project={self._project_id}"
+        )
+
+    def _build_catalog_table_from_fqn(self, tgt_fqn: str) -> LineageNode | None:
+        """Materialize a CATALOG_TABLE node for a BQ FQN we discovered downstream."""
+        parsed = self._parse_bq_fqn(tgt_fqn)
+        if not parsed:
+            return None
+        project, dataset, table = parsed
+        qualified = f"{project}.{dataset}.{table}"
+        return LineageNode(
+            node_id=f"google:google_table:{self._project_id}:{qualified}",
+            system=SystemType.GOOGLE,
+            node_type=NodeType.CATALOG_TABLE,
+            catalog_type="GOOGLE_DATA_LINEAGE",
+            qualified_name=qualified,
+            display_name=qualified,
+            attributes={
+                "project_id": project,
+                "dataset_id": dataset,
+                "table_name": table,
+                "location": self._location,
+            },
+        )
 
     async def push_lineage(
         self,

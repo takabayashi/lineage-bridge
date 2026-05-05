@@ -37,6 +37,11 @@ class NodeType(StrEnum):
     # via the Databricks lineage-tracking API's notebookInfos field. Sibling
     # of FLINK_JOB / KSQLDB_QUERY (transform-style node, not a data store).
     NOTEBOOK = "notebook"
+    # Catalog-side query/process discovered by walking forward via a catalog's
+    # lineage API (e.g. Google Data Lineage processes for BQ scheduled queries,
+    # Dataform models, ad-hoc CTAS). Polymorphic across catalogs via the
+    # `catalog_type` field, mirroring CATALOG_TABLE.
+    CATALOG_QUERY = "catalog_query"
 
 
 class EdgeType(StrEnum):
@@ -78,9 +83,10 @@ class LineageNode(BaseModel):
     catalog_type: str | None = Field(
         default=None,
         description=(
-            "For NodeType.CATALOG_TABLE only — discriminator for which catalog "
-            "owns this node (e.g. 'UNITY_CATALOG', 'AWS_GLUE', 'GOOGLE_DATA_LINEAGE', "
-            "'AWS_DATAZONE', 'SNOWFLAKE', 'WATSONX'). None for non-catalog node types."
+            "For NodeType.CATALOG_TABLE and NodeType.CATALOG_QUERY only — "
+            "discriminator for which catalog owns this node (e.g. 'UNITY_CATALOG', "
+            "'AWS_GLUE', 'GOOGLE_DATA_LINEAGE', 'AWS_DATAZONE', 'SNOWFLAKE', "
+            "'WATSONX'). None for non-catalog node types."
         ),
     )
     attributes: dict[str, Any] = Field(default_factory=dict)
