@@ -5,6 +5,8 @@
 [![Documentation](https://img.shields.io/badge/docs-latest-brightgreen.svg)](https://takabayashi.github.io/lineage-bridge/)
 [![GitHub Release](https://img.shields.io/github/v/release/takabayashi/lineage-bridge)](https://github.com/takabayashi/lineage-bridge/releases)
 
+> **⚠️ Disclaimer:** This project is for testing and evaluation purposes only. It is not a production-ready platform and is not an official Confluent product.
+
 **Extract stream lineage from Confluent Cloud, bridge it to data catalogs, and visualize it as an interactive graph.**
 
 LineageBridge fills a gap: Confluent Cloud has rich stream processing lineage (connectors, Flink jobs, ksqlDB queries, consumer groups) but no way to export it as a queryable graph or bridge it into external data catalogs. LineageBridge extracts this lineage using only public APIs, connects it to Databricks Unity Catalog, AWS Glue, and Google Data Lineage / BigQuery via Tableflow, and renders everything in an interactive Streamlit UI.
