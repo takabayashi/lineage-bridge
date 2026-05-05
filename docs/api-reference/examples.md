@@ -883,6 +883,84 @@ response = client.post("/tasks/enrich", params={"graph_id": "my-graph-id"})
 task_id = response.json()["task_id"]
 ```
 
+### Push Lineage to Catalog
+
+Push lineage metadata to a data catalog (Databricks UC, AWS Glue, Google Data Lineage, AWS DataZone).
+
+**When you'd use this:** After extraction and enrichment, you want to write lineage to your organization's data catalog for governance and discovery.
+
+=== "Databricks Unity Catalog"
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/push/databricks \
+      -H "Content-Type: application/json" \
+      -d '{
+        "graph_id": "my-graph-id",
+        "mode": "NATIVE_LINEAGE"
+      }'
+    ```
+    
+    Python:
+    
+    ```python
+    response = client.post("/push/databricks", json={
+        "graph_id": "my-graph-id",
+        "mode": "NATIVE_LINEAGE"  # or "TABLE_PROPERTIES"
+    })
+    result = response.json()
+    print(f"Pushed lineage: {result['tables_updated']} tables, {result['edges_created']} edges")
+    ```
+
+=== "AWS Glue"
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/push/glue \
+      -H "Content-Type: application/json" \
+      -d '{
+        "graph_id": "my-graph-id"
+      }'
+    ```
+    
+    Python:
+    
+    ```python
+    response = client.post("/push/glue", json={"graph_id": "my-graph-id"})
+    result = response.json()
+    print(f"Updated {result['tables_updated']} Glue tables")
+    ```
+
+=== "Google Data Lineage"
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/push/google \
+      -H "Content-Type: application/json" \
+      -d '{
+        "graph_id": "my-graph-id"
+      }'
+    ```
+    
+    Python:
+    
+    ```python
+    response = client.post("/push/google", json={"graph_id": "my-graph-id"})
+    result = response.json()
+    print(f"Sent {result['events_sent']} OpenLineage events to Google Data Lineage")
+    ```
+
+=== "AWS DataZone"
+    ```bash
+    curl -X POST http://localhost:8000/api/v1/push/datazone \
+      -H "Content-Type: application/json" \
+      -d '{
+        "graph_id": "my-graph-id"
+      }'
+    ```
+    
+    Python:
+    
+    ```python
+    response = client.post("/push/datazone", json={"graph_id": "my-graph-id"})
+    result = response.json()
+    print(f"Registered {result['assets_registered']} DataZone assets")
+    ```
+
 ### Poll Task Status
 
 Check if your extraction or enrichment task is complete. Tasks go through states: `pending` → `running` → `completed` (or `failed`).

@@ -264,6 +264,21 @@ Requires:
 
 Click **Push Lineage to Google** to send events.
 
+#### AWS DataZone
+
+**Sidebar → Publish → AWS DataZone**
+
+Push lineage as OpenLineage events to AWS DataZone data products:
+
+Requires:
+
+- `LINEAGE_BRIDGE_AWS_DATAZONE_DOMAIN_ID`
+- `LINEAGE_BRIDGE_AWS_DATAZONE_PROJECT_ID`
+- `LINEAGE_BRIDGE_AWS_REGION`
+- AWS credentials (boto3 default credential chain)
+
+Click **Push Lineage to DataZone** to send events.
+
 ### Graph
 
 After extraction, the **Graph** section appears with filters and legend.

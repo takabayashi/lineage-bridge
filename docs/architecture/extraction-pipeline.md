@@ -178,10 +178,11 @@ phase3_results = await asyncio.gather(*phase3_tasks)
 
 **Nodes Created**:
 - `TABLEFLOW_TABLE` - Intermediate mapping node
-- Catalog-specific nodes via provider `build_node()`:
-  - `UC_TABLE` - Databricks Unity Catalog
-  - `GLUE_TABLE` - AWS Glue Data Catalog
-  - `GOOGLE_TABLE` - Google BigQuery
+- `CATALOG_TABLE` - Data catalog tables (discriminated by `catalog_type`):
+  - `catalog_type="UNITY_CATALOG"` - Databricks Unity Catalog
+  - `catalog_type="AWS_GLUE"` - AWS Glue Data Catalog
+  - `catalog_type="GOOGLE_DATA_LINEAGE"` - Google BigQuery
+  - `catalog_type="AWS_DATAZONE"` - AWS DataZone
 
 **Edges Created**:
 - `MATERIALIZES` - Topic -> catalog table (via Tableflow table)
@@ -334,7 +335,7 @@ sequenceDiagram
     
     O->>T: Phase 4: Extract Tableflow mappings
     T->>P: Delegate catalog node creation
-    P->>G: Add UC_TABLE/GLUE_TABLE nodes
+    P->>G: Add CATALOG_TABLE nodes (catalog_type discriminator)
     
     O->>P: Phase 4b: Enrich catalog nodes
     P->>G: Add table metadata
