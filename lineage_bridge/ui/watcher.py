@@ -23,7 +23,7 @@ from lineage_bridge.ui.sidebar.credentials import (
     audit_log_credentials_dialog,
     audit_log_creds_status,
 )
-from lineage_bridge.watcher.engine import WatcherEngine, WatcherState
+from lineage_bridge.watcher.engine import WatcherEngine, WatcherMode, WatcherState
 
 # Friendly checkbox labels for the "After change → publish to:" row.
 # Sourced from the canonical PUSH_PROVIDERS so adding a new catalog in
@@ -373,7 +373,6 @@ def _start_watcher(
 ) -> None:
     """Create and start a WatcherEngine, store in session state."""
     from lineage_bridge.config.settings import ClusterCredential
-    from lineage_bridge.watcher.engine import WatcherMode
 
     settings = _try_load_settings()
     if not settings:
