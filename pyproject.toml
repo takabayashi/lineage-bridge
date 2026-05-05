@@ -1,6 +1,6 @@
 [project]
 name = "lineage-bridge"
-version = "0.6.0"
+version = "0.6.1"
 description = "Extract stream lineage from Confluent Cloud and visualize it"
 requires-python = ">=3.11"
 license = "Apache-2.0"
