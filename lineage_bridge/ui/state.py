@@ -32,6 +32,8 @@ _DEFAULTS = {
     # alert banner and the activity-log drawer's auto-expand.
     # Shape: {"kind": "error"|"warning", "message": str, "log": <log key>}
     "_activity_alert": None,
+    # Welcome dialog state: True when user dismisses the first-time setup dialog
+    "_welcome_dismissed": False,
 }
 
 

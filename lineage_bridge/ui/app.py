@@ -25,6 +25,10 @@ from lineage_bridge.ui.logs import render_logs_drawer
 from lineage_bridge.ui.node_details import render_node_details
 from lineage_bridge.ui.sidebar import _render_sidebar
 from lineage_bridge.ui.state import ensure_defaults, load_cached_selections
+from lineage_bridge.ui.welcome_dialog import (
+    render_welcome_dialog,
+    should_show_welcome_dialog,
+)
 
 _STATIC_DIR = Path(__file__).parent / "static"
 
@@ -336,6 +340,12 @@ def _handle_graph_click(payload) -> None:
 _render_sidebar()
 _render_activity_alert_banner()
 _render_main_area()
+
+# ── Welcome dialog (first-time credential setup) ──────────────────────
+# Show when no graph is loaded and no cloud credentials are configured.
+# The user can enter credentials, skip for now, or load the demo graph.
+if should_show_welcome_dialog():
+    render_welcome_dialog()
 
 # ── Activity log (bottom drawer) ──────────────────────────────────────
 # One home for both extraction and push logs; collapses to a compact
