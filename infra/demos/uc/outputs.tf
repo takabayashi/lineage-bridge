@@ -25,6 +25,11 @@ output "databricks_catalog_name" {
   value       = databricks_catalog.demo.name
 }
 
+output "databricks_warehouse_id" {
+  description = "Databricks SQL warehouse ID for lineage-push CLI"
+  value       = databricks_sql_endpoint.lineage_push.id
+}
+
 output "s3_bucket_name" {
   description = "S3 bucket for Tableflow BYOB data"
   value       = aws_s3_bucket.tableflow.bucket
@@ -97,6 +102,7 @@ output "demo_env_file" {
     LINEAGE_BRIDGE_KSQLDB_API_SECRET=${confluent_api_key.ksqldb.secret}
     LINEAGE_BRIDGE_DATABRICKS_WORKSPACE_URL=${var.databricks_workspace_url}
     LINEAGE_BRIDGE_DATABRICKS_TOKEN=${var.databricks_token}
+    LINEAGE_BRIDGE_DATABRICKS_WAREHOUSE_ID=${databricks_sql_endpoint.lineage_push.id}
     LINEAGE_BRIDGE_AWS_REGION=${var.aws_region}
   EOT
   sensitive   = true

@@ -876,6 +876,29 @@ resource "confluent_catalog_integration" "demo" {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# DATABRICKS — SQL Warehouse (used by lineage-push CLI for UC table updates)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Serverless 2X-Small with aggressive auto-stop. Sized for the lineage-push
+# workload (small UC ALTER TABLE/COMMENT statements), not analytics. Without a
+# warehouse, `lineage-bridge-extract --push-lineage` skips Test 3 in the UC
+# integration suite.
+resource "databricks_sql_endpoint" "lineage_push" {
+  name             = "${module.core.demo_prefix}-warehouse"
+  cluster_size     = "2X-Small"
+  auto_stop_mins   = 5
+  warehouse_type   = "PRO"
+  enable_serverless_compute = true
+
+  tags {
+    custom_tags {
+      key   = "managed-by"
+      value = "lineage-bridge-demo"
+    }
+  }
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # DATABRICKS — Processing Jobs
 # ═══════════════════════════════════════════════════════════════════════════════
 
