@@ -473,7 +473,9 @@ async def enrich(self, graph):
     if not self._workspace_url or not self._token:
         return  # Gracefully skip if no credentials
     
-    uc_nodes = graph.filter_by_type(NodeType.UC_TABLE)
+    # Post-ADR-021, all catalog tables share NodeType.CATALOG_TABLE; the
+    # `catalog_type` discriminator picks the per-provider variant.
+    uc_nodes = graph.filter_catalog_nodes("UNITY_CATALOG")
     async with httpx.AsyncClient(...) as client:
         for node in uc_nodes:
             await self._enrich_node(client, graph, node)

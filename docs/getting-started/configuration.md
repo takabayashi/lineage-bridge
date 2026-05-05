@@ -496,6 +496,34 @@ Now that your credentials are configured:
 - **[Quickstart →](quickstart.md)** - Extract your first lineage graph
 - **[Credential Management →](../how-to/credential-management.md)** - Advanced credential management patterns
 
+## Storage Backend
+
+LineageBridge persists graphs / extraction tasks / OpenLineage events / watchers via a pluggable storage layer. Pick a backend with `LINEAGE_BRIDGE_STORAGE__BACKEND` (note the double underscore — it's the `pydantic-settings` nested-config delimiter):
+
+```bash
+# Default — process-local, lost on restart. Fine for the UI demo and tests.
+LINEAGE_BRIDGE_STORAGE__BACKEND=memory
+
+# JSON files under LINEAGE_BRIDGE_STORAGE__PATH (default: ~/.lineage_bridge/storage).
+# Each graph is one file; events.jsonl is append-only. Cross-process safe via flock.
+LINEAGE_BRIDGE_STORAGE__BACKEND=file
+LINEAGE_BRIDGE_STORAGE__PATH=~/.lineage_bridge/storage
+
+# Single-file SQLite at {path}/storage.db. WAL mode, durable across restarts.
+# Recommended for the watcher (the watcher's daemon-mode state lives here so
+# the UI sees it after a restart).
+LINEAGE_BRIDGE_STORAGE__BACKEND=sqlite
+LINEAGE_BRIDGE_STORAGE__PATH=~/.lineage_bridge/storage
+```
+
+## REST API Endpoint (UI ↔ API)
+
+When the Streamlit UI talks to the FastAPI process (e.g. for the watcher controls), it resolves the URL from `LINEAGE_BRIDGE_API_URL`. Default is `http://127.0.0.1:8000`. Set it when the API runs in a separate container:
+
+```bash
+LINEAGE_BRIDGE_API_URL=https://lineage-bridge-api.internal.example.com
+```
+
 ## Troubleshooting
 
 ### Credential Not Found Errors

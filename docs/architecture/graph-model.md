@@ -295,7 +295,7 @@ enriched-orders (KAFKA_TOPIC)
     | MATERIALIZES
     |
     v
-main.sales.orders (UC_TABLE)
+main.sales.orders (CATALOG_TABLE, catalog_type=UNITY_CATALOG)
 ```
 
 ### Node Attributes

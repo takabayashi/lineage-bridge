@@ -157,6 +157,13 @@ class Settings(BaseSettings):
     )
     api_host: str = Field(default="0.0.0.0", description="API server bind host")
     api_port: int = Field(default=8000, description="API server bind port")
+    api_url: str = Field(
+        default="http://127.0.0.1:8000",
+        description=(
+            "Base URL the UI uses to call the API. Defaults to the local "
+            "uvicorn instance; set when API runs in a separate container."
+        ),
+    )
 
     # ── Logging ─────────────────────────────────────────────────────────
     log_level: str = Field(

@@ -63,7 +63,7 @@ Living document. Every significant design or implementation decision made by the
 
 ## ADR-006: Separate node types per catalog (UC_TABLE, GLUE_TABLE)
 
-- **Status:** Accepted
+- **Status:** SUPERSEDED by ADR-021 (2026-05-01) — node types collapsed into one `CATALOG_TABLE` with a `catalog_type` discriminator. Per-catalog dispatch and styling moved to runtime helpers (`get_provider(catalog_type)`, `icon_for_node(node)`).
 - **Date:** 2026-04-04
 - **Decided by:** Blueprint
 - **Context:** Graph needs to represent tables from different catalogs.
@@ -171,7 +171,7 @@ Living document. Every significant design or implementation decision made by the
 
 ## ADR-016: Google Data Lineage provider
 
-- **Status:** Accepted
+- **Status:** Accepted (the `GOOGLE_TABLE` enum value referenced below was collapsed into `CATALOG_TABLE` + `catalog_type=GOOGLE_DATA_LINEAGE` by ADR-021, 2026-05-01; the provider itself is unchanged)
 - **Date:** 2026-04-14
 - **Decided by:** Blueprint, Weaver
 - **Context:** Google Data Lineage (part of Dataplex) natively speaks OpenLineage via its `ProcessOpenLineageRunEvent` endpoint. This makes it a natural integration point and proof that the OpenLineage API works end-to-end.

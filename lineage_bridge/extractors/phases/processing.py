@@ -99,9 +99,7 @@ class ProcessingPhase:
             if not ksql_key:
                 from lineage_bridge.config.cache import find_provisioned_key
 
-                ksql_key, ksql_secret = find_provisioned_key(
-                    "lineage-bridge-ksqldb-", ctx.env_id
-                )
+                ksql_key, ksql_secret = find_provisioned_key("lineage-bridge-ksqldb-", ctx.env_id)
             ksql_client = KsqlDBClient(
                 cloud_api_key=ctx.settings.confluent_cloud_api_key,
                 cloud_api_secret=ctx.settings.confluent_cloud_api_secret,

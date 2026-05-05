@@ -28,6 +28,12 @@ def _merge_cluster_credentials(settings: Settings, ui_creds: dict[str, dict[str,
 
     No-op if `ui_creds` is empty. UI credentials beat what's already in the
     Settings dict (matching the previous behaviour in `ui/extraction.py`).
+
+    Why a copy and not in-place: Settings is a long-lived process-wide object
+    held by `app.state` and the watcher runner. Mutating it would leak the
+    UI's per-request creds into other callers (different users, different
+    extractions). `model_copy(update=...)` gives the orchestrator a request-
+    scoped Settings without touching the shared instance.
     """
     if not ui_creds:
         return settings

@@ -63,7 +63,12 @@ class ExtractionPhase(Protocol):
 
 # ── shared helpers ──────────────────────────────────────────────────────
 
-_EXTRACTOR_TIMEOUT = 120  # seconds — per-extractor ceiling
+# 120s ceiling per extractor: long enough for the slowest real Confluent
+# Cloud responses we've observed (Tableflow listings against multi-cluster
+# orgs commonly run ~60-90s) and short enough that one stuck client doesn't
+# block a multi-env extraction. Tune via PR if real-world traces show
+# false positives.
+_EXTRACTOR_TIMEOUT = 120
 
 
 async def safe_extract(

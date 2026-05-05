@@ -420,7 +420,8 @@ async def test_extract_emits_dlq_topic_for_sink_with_id(no_sleep):
 
     dlq = next(
         (
-            n for n in nodes
+            n
+            for n in nodes
             if n.node_type == NodeType.KAFKA_TOPIC and n.qualified_name.startswith("dlq-")
         ),
         None,
@@ -463,7 +464,8 @@ async def test_extract_does_not_emit_dlq_for_source_connectors(no_sleep):
         nodes, _edges = await client.extract()
 
     dlq_nodes = [
-        n for n in nodes
+        n
+        for n in nodes
         if n.node_type == NodeType.KAFKA_TOPIC and n.qualified_name.startswith("dlq-")
     ]
     assert dlq_nodes == [], "source connector must not emit a DLQ placeholder"

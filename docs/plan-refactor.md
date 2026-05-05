@@ -1,6 +1,10 @@
 # Refactor Plan — Modularity, Extensibility, Storage
 
-**Status:** Planning — not yet started
+> **Status: SUPERSEDED — Phases 0/1A/1B/1C/1D/2E/2F/2G/3I shipped on 2026-05-02.**
+> Phases 3G (this docs sweep) and 3H (Snowflake + Watsonx providers) remain.
+> This document is preserved for the design rationale + the per-phase
+> retrospective; ongoing planning lives in `docs/plan.md`.
+
 **Created:** 2026-05-01
 **Owner:** TBD
 

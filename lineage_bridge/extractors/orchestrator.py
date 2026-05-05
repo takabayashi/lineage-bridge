@@ -130,6 +130,11 @@ async def run_extraction(
     """Run the extraction pipeline and return the merged graph."""
     from lineage_bridge.catalogs import configure_providers
 
+    # Reseed the catalog-provider singletons with this extraction's settings
+    # before any phase runs. The registry lives at module scope so deeplinks
+    # generated during render see the right workspace URL — without this
+    # call, multiple users in the same UI process would step on each other's
+    # configured Databricks workspace.
     configure_providers(
         databricks_workspace_url=settings.databricks_workspace_url,
         databricks_token=settings.databricks_token,
@@ -438,9 +443,7 @@ def main() -> None:
             merged[cid] = {"api_key": cred.api_key, "api_secret": cred.api_secret}
         settings = settings.model_copy(
             update={
-                "cluster_credentials": {
-                    cid: ClusterCredential(**c) for cid, c in merged.items()
-                }
+                "cluster_credentials": {cid: ClusterCredential(**c) for cid, c in merged.items()}
             }
         )
 
