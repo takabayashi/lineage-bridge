@@ -17,6 +17,12 @@ import streamlit as st
 
 from lineage_bridge.services.push_service import PUSH_PROVIDERS
 from lineage_bridge.ui.discovery import _try_load_settings
+from lineage_bridge.ui.sidebar.credentials import (
+    _seed_audit_log_state,
+    _status_pill_html,
+    audit_log_credentials_dialog,
+    audit_log_creds_status,
+)
 from lineage_bridge.watcher.engine import WatcherEngine, WatcherState
 
 # Friendly checkbox labels for the "After change → publish to:" row.
@@ -94,39 +100,30 @@ def render_watcher_controls() -> None:
         )
 
         if use_audit:
+            # Seed inputs from the encrypted cache so the status pill +
+            # downstream `_start_watcher` see persisted values without the
+            # user having to open the dialog.
+            _seed_audit_log_state()
             settings = _try_load_settings()
-            default_bs = (
-                getattr(settings, "audit_log_bootstrap_servers", "") or "" if settings else ""
-            )
-            default_key = getattr(settings, "audit_log_api_key", "") or "" if settings else ""
-            default_secret = getattr(settings, "audit_log_api_secret", "") or "" if settings else ""
+            status, label = audit_log_creds_status(settings)
 
-            with st.expander("Audit log credentials", expanded=True):
-                bootstrap_servers = st.text_input(
-                    "Bootstrap servers",
-                    value=default_bs,
-                    key="watcher_audit_bootstrap",
+            cred_col_l, cred_col_r = st.columns([3, 2])
+            with cred_col_l:
+                st.markdown(_status_pill_html(status, label), unsafe_allow_html=True)
+            with cred_col_r:
+                if st.button(
+                    "Manage",
+                    key="manage_audit_log_creds_btn",
+                    width="stretch",
                     disabled=is_running,
-                    placeholder="pkc-xxxxx.region.cloud.confluent.cloud:9092",
-                )
-                ak1, ak2 = st.columns(2)
-                with ak1:
-                    audit_key = st.text_input(
-                        "API key",
-                        value=default_key,
-                        key="watcher_audit_key",
-                        disabled=is_running,
-                        type="password",
-                    )
-                with ak2:
-                    audit_secret = st.text_input(
-                        "API secret",
-                        value=default_secret,
-                        key="watcher_audit_secret",
-                        disabled=is_running,
-                        type="password",
-                    )
-            audit_creds = (bootstrap_servers, audit_key, audit_secret)
+                ):
+                    audit_log_credentials_dialog()
+
+            audit_creds = (
+                (st.session_state.get("watcher_audit_bootstrap", "") or "").strip(),
+                st.session_state.get("watcher_audit_key", "") or "",
+                st.session_state.get("watcher_audit_secret", "") or "",
+            )
             poll_interval = 10
         else:
             poll_interval = st.number_input(
@@ -190,10 +187,13 @@ def render_watcher_controls() -> None:
             can_start = bool(has_params)
             start_help = ""
             if use_audit:
-                bs, ak, asec = audit_creds or ("", "", "")
-                if not (bs and ak and asec):
+                # "missing" = neither cache nor .env has a usable bundle.
+                # "global" is fine — _start_watcher leaves Settings alone
+                # and the engine will pick up the .env values.
+                audit_status, _ = audit_log_creds_status(_try_load_settings())
+                if audit_status == "missing":
                     can_start = False
-                    start_help = "Fill audit log credentials"
+                    start_help = "Save audit log credentials first"
 
             if st.button(
                 "Start watcher",

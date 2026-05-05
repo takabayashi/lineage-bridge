@@ -34,6 +34,10 @@ _ENCRYPTED_FIELDS = {
     "sr_credentials",
     "flink_credentials",
     "provisioned_keys",
+    # Single bundle for the audit-log Kafka cluster (bootstrap + key + secret).
+    # Watcher persists this on Save so it survives session restarts the same
+    # way SR/Flink/cluster credentials do.
+    "audit_log_credentials",
 }
 
 # Subset of encrypted fields that accumulate across calls — when the caller

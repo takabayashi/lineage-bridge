@@ -94,6 +94,45 @@ def test_round_trip_flink_credentials():
     assert loaded["flink_credentials"]["env-2"]["api_key"] == "fk"
 
 
+def test_round_trip_audit_log_credentials():
+    """audit_log_credentials bundle is encrypted on disk and decrypted on load.
+
+    The bootstrap server hostname leaks no secrets, but the api_key and
+    api_secret must never appear in the raw JSON file. Uses unique tokens
+    so an accidental substring match in the base64 ciphertext can't hide a
+    real plaintext leak.
+    """
+    bundle = {
+        "bootstrap_servers": "pkc-uniqhost.region.aws.confluent.cloud:9092",
+        "api_key": "AKIA_AUDITLOG_UNIQUE_KEY_TOKEN",
+        "api_secret": "SECRET_AUDITLOG_UNIQUE_VALUE_TOKEN",
+    }
+    save_cache({"audit_log_credentials": bundle})
+
+    raw = cache_mod._CACHE_FILE.read_text(encoding="utf-8")
+    assert "_audit_log_credentials_enc" in raw
+    assert "audit_log_credentials" not in json.loads(raw)
+    assert "AKIA_AUDITLOG_UNIQUE_KEY_TOKEN" not in raw
+    assert "SECRET_AUDITLOG_UNIQUE_VALUE_TOKEN" not in raw
+
+    loaded = load_cache()
+    assert loaded["audit_log_credentials"] == bundle
+
+
+def test_update_cache_replaces_audit_log_bundle():
+    """audit_log_credentials uses replace semantics — not merge.
+
+    Unlike `cluster_credentials` / `sr_credentials` / `flink_credentials`
+    (which accumulate per-key entries across calls), the audit-log bundle
+    is a single record that should be wholly replaced on update so the
+    Clear button can wipe it by passing an empty dict.
+    """
+    update_cache(audit_log_credentials={"api_key": "OLD", "api_secret": "OLD"})
+    update_cache(audit_log_credentials={"api_key": "NEW", "api_secret": "NEW"})
+    loaded = load_cache()
+    assert loaded["audit_log_credentials"] == {"api_key": "NEW", "api_secret": "NEW"}
+
+
 # ── missing / corrupted files ──────────────────────────────────────────
 
 
