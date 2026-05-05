@@ -40,6 +40,12 @@ Confluent Cloud APIs ──> Clients ──> Orchestrator ──> LineageGraph �
 
 ## Features
 
+### Onboarding & Setup
+- **Welcome dialog** — First-time setup guide appears when no credentials are found
+- **One-line quickstart** — `curl | bash` installer for instant demo mode
+- **Three-layer credential flow** — .env → encrypted cache → session state
+- **Auto-provisioning** — Optional Cloud API key creation via Confluent CLI
+
 ### Graph Visualization
 - Interactive directed graph (vis.js) with drag, zoom, and Shift+drag region select
 - Sugiyama-style DAG layout with minimal edge crossings
