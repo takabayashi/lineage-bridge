@@ -175,7 +175,11 @@ def _render_graph_content(graph: LineageGraph):
     # Header row
     header_left, header_right = st.columns([3, 1])
     with header_left:
-        title_parts = ["#### \U0001f310 Lineage Graph"]
+        title_parts = [
+            "#### \U0001f310 Lineage Graph "
+            "<span style='font-size: 0.65rem; color: #888; font-weight: normal; "
+            "vertical-align: super;'>v0.5.0</span>"
+        ]
         if st.session_state.last_extraction_time:
             title_parts.append(
                 f"<span class='extraction-time'>"

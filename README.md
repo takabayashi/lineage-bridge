@@ -35,6 +35,7 @@ Confluent Cloud APIs ──> Clients ──> Orchestrator ──> LineageGraph �
 | **Metrics** | Throughput (bytes/records) | Real-time metrics on topics and connectors |
 | **Databricks UC** | Table metadata, lineage | UC table enrichment + lineage push |
 | **AWS Glue** | Table metadata | Glue table enrichment + lineage push |
+| **AWS DataZone** | Data products | DataZone asset enrichment + lineage push |
 | **Google Data Lineage** | BigQuery datasets/tables | BigQuery table enrichment + lineage push to Google Data Lineage API |
 
 ## Features
@@ -52,6 +53,7 @@ Confluent Cloud APIs ──> Clients ──> Orchestrator ──> LineageGraph �
 ### Data Catalog Integration
 - **[Databricks Unity Catalog](https://takabayashi.github.io/lineage-bridge/catalog-integration/databricks-unity-catalog/):** Enrich UC tables with metadata, push native lineage via External Lineage API
 - **[AWS Glue](https://takabayashi.github.io/lineage-bridge/catalog-integration/aws-glue/):** Enrich Glue tables with metadata, push lineage as table parameters
+- **[AWS DataZone](https://takabayashi.github.io/lineage-bridge/catalog-integration/aws-datazone/):** Enrich DataZone data products, push lineage as OpenLineage events
 - **[Google Data Lineage](https://takabayashi.github.io/lineage-bridge/catalog-integration/google-data-lineage/):** Enrich BigQuery tables with metadata, push lineage to Cloud Lineage API via Dataplex
 - [Extensible provider pattern](https://takabayashi.github.io/lineage-bridge/catalog-integration/adding-new-catalogs/) — add new catalogs with a single file
 

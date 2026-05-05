@@ -27,14 +27,13 @@ uv run lineage-bridge-extract --env env-XXX [--metrics]
 # Run REST API
 uv run lineage-bridge-api    # uvicorn on :8000
 
-# Run change-detection watcher daemon (writes state to the configured storage backend)
+# Run change-detection watcher (in-process poller, writes state to session)
 uv run lineage-bridge-watch --env env-XXX [--cooldown 30] [--push-uc]
 
 # Docker (files in infra/docker/)
 make docker-ui
 make docker-extract
 make docker-watch
-make docker-api
 ```
 
 ## Architecture
@@ -42,22 +41,19 @@ make docker-api
 ```
 Confluent Cloud APIs ──► Clients ──► Phases ──► LineageGraph ──► Streamlit UI
   (REST v3, Kafka)       (async)     (4-5)      (networkx)        (vis.js)
-                            │           │
-                            │           └─► Catalog providers (UC / Glue / BQ / DataZone)
+                            │           │                              │
+                            │           └─► Catalog providers ─────────┘
                             │                  ├── enrich (read catalog metadata)
                             │                  └── push_lineage (write OpenLineage events)
                             │
                             └─► Storage layer (memory / file / sqlite)
                                   ├── graphs / tasks / events
-                                  └── watchers (config + status + events + history)
+                                  └── (watcher state in UI session)
 
-UI ──► REST API ──► Storage          Watcher daemon ──► Storage
-                                          │
-                                          └── runs the same WatcherService
-                                              the API spawns in-process
+UI ──► REST API ──► Storage
 ```
 
-Three peer services share one storage backend: **UI** (Streamlit), **API** (FastAPI/uvicorn), **Watcher** (CLI daemon or in-process API task). Multiple UI instances see the same state.
+The UI and API both use the storage layer for graphs/tasks/events. The watcher runs in-process within the UI session using threading (not as a separate service).
 
 ### Module Structure
 
@@ -94,7 +90,7 @@ lineage_bridge/
   extractors/phase.py             # Phase protocol + safe_extract helper
   extractors/phases/kafka_admin.py        # Phase 1: topics + consumer groups
   extractors/phases/processing.py         # Phase 2: connect + ksqlDB + Flink (parallel)
-  extractors/phases/schema_enrichment.py  # Phase 3: SR + StreamCatalog (parallel)
+  extractors/phases/enrichment.py         # Phase 3: SR + StreamCatalog (parallel)
   extractors/phases/tableflow.py          # Phase 4: Tableflow + catalog node creation
   extractors/phases/catalog_enrichment.py # Phase 4b: provider-specific enrichment
   extractors/phases/metrics.py            # Phase 5: optional Telemetry enrichment
@@ -104,10 +100,7 @@ lineage_bridge/
   services/enrichment_service.py  # run_enrichment(req, settings, graph)
   services/push_service.py        # run_push(req, settings, graph) — dispatches to providers
   services/request_builder.py     # UI session-state → ExtractionRequest helper
-  services/watcher_models.py      # WatcherConfig / Status / Summary / Event / ExtractionRecord
-  services/watcher_service.py     # Pure-logic state machine (no threading, no I/O)
-  services/watcher_runner.py      # Asyncio loop + repository persistence
-  storage/protocol.py             # GraphRepository / TaskRepository / EventRepository / WatcherRepository
+  storage/protocol.py             # GraphRepository / TaskRepository / EventRepository
   storage/factory.py              # make_repositories(settings) — backend dispatch
   storage/migrations/             # SQLite versioned-SQL migrations + apply_pending runner
   storage/backends/memory.py      # In-memory backend (default)
@@ -129,7 +122,8 @@ lineage_bridge/
   ui/empty_state.py               # Welcome / hero card on first load
   ui/static/                      # Inlined CSS + bundled sample_graph.json
   ui/components/visjs_graph/      # Custom Streamlit component (vis.js)
-  watcher/cli.py                  # `lineage-bridge-watch` daemon entry (thin wrapper)
+  watcher/cli.py                  # `lineage-bridge-watch` CLI entry (thin wrapper)
+  watcher/engine.py               # WatcherEngine: in-process poller with threading
   openlineage/                    # OpenLineage event models + translator + store
 ```
 
@@ -171,12 +165,11 @@ Pluggable per ADR-022. Selected via `LINEAGE_BRIDGE_STORAGE__BACKEND` (note the 
 
 ### Watcher
 
-Change-detection runs as a peer service (Phase 2G):
+Change-detection runs in-process using threading:
 
-- **Daemon mode** (production): `lineage-bridge-watch` registers a `watcher_id` in the storage backend, runs the asyncio loop, persists status/events/history every tick. Survives UI restarts.
-- **In-process mode** (development): the API process spawns a `WatcherRunner` task on `POST /api/v1/watcher`. Stop via `POST /api/v1/watcher/{id}/stop` (in-process only — see router docstring for the cross-process limitation).
-- **UI**: `ui/watcher.py` polls `GET /api/v1/watcher/{id}/{status,events,history}` via `httpx`. Streamlit holds only the `watcher_id` string in `session_state`.
-- **Modes** (config-driven): `audit_log` (Kafka consumer) or `rest_polling` (default).
+- **CLI mode**: `lineage-bridge-watch` runs `WatcherEngine` in-process with a background thread that polls Confluent APIs every 10s, debounces changes with a 30s cooldown, and triggers extraction via `services.run_extraction`.
+- **UI mode**: `ui/watcher.py` instantiates `WatcherEngine` in `session_state`, controls start/stop via toggle, and displays status + events. The engine runs in a background thread within the Streamlit process.
+- **Detection method**: REST polling only (polls topics/connectors/ksqlDB/Flink via Confluent REST APIs). Audit log consumer mode removed in v0.5.0.
 
 ### REST API
 
