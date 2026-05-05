@@ -121,9 +121,7 @@ class SqliteGraphRepository(_SqliteRepo):
         ).fetchall()
         out: list[tuple[LineageGraph, GraphMeta]] = []
         for gid, payload, created, modified in rows:
-            out.append(
-                self._row_to_pair(gid, (payload, created, modified))
-            )
+            out.append(self._row_to_pair(gid, (payload, created, modified)))
         return out
 
     def delete(self, graph_id: str) -> bool:
@@ -142,9 +140,7 @@ class SqliteGraphRepository(_SqliteRepo):
         return self.conn.execute("SELECT COUNT(*) FROM graphs").fetchone()[0]
 
     @staticmethod
-    def _row_to_pair(
-        graph_id: str, row: tuple
-    ) -> tuple[LineageGraph, GraphMeta]:
+    def _row_to_pair(graph_id: str, row: tuple) -> tuple[LineageGraph, GraphMeta]:
         import json
 
         payload, created, modified = row
@@ -205,14 +201,9 @@ class SqliteEventRepository(_SqliteRepo):
     def add(self, events: list[RunEvent]) -> int:
         if not events:
             return 0
-        rows = [
-            (event.run.runId, event.model_dump_json(by_alias=True))
-            for event in events
-        ]
+        rows = [(event.run.runId, event.model_dump_json(by_alias=True)) for event in events]
         with self._write_lock:
-            self.conn.executemany(
-                "INSERT INTO events(run_id, payload) VALUES (?, ?)", rows
-            )
+            self.conn.executemany("INSERT INTO events(run_id, payload) VALUES (?, ?)", rows)
         return len(events)
 
     def all(self) -> list[RunEvent]:

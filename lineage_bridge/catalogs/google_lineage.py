@@ -264,9 +264,7 @@ class GoogleLineageProvider:
                 logger.debug("searchLinks transport error for %s: %s", source_fqn, exc)
                 continue
             if resp.status_code != 200:
-                logger.debug(
-                    "searchLinks for %s -> %d (skip)", source_fqn, resp.status_code
-                )
+                logger.debug("searchLinks for %s -> %d (skip)", source_fqn, resp.status_code)
                 continue
             links = resp.json().get("links", [])
             if not links:
@@ -304,9 +302,7 @@ class GoogleLineageProvider:
                     process_node_id = self._catalog_query_node_id(proc_resource)
                 else:
                     seen_processes.add(proc_resource)
-                    proc_node = await self._build_catalog_query_node(
-                        client, proc_resource
-                    )
+                    proc_node = await self._build_catalog_query_node(client, proc_resource)
                     if proc_node is None:
                         continue
                     graph.add_node(proc_node)
@@ -407,9 +403,7 @@ class GoogleLineageProvider:
             url=self._catalog_query_url(attrs, proc_resource),
         )
 
-    def _catalog_query_url(
-        self, attrs: dict[str, Any], proc_resource: str
-    ) -> str | None:
+    def _catalog_query_url(self, attrs: dict[str, Any], proc_resource: str) -> str | None:
         """Best-effort GCP console deep link for a catalog query node.
 
         Preference order:
@@ -431,10 +425,7 @@ class GoogleLineageProvider:
             )
         # Fallback: link to the source BQ table list — at least lands the
         # user in the right project's BQ console.
-        return (
-            "https://console.cloud.google.com/bigquery"
-            f"?project={self._project_id}"
-        )
+        return f"https://console.cloud.google.com/bigquery?project={self._project_id}"
 
     def _build_catalog_table_from_fqn(self, tgt_fqn: str) -> LineageNode | None:
         """Materialize a CATALOG_TABLE node for a BQ FQN we discovered downstream."""

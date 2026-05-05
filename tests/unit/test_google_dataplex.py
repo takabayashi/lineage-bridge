@@ -14,10 +14,10 @@ import pytest
 import respx
 
 from lineage_bridge.catalogs.google_dataplex import (
+    _REGISTRY,
     ASPECT_TYPE_ID,
     ENTRY_GROUP_ID,
     ENTRY_TYPE_ID,
-    _REGISTRY,
     DataplexAssetRegistrar,
     _connector_fqn,
     _consumer_group_fqn,
@@ -134,7 +134,9 @@ class TestRegisterKafkaAssets:
             httpx.Response(200, json={"name": "ok"})
         )
 
-        count, errors = await registrar.register_confluent_assets(self._graph_with_topic_and_schema())
+        count, errors = await registrar.register_confluent_assets(
+            self._graph_with_topic_and_schema()
+        )
         assert count == 1 and errors == []
 
     @respx.mock
@@ -151,7 +153,9 @@ class TestRegisterKafkaAssets:
             f"{BASE}/{PARENT}/entryGroups/{ENTRY_GROUP_ID}/entries/lkc-abc-lb.orders"
         ).mock(httpx.Response(200, json={"name": "ok"}))
 
-        count, errors = await registrar.register_confluent_assets(self._graph_with_topic_and_schema())
+        count, errors = await registrar.register_confluent_assets(
+            self._graph_with_topic_and_schema()
+        )
         assert count == 1 and errors == []
         assert patch_route.called
 
@@ -232,7 +236,12 @@ class TestScalarAttrData:
             node_type=NodeType.FLINK_JOB,
             qualified_name="job",
             display_name="job",
-            attributes={"sql": "SELECT 1", "phase": "RUNNING", "principal": None, "extra": "ignored"},
+            attributes={
+                "sql": "SELECT 1",
+                "phase": "RUNNING",
+                "principal": None,
+                "extra": "ignored",
+            },
         )
         builder = _scalar_attr_data(("sql", "phase", "compute_pool_id", "principal"))
         out = builder(node, LineageGraph())
@@ -300,10 +309,7 @@ class TestLinkProcessesToCatalog:
         g = LineageGraph()
         g.add_node(flink)
 
-        list_url = (
-            "https://datalineage.googleapis.com/v1/"
-            f"{PARENT}/processes?pageSize=200"
-        )
+        list_url = f"https://datalineage.googleapis.com/v1/{PARENT}/processes?pageSize=200"
         respx.get(list_url).mock(
             httpx.Response(
                 200,

@@ -138,9 +138,11 @@ class SchemaRegistryClient(ConfluentClient):
                         continue
                     entry: dict[str, str] = {"name": str(f["name"])}
                     if f.get("type") is not None:
-                        entry["type"] = json.dumps(f["type"]) if isinstance(
-                            f["type"], (dict, list)
-                        ) else str(f["type"])
+                        entry["type"] = (
+                            json.dumps(f["type"])
+                            if isinstance(f["type"], (dict, list))
+                            else str(f["type"])
+                        )
                     doc = f.get("doc") or f.get("description")
                     if doc:
                         entry["description"] = str(doc)

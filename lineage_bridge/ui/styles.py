@@ -580,7 +580,7 @@ NODE_TYPE_EMOJI: dict[NodeType, str] = {
     NodeType.EXTERNAL_DATASET: "\u2601",  # ☁ (cloud)
     NodeType.CONSUMER_GROUP: "\u2638",  # ☸ (group)
     NodeType.NOTEBOOK: "\u270e",  # ✎ (pencil — notebook/code)
-    NodeType.CATALOG_QUERY: "❯",  # right-chevron — query/prompt
+    NodeType.CATALOG_QUERY: "\u276f",  # heavy right-chevron — query/prompt
 }
 
 

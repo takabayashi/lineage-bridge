@@ -261,7 +261,7 @@ class TestWalkDownstreamLineage:
         client = MagicMock()
         client.fake_state: dict = {}
 
-        async def _post(url: str, json: dict):  # noqa: A002
+        async def _post(url: str, json: dict):
             resp = MagicMock()
             resp.status_code = 200
             if url.endswith(":searchLinks"):
@@ -291,10 +291,8 @@ class TestWalkDownstreamLineage:
         client.get = AsyncMock(side_effect=_get)
         return client
 
-    async def test_emits_query_node_and_two_edges_for_known_target(
-        self, provider, fake_client
-    ):
-        """Single process linking a known source to a known target → query node + 2 TRANSFORMS edges."""
+    async def test_emits_query_node_and_two_edges_for_known_target(self, provider, fake_client):
+        """Process linking known source to target → query node + 2 TRANSFORMS edges."""
         graph = LineageGraph()
         src = self._bq_table("enriched_orders")
         tgt = self._bq_table("joined_orders")

@@ -103,7 +103,8 @@ def test_migrations_record_applied_versions(tmp_path: Path):
     repo = SqliteGraphRepository(db)
     repo.count()  # trigger init
     versions = [
-        row[0] for row in repo.conn.execute(
+        row[0]
+        for row in repo.conn.execute(
             "SELECT version FROM schema_migrations ORDER BY version"
         ).fetchall()
     ]

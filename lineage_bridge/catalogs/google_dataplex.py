@@ -139,8 +139,7 @@ def _flat_string_template(name: str, fields: list[str]) -> dict[str, Any]:
         "type": "record",
         "index": 1,
         "recordFields": [
-            {"name": f, "type": "string", "index": i}
-            for i, f in enumerate(fields, start=1)
+            {"name": f, "type": "string", "index": i} for i, f in enumerate(fields, start=1)
         ],
     }
 
@@ -176,7 +175,9 @@ def _kafka_schema_data(node: LineageNode, graph: LineageGraph) -> dict[str, Any]
     return None
 
 
-def _scalar_attr_data(keys: tuple[str, ...]) -> Callable[[LineageNode, LineageGraph], dict[str, Any] | None]:
+def _scalar_attr_data(
+    keys: tuple[str, ...],
+) -> Callable[[LineageNode, LineageGraph], dict[str, Any] | None]:
     """Build a closure that extracts the named attributes off a node, stringified.
 
     Empty/None values are dropped so the persisted aspect only carries the
@@ -286,10 +287,10 @@ _REGISTRY: dict[NodeType, NodeRegistration] = {
         ),
         aspect_data_builder=_scalar_attr_data(("sql", "phase", "compute_pool_id", "principal")),
         fqn_builder=_flink_fqn_from_node,
-        entry_id_builder=lambda n: _entry_id(
-            f"flink-{n.environment_id or ''}-{n.qualified_name}"
+        entry_id_builder=lambda n: _entry_id(f"flink-{n.environment_id or ''}-{n.qualified_name}"),
+        description_builder=lambda n: (
+            f"Flink SQL statement on environment {n.environment_id or '?'}"
         ),
-        description_builder=lambda n: f"Flink SQL statement on environment {n.environment_id or '?'}",
         requires_cluster_id=False,
     ),
     NodeType.CONNECTOR: NodeRegistration(
@@ -309,9 +310,7 @@ _REGISTRY: dict[NodeType, NodeRegistration] = {
             ("connector_class", "direction", "state", "tasks_max", "confluent_id")
         ),
         fqn_builder=_connector_fqn_from_node,
-        entry_id_builder=lambda n: _entry_id(
-            f"connector-{n.cluster_id or ''}-{n.qualified_name}"
-        ),
+        entry_id_builder=lambda n: _entry_id(f"connector-{n.cluster_id or ''}-{n.qualified_name}"),
         description_builder=lambda n: (
             f"{n.attributes.get('connector_class', 'Kafka')} "
             f"connector on cluster {n.cluster_id or '?'}"
@@ -330,9 +329,7 @@ _REGISTRY: dict[NodeType, NodeRegistration] = {
         aspect_template=_flat_string_template("ksqldb", ["sql", "state", "target_topic"]),
         aspect_data_builder=_scalar_attr_data(("sql", "state", "target_topic")),
         fqn_builder=_ksqldb_fqn_from_node,
-        entry_id_builder=lambda n: _entry_id(
-            f"ksqldb-{n.cluster_id or ''}-{n.qualified_name}"
-        ),
+        entry_id_builder=lambda n: _entry_id(f"ksqldb-{n.cluster_id or ''}-{n.qualified_name}"),
         description_builder=lambda n: f"ksqlDB query on cluster {n.cluster_id or '?'}",
         requires_cluster_id=True,
     ),
@@ -507,13 +504,9 @@ class DataplexAssetRegistrar:
             while targets and pages < 50:
                 pages += 1
                 params = "pageSize=200" + (f"&pageToken={page_token}" if page_token else "")
-                resp = await client.get(
-                    f"{_LINEAGE_API_BASE}/{self._parent}/processes?{params}"
-                )
+                resp = await client.get(f"{_LINEAGE_API_BASE}/{self._parent}/processes?{params}")
                 if resp.status_code != 200:
-                    errors.append(
-                        f"processes.list failed: {resp.status_code} {resp.text[:200]}"
-                    )
+                    errors.append(f"processes.list failed: {resp.status_code} {resp.text[:200]}")
                     break
                 payload = resp.json()
                 for proc in payload.get("processes", []):
@@ -523,14 +516,10 @@ class DataplexAssetRegistrar:
                         continue
                     reg, node = match
                     try:
-                        await self._patch_process(
-                            client, proc["name"], reg, node, dname
-                        )
+                        await self._patch_process(client, proc["name"], reg, node, dname)
                         patched += 1
                     except Exception as exc:
-                        errors.append(
-                            f"PATCH process for {node.qualified_name}: {exc}"
-                        )
+                        errors.append(f"PATCH process for {node.qualified_name}: {exc}")
                 page_token = payload.get("nextPageToken", "")
                 if not page_token:
                     break
@@ -567,9 +556,7 @@ class DataplexAssetRegistrar:
         }
         await self._create_lro(client, url, body, target_name=self._entry_group)
 
-    async def _ensure_entry_type(
-        self, client: httpx.AsyncClient, reg: NodeRegistration
-    ) -> None:
+    async def _ensure_entry_type(self, client: httpx.AsyncClient, reg: NodeRegistration) -> None:
         target = self._entry_type(reg)
         if await self._exists(client, target):
             return
@@ -583,9 +570,7 @@ class DataplexAssetRegistrar:
         }
         await self._create_lro(client, url, body, target_name=target)
 
-    async def _ensure_aspect_type(
-        self, client: httpx.AsyncClient, reg: NodeRegistration
-    ) -> None:
+    async def _ensure_aspect_type(self, client: httpx.AsyncClient, reg: NodeRegistration) -> None:
         target = self._aspect_type_resource(reg)
         if await self._exists(client, target):
             return
@@ -675,8 +660,7 @@ class DataplexAssetRegistrar:
             if aspect_data:
                 update_mask += ",aspects"
                 patch_url = (
-                    f"{_API_BASE}/{entry_name}"
-                    f"?updateMask={update_mask}&aspectKeys={aspect_key}"
+                    f"{_API_BASE}/{entry_name}?updateMask={update_mask}&aspectKeys={aspect_key}"
                 )
             else:
                 patch_url = f"{_API_BASE}/{entry_name}?updateMask={update_mask}"

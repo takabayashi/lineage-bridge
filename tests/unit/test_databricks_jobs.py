@@ -93,9 +93,7 @@ class TestGetJob:
                     "job_id": 56,
                     "settings": {
                         "name": "sql-job",
-                        "tasks": [
-                            {"task_key": "q", "sql_task": {"file": {"path": "/foo.sql"}}}
-                        ],
+                        "tasks": [{"task_key": "q", "sql_task": {"file": {"path": "/foo.sql"}}}],
                     },
                 },
             )
