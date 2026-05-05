@@ -91,7 +91,7 @@ resource "confluent_kafka_cluster" "demo" {
   cloud        = "AWS"
   region       = var.aws_region
 
-  basic {}
+  standard {}
 
   environment {
     id = confluent_environment.demo.id

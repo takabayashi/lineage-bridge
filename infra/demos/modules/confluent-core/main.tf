@@ -50,7 +50,7 @@ resource "confluent_kafka_cluster" "demo" {
   cloud        = var.cloud_provider
   region       = var.cloud_region
 
-  basic {}
+  standard {}
 
   environment {
     id = confluent_environment.demo.id
