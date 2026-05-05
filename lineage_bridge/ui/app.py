@@ -178,7 +178,7 @@ def _render_graph_content(graph: LineageGraph):
         title_parts = [
             "#### \U0001f310 Lineage Graph "
             "<span style='font-size: 0.65rem; color: #888; font-weight: normal; "
-            "vertical-align: super;'>v0.5.0</span>"
+            "vertical-align: super;'>v0.6.0</span>"
         ]
         if st.session_state.last_extraction_time:
             title_parts.append(
