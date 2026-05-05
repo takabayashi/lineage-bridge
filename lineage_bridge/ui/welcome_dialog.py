@@ -37,12 +37,8 @@ def should_show_welcome_dialog() -> bool:
     has_key = bool(os.getenv("LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_KEY"))
     has_secret = bool(os.getenv("LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_SECRET"))
 
-    # Don't show if credentials are already available
-    if has_key and has_secret:
-        return False
-
     # Show the dialog on first load when no credentials
-    return True
+    return not (has_key and has_secret)
 
 
 def _save_credentials_to_env(api_key: str, api_secret: str) -> tuple[bool, str]:
@@ -69,7 +65,8 @@ def _save_credentials_to_env(api_key: str, api_secret: str) -> tuple[bool, str]:
         # Remove existing cloud key lines if present
         lines = content.splitlines()
         filtered_lines = [
-            line for line in lines
+            line
+            for line in lines
             if not line.strip().startswith("LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_KEY")
             and not line.strip().startswith("LINEAGE_BRIDGE_CONFLUENT_CLOUD_API_SECRET")
         ]
@@ -105,9 +102,12 @@ def render_welcome_dialog() -> None:
         To extract lineage from your Confluent Cloud environment, you'll need to
         provide a **Cloud API Key** with read permissions.
 
-        <div style="background: #f0f7ff; border-left: 4px solid #1f77b4; padding: 1rem; margin: 1rem 0; border-radius: 4px;">
+        <div style="background: #f0f7ff; border-left: 4px solid #1f77b4; padding: 1rem;
+                    margin: 1rem 0; border-radius: 4px;">
         <strong>📚 Need a Cloud API Key?</strong><br/>
-        Create one in the <a href="https://confluent.cloud/settings/api-keys" target="_blank">Confluent Cloud Console</a>
+        Create one in the
+        <a href="https://confluent.cloud/settings/api-keys" target="_blank">
+        Confluent Cloud Console</a>
         or via the CLI: <code>confluent api-key create --resource cloud</code>
         </div>
         """,
@@ -159,6 +159,7 @@ def render_welcome_dialog() -> None:
 
                 # Wait a moment to show the success message, then rerun
                 import time
+
                 time.sleep(1)
                 st.rerun()
             else:
@@ -185,9 +186,11 @@ def render_welcome_dialog() -> None:
 
     st.markdown(
         """
-        <div style="margin-top: 2rem; padding: 1rem; background: #f8f9fa; border-radius: 4px; font-size: 0.9em;">
-        <strong>🔐 Security Note:</strong> Credentials are saved to your local <code>.env</code> file
-        and never sent anywhere except to Confluent Cloud APIs during extraction.
+        <div style="margin-top: 2rem; padding: 1rem; background: #f8f9fa;
+                    border-radius: 4px; font-size: 0.9em;">
+        <strong>🔐 Security Note:</strong> Credentials are saved to your local
+        <code>.env</code> file and never sent anywhere except to Confluent Cloud APIs
+        during extraction.
         </div>
         """,
         unsafe_allow_html=True,
