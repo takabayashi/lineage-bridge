@@ -69,6 +69,7 @@ nav:
       - Quickstart: getting-started/quickstart.md
   - User Guide:
       - Overview: user-guide/index.md
+      - First-Time Setup: user-guide/first-time-setup.md
       - CLI Tools: user-guide/cli-tools.md
       - Streamlit UI: user-guide/streamlit-ui.md
       - Graph Visualization: user-guide/graph-visualization.md
