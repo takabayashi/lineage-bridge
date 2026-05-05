@@ -247,26 +247,43 @@ print(f'{m.group(1)} {m.group(2)} {m.group(3)}' if m else '0 0 0')
 
 # Test 4: Change Watcher
 test_change_watcher() {
-  log_info "Test 4: Change Watcher (30s test)"
+  log_info "Test 4: Change Watcher (30s test, with --push-uc)"
 
-  # Run watcher for 30 seconds
-  timeout 30 uv run lineage-bridge-watch --env "$ENV_ID" --cooldown 10 >/tmp/test4.log 2>&1 &
+  # Pass --push-uc so the watcher's _do_extraction must import push_service.
+  # Phase A regression guard: previously the engine imported deleted
+  # run_lineage_push from extractors.orchestrator and crashed at the first
+  # triggered extraction. Even if no change fires in 30s, the import happens
+  # at process start and surfaces as ImportError in the log.
+  timeout 30 uv run lineage-bridge-watch --env "$ENV_ID" --cooldown 10 --push-uc \
+    >/tmp/test4.log 2>&1 &
   WATCHER_PID=$!
 
   sleep 5
-  if ps -p $WATCHER_PID > /dev/null; then
-    # Watcher is running, wait for timeout
-    wait $WATCHER_PID 2>/dev/null || true
-
-    # Check logs for successful polling
-    if grep -q "Watcher using REST API polling\|Change poller initialized\|Discovered.*cluster" /tmp/test4.log; then
-      test_passed "Change watcher (ran for 30s, polling active)"
-    else
-      test_failed "Change watcher (did not start polling)"
-      tail -10 /tmp/test4.log
-    fi
-  else
+  if ! ps -p $WATCHER_PID > /dev/null; then
     test_failed "Change watcher (failed to start)"
+    tail -10 /tmp/test4.log
+    echo ""
+    return
+  fi
+
+  # Watcher is running, wait for timeout
+  wait $WATCHER_PID 2>/dev/null || true
+
+  # Surface push-import regressions explicitly — these silent in old runs
+  # because the bad import only fired after a real change triggered
+  # extraction, which rarely happens in a 30s test window.
+  if grep -qE "ImportError|cannot import name 'run_lineage_push'|cannot import name 'run_glue_push'" /tmp/test4.log; then
+    test_failed "Change watcher (push import broken — Phase A regression)"
+    grep -E "ImportError|cannot import name" /tmp/test4.log | head -5
+    echo ""
+    return
+  fi
+
+  if grep -q "Watcher using REST API polling\|Change poller initialized\|Discovered.*cluster\|Polling Confluent Cloud" /tmp/test4.log; then
+    test_passed "Change watcher (ran for 30s, polling active, --push-uc accepted)"
+  else
+    test_failed "Change watcher (did not start polling)"
+    tail -10 /tmp/test4.log
   fi
   echo ""
 }

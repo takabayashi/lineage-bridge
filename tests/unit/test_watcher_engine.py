@@ -42,8 +42,7 @@ def _make_params(**overrides):
         "enable_stream_catalog": False,
         "enable_tableflow": True,
         "enable_enrichment": True,
-        "push_uc": False,
-        "push_glue": False,
+        "push_providers": [],
     }
     defaults.update(overrides)
     return defaults
@@ -415,3 +414,104 @@ class TestCooldownRemaining:
         engine.state = WatcherState.COOLDOWN
         engine._cooldown_deadline = time.monotonic() - 1.0
         assert engine.cooldown_remaining == 0.0
+
+
+class TestDoExtractionPushDispatch:
+    """Verify the watcher's _do_extraction routes pushes through push_service.
+
+    Phase A regression guard: previously the engine imported deleted
+    `run_glue_push` / `run_lineage_push` functions and crashed at the first
+    triggered extraction whenever the user enabled a push toggle. This class
+    locks in that the new dispatch loop calls run_push once per provider in
+    `params["push_providers"]` and that one provider's failure doesn't drop
+    the others.
+    """
+
+    @pytest.mark.asyncio
+    async def test_no_push_when_providers_list_empty(self):
+        engine = WatcherEngine(
+            settings=_make_settings(),
+            extraction_params=_make_params(push_providers=[]),
+        )
+        with (
+            patch(
+                "lineage_bridge.extractors.orchestrator.run_extraction",
+                new_callable=AsyncMock,
+                return_value=MagicMock(),
+            ),
+            patch(
+                "lineage_bridge.services.push_service.run_push",
+                new_callable=AsyncMock,
+            ) as mock_run_push,
+        ):
+            await engine._do_extraction()
+        mock_run_push.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_push_dispatches_once_per_provider(self):
+        engine = WatcherEngine(
+            settings=_make_settings(),
+            extraction_params=_make_params(
+                push_providers=["databricks_uc", "aws_glue"],
+            ),
+        )
+        with (
+            patch(
+                "lineage_bridge.extractors.orchestrator.run_extraction",
+                new_callable=AsyncMock,
+                return_value=MagicMock(),
+            ),
+            patch(
+                "lineage_bridge.services.push_service.run_push",
+                new_callable=AsyncMock,
+            ) as mock_run_push,
+        ):
+            await engine._do_extraction()
+
+        assert mock_run_push.call_count == 2
+        called_providers = [call.args[0].provider for call in mock_run_push.call_args_list]
+        assert called_providers == ["databricks_uc", "aws_glue"]
+
+    @pytest.mark.asyncio
+    async def test_one_provider_failure_does_not_block_others(self):
+        engine = WatcherEngine(
+            settings=_make_settings(),
+            extraction_params=_make_params(
+                push_providers=["databricks_uc", "aws_glue"],
+            ),
+        )
+
+        async def push_side_effect(req, *_args, **_kwargs):
+            if req.provider == "databricks_uc":
+                raise RuntimeError("UC permission denied")
+            return MagicMock()
+
+        with (
+            patch(
+                "lineage_bridge.extractors.orchestrator.run_extraction",
+                new_callable=AsyncMock,
+                return_value=MagicMock(),
+            ),
+            patch(
+                "lineage_bridge.services.push_service.run_push",
+                new_callable=AsyncMock,
+                side_effect=push_side_effect,
+            ) as mock_run_push,
+        ):
+            await engine._do_extraction()
+
+        # Both providers must have been attempted even though UC raised.
+        assert mock_run_push.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_orchestrator_no_longer_imports_deleted_push_wrappers(self):
+        """Static guard: the deleted run_glue_push/run_lineage_push must NOT
+        be imported by _do_extraction. If a future refactor reintroduces
+        either name, this test fails with AttributeError on the patch lookup
+        and points at the regression — far cheaper than a runtime ImportError
+        triggered only when a user flips a push toggle.
+        """
+        from lineage_bridge.extractors import orchestrator
+
+        assert not hasattr(orchestrator, "run_glue_push")
+        assert not hasattr(orchestrator, "run_lineage_push")

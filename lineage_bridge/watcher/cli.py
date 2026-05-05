@@ -64,16 +64,31 @@ def main() -> None:
         help="Audit log cluster API secret (overrides env var)",
     )
     parser.add_argument(
+        "--push",
+        dest="push_providers",
+        action="append",
+        default=[],
+        choices=["databricks_uc", "aws_glue", "google", "datazone"],
+        help="Push lineage to a catalog after each extraction (repeatable)",
+    )
+    # Back-compat shortcuts for the original two-flag interface. New scripts
+    # should prefer `--push <provider>` directly so adding a catalog doesn't
+    # require a CLI change.
+    parser.add_argument(
         "--push-uc",
         action="store_true",
-        help="Push lineage to Databricks UC after each extraction",
+        help="Shortcut for --push databricks_uc",
     )
     parser.add_argument(
         "--push-glue",
         action="store_true",
-        help="Push lineage to AWS Glue after each extraction",
+        help="Shortcut for --push aws_glue",
     )
     args = parser.parse_args()
+    if args.push_uc and "databricks_uc" not in args.push_providers:
+        args.push_providers.append("databricks_uc")
+    if args.push_glue and "aws_glue" not in args.push_providers:
+        args.push_providers.append("aws_glue")
 
     settings = Settings()  # type: ignore[call-arg]
 
@@ -100,8 +115,7 @@ def main() -> None:
         "enable_stream_catalog": False,
         "enable_tableflow": True,
         "enable_enrichment": True,
-        "push_uc": args.push_uc,
-        "push_glue": args.push_glue,
+        "push_providers": args.push_providers,
     }
 
     from lineage_bridge.watcher.engine import WatcherEngine
