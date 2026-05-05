@@ -1,10 +1,13 @@
 .DEFAULT_GOAL := help
 
-.PHONY: install extract watch api openapi ui test lint format clean docker-build docker-extract docker-watch docker-ui docker-down demo-setup demo-up demo-down demo-uc-up demo-uc-down demo-glue-up demo-glue-down demo-bq-up demo-bq-down docs-serve docs-build docs-deploy docs-install help
+.PHONY: install quickstart extract watch api openapi ui test lint format clean docker-build docker-extract docker-watch docker-ui docker-down demo-setup demo-up demo-down demo-uc-up demo-uc-down demo-glue-up demo-glue-down demo-bq-up demo-bq-down docs-serve docs-build docs-deploy docs-install help
 
 install: ## Install project with dev dependencies
 	@test -x .venv/bin/python || uv venv
 	uv pip install -e ".[dev]"
+
+quickstart: ## One-line demo start (no credentials needed)
+	@bash scripts/quickstart.sh
 
 extract: ## Run lineage extraction CLI
 	uv run lineage-bridge-extract

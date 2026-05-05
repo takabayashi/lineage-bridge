@@ -2,6 +2,39 @@
 
 Let's get your first lineage graph running in about 5 minutes! We'll extract lineage from Confluent Cloud and visualize it in an interactive graph.
 
+## Try It Now (Demo Mode)
+
+**Zero setup, zero credentials needed.** Just run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/takabayashi/lineage-bridge/main/scripts/quickstart.sh | bash
+```
+
+This automatically:
+
+- ✓ Installs dependencies (uv + LineageBridge)
+- ✓ Launches the UI with a sample lineage graph
+- ✓ Opens your browser to http://localhost:8501
+
+**Or use Docker:**
+
+```bash
+docker run -p 8501:8501 ghcr.io/takabayashi/lineage-bridge:latest
+```
+
+Then open http://localhost:8501 and click **Load Demo Graph**.
+
+!!! success "No Confluent Account Needed"
+    Demo mode uses a pre-built sample graph. Perfect for:
+    
+    - **Evaluating** LineageBridge before connecting to Confluent
+    - **Learning** the UI and graph navigation
+    - **Sharing** demos without exposing credentials
+
+    Ready to connect to your real Confluent environment? Continue below.
+
+---
+
 ## What You'll Build
 
 By the end of this guide, you'll have:

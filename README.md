@@ -65,6 +65,39 @@ Confluent Cloud APIs ──> Clients ──> Orchestrator ──> LineageGraph �
 - REST + OpenLineage API for programmatic access
 - Docker support with extract, UI, and watcher profiles
 
+## Try It Now
+
+**One-line demo** (no credentials needed):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/takabayashi/lineage-bridge/main/scripts/quickstart.sh | bash
+```
+
+This will:
+- Install dependencies automatically (uv + LineageBridge)
+- Launch the UI with a sample lineage graph
+- Open your browser to http://localhost:8501
+- No Confluent account needed — explore the demo graph immediately
+
+To connect to your Confluent Cloud later, stop the UI (Ctrl+C) and run `cd ~/.lineage-bridge && make ui`.
+
+**Docker demo**:
+
+```bash
+docker run -p 8501:8501 ghcr.io/takabayashi/lineage-bridge:latest
+```
+
+Then open http://localhost:8501 and click **Load Demo Graph**.
+
+### Comparison: Which Start Method?
+
+| Method | Setup Time | Use Case |
+|--------|-----------|----------|
+| **One-line script** | 30s | First-time evaluation, no git needed |
+| **Docker** | 10s | Quick demo, container-friendly |
+| **Manual install** | 2 min | Development, customization |
+| **Make targets** | 1 min | Cloned repo, recurring use |
+
 ## Quick Start
 
 ### Prerequisites

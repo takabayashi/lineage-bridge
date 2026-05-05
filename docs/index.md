@@ -31,7 +31,26 @@ graph LR
 - **Change Detection**: Real-time watcher with auto-extraction
 - **Demo Infrastructure**: 3 Terraform-based demos (UC, Glue, BigQuery)
 
-## Quick Start
+## Try It Now
+
+**One-line demo** (no credentials needed):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/takabayashi/lineage-bridge/main/scripts/quickstart.sh | bash
+```
+
+**Or use Docker:**
+
+```bash
+docker run -p 8501:8501 ghcr.io/takabayashi/lineage-bridge:latest
+```
+
+Then open http://localhost:8501 and click **Load Demo Graph** to explore a sample lineage extraction.
+
+!!! tip "Zero Setup Required"
+    Demo mode loads a pre-built sample graph—perfect for evaluating LineageBridge before connecting to Confluent Cloud.
+
+## Quick Start (Connect to Confluent Cloud)
 
 Get running in 5 minutes:
 

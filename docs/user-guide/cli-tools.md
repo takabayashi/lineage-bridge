@@ -1,6 +1,22 @@
 # CLI Tools Reference
 
-LineageBridge provides four command-line tools for lineage extraction, monitoring, UI access, and API serving.
+LineageBridge provides command-line tools for lineage extraction, monitoring, UI access, and API serving.
+
+## Quick Start Script
+
+For first-time users, the **quickstart script** provides a one-line demo:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/takabayashi/lineage-bridge/main/scripts/quickstart.sh | bash
+```
+
+This automatically installs dependencies, launches the UI with a sample graph, and opens your browser. No credentials needed—perfect for evaluation.
+
+Or run locally via Make:
+
+```bash
+make quickstart
+```
 
 ## Overview
 
